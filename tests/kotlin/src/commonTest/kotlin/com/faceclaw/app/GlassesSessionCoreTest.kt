@@ -643,7 +643,34 @@ class GlassesSessionCoreTest {
             s.core.interruptibleSleep.interrupt()
             assertTrue(waitUntil(5_000) { s.listener.phases.contains("incompatible-firmware") }, s.host.logs().takeLast(10).toString())
             assertEquals(2, s.link.writes.count { it.kind == "battery" })
-            assertEquals(1, s.link.writes.count { it.kind == "create-layout" })
+            assertEquals(1, s.link.writes.count { it.kind == "enter-evenhub" })
+            assertEquals(0, s.link.writes.count { it.kind == "create-layout" })
+        } finally {
+            s.core.close()
+        }
+    }
+
+    @Test
+    fun customFirmwareEntersEvenHubOnEverySessionInsteadOfCreatingTheLayout() {
+        val s = Session()
+        s.core.setRequiredFirmwareRevision(37)
+        s.link.firmwareExtension = "Faceclaw/37"
+        try {
+            s.startAndAwaitLayout()
+            fun enters() = s.link.writes.filter { it.kind == "enter-evenhub" }
+            assertEquals(1, enters().size)
+            assertEquals(CfwTransport.SID, enters()[0].sid)
+            assertContentEquals(byteArrayOf(CFW_MSG_ENTER_EVENHUB.toByte()), enters()[0].message)
+            // The settings reply that identifies the firmware comes first.
+            assertTrue(s.link.writes.indexOfFirst { it.kind == "battery" } < s.link.writes.indexOf(enters()[0]))
+            // A reconnect may find the previous session's page still up. Mode 31
+            // ACKs in that state, so the session is entered the same way again.
+            s.core.handleTransportFailure("test drop")
+            assertTrue(waitUntil(5_000) { !s.layoutCreated() })
+            s.platform.offsetMs += 10_000
+            s.core.interruptibleSleep.interrupt()
+            assertTrue(waitUntil(5_000) { s.layoutCreated() && enters().size == 2 }, s.host.logs().takeLast(10).toString())
+            assertEquals(0, s.link.writes.count { it.kind == "create-layout" })
         } finally {
             s.core.close()
         }
