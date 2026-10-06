@@ -2,6 +2,7 @@
 
 ## 0.8.3 - Future
 
+* Fix several issues that would cause disconnection and disconnect-looping
 * Add a client for T3 Code
 * Weather app shows an icon for current conditions, and can add the weather to the status bar and the Glanceboard system card (Weather menu > Settings)
 
