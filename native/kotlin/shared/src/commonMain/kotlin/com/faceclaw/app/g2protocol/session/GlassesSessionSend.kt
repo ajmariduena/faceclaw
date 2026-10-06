@@ -646,6 +646,10 @@ internal fun GlassesSessionCore.enqueueCreateLayoutLocked() {
     // New session: re-assert the firmware-debug-flags overlay once
     // the layout is ready (the mode-7 send is gated on this having reset).
     firmwareDebugFlagsLastSent = -1
+    if (customFirmwareDetected) {
+        enqueueEnterEvenHubLocked()
+        return
+    }
     val message = messageBuilder.createLayout()
     message.onAck = MessageCallback {
         startupProbePending = false
@@ -665,6 +669,25 @@ internal fun GlassesSessionCore.enqueueCreateLayoutLocked() {
     }
     pendingMessages.addLast(message)
     logLine("queue create layout")
+}
+
+/**
+ * The custom-firmware replacement for the stock create layout (CFW mode 31).
+ * A reconnect can find the page from the previous session still up, and stock
+ * firmware never ACKs a repeated create; the CFW ACKs whatever state the
+ * glasses were in. A lost message goes through the CFW replay window like any
+ * other private message, which is safe because this one is idempotent. The
+ * settings query that sets customFirmwareDetected is ahead of this in the
+ * queue on every session.
+ */
+private fun GlassesSessionCore.enqueueEnterEvenHubLocked() {
+    val message = messageBuilder.enterEvenHub(connectionOptions.sendImagesToLeft)
+    message.onAck = MessageCallback {
+        fixedLayoutCreated = true
+        displayedFingerprint = ""
+    }
+    pendingMessages.addLast(message)
+    logLine("queue enter EvenHub")
 }
 
 internal fun GlassesSessionCore.enqueueStartupProbeLocked() {
