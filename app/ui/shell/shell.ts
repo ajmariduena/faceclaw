@@ -381,6 +381,7 @@ function chromeSettingsKey(): string {
 
 class Shell {
   private windows: ShellWindow[] = [];
+  private home: { windowId: string; onShow: (waking: boolean) => void } | null = null;
   private selectedIndex = 0;
   /** Window ids in most-recently-visible-first order; closing the visible window returns to the next entry. */
   private mruWindowIds: string[] = [];
@@ -507,6 +508,21 @@ class Shell {
     this.config.onWindowsChanged?.();
   }
 
+  registerHomeWindow(window: ShellWindow, onShow: (waking: boolean) => void): void {
+    this.home = { windowId: window.windowId, onShow };
+    this.registerWindow(window);
+    this.showHome();
+  }
+
+  showHome(resetOnWake = false): boolean {
+    if (!this.home || !this.windows.some(window => window.windowId === this.home!.windowId)) return false;
+    this.home.onShow(resetOnWake);
+    this.focusWindow(this.home.windowId);
+    this.foregroundWindow()?.requestRender();
+    this.config.requestShellRender();
+    return true;
+  }
+
   /** Move a window to the front of the most-recently-visible order. */
   private noteWindowVisible(windowId: string): void {
     this.mruWindowIds = this.mruWindowIds.filter((id) => id !== windowId);
@@ -629,7 +645,7 @@ class Shell {
    */
   getForegroundApp(): { appId: string; title: string } | null {
     const window = this.foregroundWindow();
-    if (!window || window.appId === "launcher") return null;
+    if (!window || window.appId === "launcher" || window.windowId === this.home?.windowId) return null;
     return { appId: window.appId, title: window.title };
   }
 
@@ -710,6 +726,7 @@ class Shell {
   /** Turn the screen on (if off) and set focus. Returns whether it was off. */
   wake(focus: FocusKind, nowMs = Date.now()): boolean {
     this.lastInputAtMs = nowMs;
+    if (!this.screenOn && this.showHome(true)) focus = "window";
     const gaining = focus === "window" ? this.foregroundWindow() : undefined;
     const alreadyFocused = this.isFocusTarget(gaining);
     this.focus = focus;
@@ -1014,6 +1031,13 @@ class Shell {
 
     if (!this.stack.isAtBase()) {
       await this.stack.handleInput(event);
+      return { shell: true, window: false };
+    }
+
+    // Shell overlays keep first refusal; returning only changes focus, never closes an app.
+    if (this.focus === "window" && event.type === "double-click" && this.home) {
+      if (this.foregroundWindow()?.windowId === this.home.windowId) this.sleep();
+      else this.showHome();
       return { shell: true, window: false };
     }
 

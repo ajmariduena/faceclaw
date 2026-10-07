@@ -105,7 +105,7 @@ export function createInProcessWindow(options: InProcessWindowOptions): InProces
   const stack = new LayerStack(
     options.baseLayer,
     { ...options.actions, requestRender },
-    appViewportSize(heightMode),
+    appViewportSize(heightMode, options.appId),
     () => shell.isWindowFocused(options.windowId),
   );
 
@@ -210,7 +210,7 @@ export function createInProcessWindow(options: InProcessWindowOptions): InProces
     },
     requestRender,
     relayout: () => {
-      stack.setBaseSize(appViewportSize(heightMode));
+      stack.setBaseSize(appViewportSize(heightMode, options.appId));
       options.reconfigureSurface?.(heightMode);
       requestRender();
     },
@@ -230,7 +230,7 @@ export function createInProcessWindow(options: InProcessWindowOptions): InProces
     if (heightMode === mode) return;
     heightMode = mode;
     window.heightMode = mode;
-    stack.setBaseSize(appViewportSize(mode));
+    stack.setBaseSize(appViewportSize(mode, options.appId));
     options.reconfigureSurface?.(mode);
     requestRender();
   };

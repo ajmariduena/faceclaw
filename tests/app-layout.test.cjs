@@ -634,3 +634,35 @@ test('resizing a terminal reconnects with the new grid and ignores callbacks fro
   assert.equal(newSocket.messages[0].height, 16);
   assert.equal(client.state().status, 'Authenticating...');
 });
+
+test('v3 home keeps a bare centered 576x288 band under every global display setting', () => {
+  const g = geometry();
+  for (const position of ['left', 'right', 'bottom', 'popup']) {
+    g.settings.appSwitcherPositionSetting.value = position;
+    for (const mode of ['576x288', '576x480', '640x480']) {
+      g.settings.displayModeSetting.value = mode;
+      for (const vertical of ['top', 'upper', 'middle', 'lower', 'bottom']) {
+        g.settings.verticalPositionSetting.value = vertical;
+        assert.deepEqual(g.rect('min', 'home'), { x: 32, y: 96, width: 576, height: 288 });
+        assert.equal(g.windowHeaderHeight('home'), 0);
+        assert.equal(g.windowFooterHeight('home'), 0);
+        assert.equal(g.windowFramed('home'), false);
+        assert.equal(g.sidebarStripVisible('window', 'home'), false);
+        assert.equal(g.sidebarStripVisible('sidebar', 'home'), true);
+      }
+    }
+  }
+});
+
+test('v3 home chrome paints neither status bar nor switcher until the switcher gains focus', () => {
+  const g = geometry();
+  for (const position of ['left', 'right', 'bottom', 'popup']) {
+    g.settings.appSwitcherPositionSetting.value = position;
+    const { chrome, state } = chromeLayer(g, { windows: 2, notifications: 3, phoneBattery: 80 });
+    state.foregroundAppId = 'home';
+    assert.equal(chrome.paint().withDrawsBaked().pixels.some(v => v !== 0), false);
+    assert.equal(chrome.paintParts().length, 0);
+    state.focus = 'sidebar';
+    assert.ok(chrome.paintParts().length > 0);
+  }
+});

@@ -1363,6 +1363,9 @@ class DashboardController {
     // callback keeps the mirror current (the connected path gets the same
     // from Java's frame metrics).
     target.activate(() => this.schedulePreviewUpdate());
+    void mediaControllerBridge.start().catch(error => {
+      this.appendLog(`preview media unavailable: ${this.formatError(error)}`);
+    });
     this.setStatus("Preview mode (no glasses paired).");
     this.appendLog("Preview-only display active; frames render to the phone mirror only.");
     shell.foregroundWindow()?.requestRender();
@@ -2466,7 +2469,7 @@ class DashboardController {
     if (!this.openAppsRestored || this.suppressOpenAppsPersist) return;
     const open: string[] = [];
     for (const window of shell.getWindows()) {
-      if (window.appId === "launcher") continue;
+      if (window.appId === "launcher" || window.appId === "home") continue;
       if (!open.includes(window.appId)) open.push(window.appId);
     }
     savePersistedOpenApps({ open, foreground: shell.foregroundWindow()?.appId ?? null });
@@ -2482,6 +2485,8 @@ class DashboardController {
   async restoreOpenApps(): Promise<void> {
     if (this.openAppsRestored) return;
     this.openAppsRestored = true;
+    // Worker restores can focus asynchronously after launch resolves; this trial always boots into Home.
+    if (shell.showHome(true)) return;
     const saved = loadPersistedOpenApps();
     if (!saved.open.length) return;
     const known = new Set(ALL_APPS.map((app) => app.appId));

@@ -282,7 +282,7 @@ type StatusBarPlacement = { left: number; right: number; top: number; contentTop
  */
 function statusBarPlacement(state: ShellChromeState): StatusBarPlacement | null {
   const appId = state.foregroundAppId;
-  if (statusInSwitcherRow(appId)) return null;
+  if (appId === "home" || statusInSwitcherRow(appId)) return null;
   const overlays = statusBarOverlays();
   if (overlays && !sidebarStripVisible(state.focus, appId)) return null;
   const { left, right } = topBarSpan(state);

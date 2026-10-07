@@ -56,6 +56,7 @@ function appDisplayMode(appId?: string) {
 }
 
 export function displayMode(appId?: string): DisplayModeSetting {
+  if (appId === "home") return "576x288";
   const mode = appDisplayMode(appId);
   return mode === "global" || mode === "default" ? displayModeSetting.get() : mode;
 }
@@ -72,6 +73,7 @@ function fullPanel(appId?: string): boolean {
  * while the sidebar has focus).
  */
 export function sidebarWidth(appId?: string): number {
+  if (appId === "home") return 0;
   return !fullPanel(appId) && sideStrip() ? SIDEBAR_WIDTH : 0;
 }
 
@@ -81,6 +83,7 @@ export function sidebarWidth(appId?: string): number {
  * (where the row overlays the window's bottom edge while it has focus).
  */
 export function switcherRowHeight(appId?: string): number {
+  if (appId === "home") return 0;
   return !fullPanel(appId) && switcherPosition() === "bottom" ? SWITCHER_ROW_HEIGHT : 0;
 }
 
@@ -90,6 +93,7 @@ export function switcherRowHeight(appId?: string): number {
  * while it has focus.
  */
 export function sidebarStripVisible(focus: "sidebar" | "window", appId?: string): boolean {
+  if (appId === "home") return focus === "sidebar";
   return (!fullPanel(appId) && switcherPosition() !== "popup") || focus === "sidebar";
 }
 
@@ -135,6 +139,7 @@ export function switcherRect(heightMode: WindowHeightMode, appId?: string): { x:
  * serves.
  */
 export function windowFramed(appId?: string): boolean {
+  if (appId === "home") return false;
   switch (switcherPosition()) {
     case "bottom":
       return switcherRowHeight(appId) > 0;
@@ -192,6 +197,7 @@ function windowEdgeHeight(edge: "top" | "bottom", appId?: string): number {
  * runs along, or nothing without a frame.
  */
 export function windowHeaderHeight(appId?: string): number {
+  if (appId === "home") return 0;
   return windowEdgeHeight("top", appId);
 }
 
@@ -201,6 +207,7 @@ export function windowHeaderHeight(appId?: string): number {
  * the window frame's bottom runs along; else nothing.
  */
 export function windowFooterHeight(appId?: string): number {
+  if (appId === "home") return 0;
   return windowEdgeHeight("bottom", appId);
 }
 
@@ -244,6 +251,7 @@ function appViewportWidth(appId?: string): number {
  * edge.
  */
 export function appViewportLeft(appId?: string): number {
+  if (appId === "home") return 32;
   if (fullPanel(appId)) return 0;
   switch (switcherPosition()) {
     case "left":
@@ -272,6 +280,7 @@ export function uiDepth(): number {
  * The default keeps legacy per-window heights, such as tall terminal sessions.
  */
 export function effectiveHeightMode(mode: WindowHeightMode, appId?: string): WindowHeightMode {
+  if (appId === "home") return "min";
   return displayMode(appId) === "576x288" ? (appDisplayMode(appId) === "default" ? mode : "min") : "max";
 }
 
@@ -362,6 +371,7 @@ export function minWindowTop(appId?: string): number {
  * together distribute the screen's slack.
  */
 export function windowTop(mode: WindowHeightMode, appId?: string): number {
+  if (appId === "home") return 96;
   return Math.round((windowAreaHeight(appId) - windowBandHeight(mode, appId)) * verticalPositionFraction(appId));
 }
 
