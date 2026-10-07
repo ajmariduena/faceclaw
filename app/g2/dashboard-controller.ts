@@ -1149,7 +1149,7 @@ class DashboardController {
       silentMode: this.silentMode,
       screenOn: shell.isScreenOn(),
       battery: this.lastHeadsetBattery,
-      foregroundTitle: shell.getForegroundApp()?.title ?? null,
+      foregroundTitle: shell.foregroundWindow()?.title ?? null,
       previewMode: this.isPreviewDisplayActive(),
     });
   }

@@ -666,3 +666,42 @@ test('v3 home chrome paints neither status bar nor switcher until the switcher g
     assert.ok(chrome.paintParts().length > 0);
   }
 });
+
+test('v3 boot replaces saved bottom chrome and keeps app bands clean with a usable popup', () => {
+  const g = geometry();
+  g.settings.appSwitcherPositionSetting.value = 'bottom';
+  g.settings.statusBarVisibilitySetting.value = 'always';
+  g.settings.displayModeSetting.value = '640x480';
+  const writes = [];
+  for (const [name, setting] of Object.entries(g.settings)) {
+    setting.set = value => { setting.value = value; writes.push(name); };
+  }
+  const { loader } = require('./helpers/load-typescript.cjs');
+  const load = loader({}, { '../../ui/dashboard-settings': g.settings });
+  const { applyHomeLayout } = load('app/apps/home/home-layout.ts');
+  applyHomeLayout();
+  assert.equal(writes.length, 4);
+  applyHomeLayout();
+  assert.equal(writes.length, 4);
+  for (const appId of ['calendar', 'music', 'notifications', 'microphones', 'launcher', 'timer']) {
+    assert.deepEqual(g.rect('min', appId), { x: 32, y: 96, width: 576, height: 288 });
+    const { chrome, state } = chromeLayer(g, { windows: 3, notifications: 2, phoneBattery: 80 });
+    state.foregroundAppId = appId;
+    assert.equal(chrome.paintParts().length, 0);
+    assert.equal(chrome.paint().withDrawsBaked().pixels.some(v => v !== 0), false);
+    state.focus = 'sidebar';
+    assert.ok(chrome.paintParts().length > 0);
+  }
+});
+
+test('home boot applies chrome settings before registering its window', () => {
+  const calls = [];
+  const { loader } = require('./helpers/load-typescript.cjs');
+  const homeApp = loader({}, {
+    './home-layout': { applyHomeLayout: () => calls.push('layout') },
+    './home-app': { createHomeWindow: () => { calls.push('create'); return { window: {}, onShow() {} }; } },
+    '../../ui/shell/shell': { shell: { registerHomeWindow: () => calls.push('register') } },
+  })('app/apps/home/index.ts').default;
+  homeApp.boot({});
+  assert.deepEqual(calls, ['layout', 'create', 'register']);
+});

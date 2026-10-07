@@ -84,3 +84,26 @@ test('page detach cancels trailing previews and cannot detach a newer page', () 
   h.instance.schedulePreviewUpdate();
   assert.equal(h.timers.size, 0);
 });
+
+test('the phone panel names the actual home window Inicio while assistant context stays empty', () => {
+  const source = ts.createSourceFile('controller.ts', fs.readFileSync('app/g2/dashboard-controller.ts', 'utf8'), ts.ScriptTarget.Latest, true);
+  const controller = source.statements.find(node => ts.isClassDeclaration(node) && node.name.text === 'DashboardController');
+  const method = controller.members.find(node => node.name?.getText(source) === 'glassesDisplayLabel').getText(source);
+  const { loader } = require('./helpers/load-typescript.cjs');
+  const { glassesDisplayLabel } = loader()('app/g2/glasses-display-state.ts');
+  let title = 'Inicio', on = true;
+  const context = { exports: {}, glassesDisplayLabel,
+    shell: { isScreenOn: () => on, getForegroundApp: () => null, foregroundWindow: () => ({ title }) } };
+  vm.runInNewContext(ts.transpileModule(`export class Harness { ${method} }`, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  }).outputText, context);
+  const instance = new context.exports.Harness();
+  Object.assign(instance, { phase: 'disconnected', silentMode: false, lastHeadsetBattery: null, isPreviewDisplayActive: () => true });
+  assert.equal(instance.glassesDisplayLabel(), 'Inicio');
+  title = 'Calendar';
+  assert.equal(instance.glassesDisplayLabel(), 'Calendar');
+  title = 'Apps';
+  assert.equal(instance.glassesDisplayLabel(), 'Apps');
+  on = false;
+  assert.equal(instance.glassesDisplayLabel(), 'Display off');
+});
