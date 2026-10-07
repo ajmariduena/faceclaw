@@ -226,9 +226,15 @@ export const EVENHUB_BRIDGE_INJECT_SCRIPT = `
 /**
  * Injected at document-start (after the stock bridge shim): defines
  * `window.getFaceclawExtensions`, the single entry point for Faceclaw-only
- * capabilities (see the faceclaw-extensions package). It never touches the
- * standard SDK or any prototype — everything lives behind this one global, so
- * apps stay compatible with the stock Even app (where the global is absent).
+ * capabilities. Its public contract (the `FaceclawExtensions` interface) is
+ * the @faceclaw/evenhub-extensions package in evenhub-extensions/. Keep the
+ * two in step (tests/evenhub-extensions-shim.test.cjs checks the member list).
+ * When adding members, bump API_VERSION and tag them `@since apiVersion N` in
+ * the package.
+ *
+ * It never touches the standard SDK or any prototype — everything lives behind
+ * this one global, so apps stay compatible with the stock Even app (where the
+ * global is absent).
  *
  * RPC uses its own id-keyed promise map and `__fcExtResolve`, kept separate
  * from the stock `__fcResolve` channel. Events arrive via `__fcExtEvent`.
@@ -239,13 +245,15 @@ export function buildFaceclawExtensionsScript(versionString: string): string {
 (function () {
   if (window.getFaceclawExtensions) return;
   var VERSION = ${JSON.stringify(versionString)};
+  var API_VERSION = 1;
   var pending = {};
   var nextId = 1;
   window.__fcExtResolve = function (id, ok, value) {
     var entry = pending[id];
     if (!entry) return;
     delete pending[id];
-    (ok ? entry[0] : entry[1])(value);
+    if (ok) entry[0](value);
+    else entry[1](new Error(String(value)));
   };
   function call(method, params) {
     return new Promise(function (resolve, reject) {
@@ -260,9 +268,10 @@ export function buildFaceclawExtensionsScript(versionString: string): string {
   }
   var listeners = {};
   window.__fcExtEvent = function (name, data) {
-    var arr = listeners[name];
-    if (!arr) return;
-    for (var i = 0; i < arr.slice().length; i++) {
+    // Iterate a snapshot, so a listener that unsubscribes mid-dispatch
+    // doesn't make the next one get skipped.
+    var arr = (listeners[name] || []).slice();
+    for (var i = 0; i < arr.length; i++) {
       try { arr[i](data); } catch (e) { if (window.console) console.error(e); }
     }
   };
@@ -318,6 +327,7 @@ export function buildFaceclawExtensionsScript(versionString: string): string {
     send("setAssistantTools", [specs]);
   }
   var extensions = {
+    apiVersion: API_VERSION,
     getVersion: function () { return VERSION; },
     returnToAppSwitcher: function () { send("returnToAppSwitcher"); },
     quit: function () { send("quit"); },

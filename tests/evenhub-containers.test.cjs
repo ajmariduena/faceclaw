@@ -103,3 +103,18 @@ test("a list without isItemSelectBorderEn has no selection border (protobuf defa
   assert.equal(page.containers[0].selectBorder, false);
   assert.equal(page.containers[0].itemWidth, 0);
 });
+
+test("flags accept booleans (extension layouts) as well as 0/1 (stock)", () => {
+  const page = parsePage({
+    listObject: [{ containerID: 1, containerName: "l", isEventCapture: true, preserve: true, itemContainer: { itemName: ["a"], isItemSelectBorderEn: true } }],
+    textObject: [
+      { containerID: 2, containerName: "t", isEventCapture: 1, preserve: 1 },
+      { containerID: 3, containerName: "u", isEventCapture: false, preserve: false },
+    ],
+  });
+  assert.deepEqual(
+    page.containers.map((c) => [c.name, c.isEventCapture, c.preserve]),
+    [["l", true, true], ["t", true, true], ["u", false, false]],
+  );
+  assert.equal(page.containers[0].selectBorder, true);
+});

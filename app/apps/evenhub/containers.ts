@@ -130,6 +130,17 @@ export function readString(obj: Record<string, unknown>, key: string, fallback: 
   return fallback;
 }
 
+/**
+ * A 0/1 protobuf flag. Stock apps send numbers; extension layouts may send
+ * booleans (the extension types allow both), and numeric strings show up in
+ * the wild.
+ */
+function readFlag(obj: Record<string, unknown>, key: string): boolean {
+  const value = pickLoose(obj, key);
+  if (typeof value === "boolean") return value;
+  return readNumber(obj, key, 0) !== 0;
+}
+
 export function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -150,9 +161,9 @@ function parseTextContainer(json: Record<string, unknown>): EvenHubTextContainer
     borderWidth: readBorderWidth(json),
     borderRadius: readNumber(json, "borderRadius", 0),
     paddingLength: readNumber(json, "paddingLength", 0),
-    isEventCapture: readNumber(json, "isEventCapture", 0) !== 0,
+    isEventCapture: readFlag(json, "isEventCapture"),
     zOrderIndex: readOptionalNumber(json, "zOrderIndex"),
-    preserve: readNumber(json, "preserve", 0) !== 0,
+    preserve: readFlag(json, "preserve"),
     content: readString(json, "content", ""),
     textColor: readTextBrightness(json),
   };
@@ -220,7 +231,7 @@ function parseImageContainer(json: Record<string, unknown>): EvenHubImageContain
     width: readNumber(json, "width", 0),
     height: readNumber(json, "height", 0),
     zOrderIndex: readOptionalNumber(json, "zOrderIndex"),
-    preserve: readNumber(json, "preserve", 0) !== 0,
+    preserve: readFlag(json, "preserve"),
     pixels: null,
     pixelsWidth: 0,
     pixelsHeight: 0,
@@ -242,12 +253,12 @@ function parseListContainer(json: Record<string, unknown>): EvenHubListContainer
     borderWidth: readBorderWidth(json),
     borderRadius: readNumber(json, "borderRadius", 0),
     paddingLength: readNumber(json, "paddingLength", 0),
-    isEventCapture: readNumber(json, "isEventCapture", 0) !== 0,
+    isEventCapture: readFlag(json, "isEventCapture"),
     zOrderIndex: readOptionalNumber(json, "zOrderIndex"),
-    preserve: readNumber(json, "preserve", 0) !== 0,
+    preserve: readFlag(json, "preserve"),
     itemNames,
     itemWidth: readNumber(itemContainer, "itemWidth", 0),
-    selectBorder: readNumber(itemContainer, "isItemSelectBorderEn", 0) !== 0,
+    selectBorder: readFlag(itemContainer, "isItemSelectBorderEn"),
     selectedIndex: 0,
   };
 }
