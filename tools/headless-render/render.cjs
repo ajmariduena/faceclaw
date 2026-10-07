@@ -8,6 +8,8 @@ const UPNG = require('upng-js');
 const root = path.resolve(__dirname, '../..');
 const { loader } = require('../../tests/helpers/load-typescript.cjs');
 const calendarScenes = require('./calendar-scenes.cjs');
+const stockScenes = require('./stock-scenes.cjs');
+const v3Scenes = require('./v3-scenes.cjs');
 let font;
 const fontApi = { getDefaultSmallFont: () => font, getDefaultMediumFont: () => font };
 const load = loader({ global: { isAndroid: false, isIOS: false }, Date, Uint32Array, Int32Array, DataView, ArrayBuffer }, {
@@ -36,8 +38,8 @@ const sandbox = {
 vm.runInNewContext(geometrySource + chromeSource + '\nthis.harness = { geometry, chromeLayer };', sandbox);
 const g = sandbox.harness.geometry();
 const mode = process.argv[2] || 'bottom';
-if (!['bottom', 'popup', 'home', 'home-scrolled', 'home-alt', 'calendar', 'calendar-even', 'transition', 'transition-even'].includes(mode)) {
-  throw new Error('Usage: node render.cjs [bottom|popup|home|home-scrolled|home-alt|calendar|calendar-even|transition|transition-even]');
+if (!['bottom', 'popup', 'home', 'home-scrolled', 'home-alt', 'calendar', 'calendar-even', 'transition', 'transition-even', 'stock-all', 'stock-menu-open', 'stock-open', ...stockScenes.modes, 'v3-all', 'v3-enter', ...v3Scenes.modes].includes(mode)) {
+  throw new Error('Usage: node render.cjs [bottom|popup|home|home-scrolled|home-alt|calendar|calendar-even|transition|transition-even|stock-all|stock-menu-open|stock-open|stock-<scene>|v3-all|v3-enter|v3-<scene>]');
 }
 
 function renderChrome() {
@@ -157,6 +159,14 @@ function save(result) {
 }
 
 async function main() {
+  if (mode.startsWith('v3-')) {
+    for await (const result of v3Scenes.renderV3(createRenderContext(), mode)) save(result);
+    return;
+  }
+  if (mode.startsWith('stock-')) {
+    for (const result of await stockScenes.renderStock(createRenderContext(), mode)) save(result);
+    return;
+  }
   if (mode.startsWith('home')) return save(await renderHome());
   if (mode.startsWith('calendar')) return save(calendarScenes.renderCalendar(createRenderContext(), mode));
   if (mode.startsWith('transition')) {
@@ -170,7 +180,9 @@ async function main() {
   save(renderChrome());
 }
 
-main().catch((error) => {
+module.exports = { createRenderContext };
+
+if (require.main === module) main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

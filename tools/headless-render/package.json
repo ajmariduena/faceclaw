@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@evenrealities/pretext": "0.1.4",
     "@napi-rs/canvas": "1.0.10",
     "typescript": "5.4.5",
     "upng-js": "2.1.0"

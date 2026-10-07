@@ -11,7 +11,8 @@ Notas de la exploración de Faceclaw hecha el 2026-10-07, sobre upstream `84baee
 | [even-ui/caminos.md](even-ui/caminos.md) | Por qué se parte de Faceclaw y no de la UI de Even |
 | [even-ui/investigacion-visual-fable.md](even-ui/investigacion-visual-fable.md) | Cómo se ve la UI stock y comparación elemento por elemento |
 | [even-ui/factibilidad-codigo-astra.md](even-ui/factibilidad-codigo-astra.md) | Dónde vive cada decisión visual, arquitectura propuesta y estimaciones |
-| [even-ui/plan.md](even-ui/plan.md) | **Plan vigente**: decisiones, fases con días, traducción y Conversate |
+| [even-ui/plan.md](even-ui/plan.md) | **Plan vigente**: v3 sin menú, pasos, días, qué está comprobado, traducción y Conversate |
+| [even-ui/referencia-stock.md](even-ui/referencia-stock.md) | UI stock de Even medida por pantalla: layout, gestos, transiciones, tokens |
 | [even-ui/propuesta-home.md](even-ui/propuesta-home.md) | Home y apertura de Calendar: renders, medidas, transición, integración y estimación |
 
 Herramienta: [tools/headless-render](../tools/headless-render/README.md) pinta partes de la UI a PNG en la Mac.
