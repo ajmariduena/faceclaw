@@ -16,4 +16,4 @@ Importar dos veces seguidas, antes de que el proceso termine (el receiver hace `
 
 ## Arreglo propuesto
 
-Usar otro nombre para la copia, por ejemplo `faceclaw_settings.xml.import-backup`, en `FaceclawSettingsPortReceiver.kt` y en los mensajes de `scripts/push_config.sh`. Candidato a PR upstream.
+Usar otro nombre para la copia, por ejemplo `faceclaw_settings.xml.import-backup`, en `FaceclawSettingsPortReceiver.kt` y en los mensajes de `scripts/push_config.sh`. Se arregla solo en este fork: no se mandan PRs a upstream (regla en CLAUDE.md).

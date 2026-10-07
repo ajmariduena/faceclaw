@@ -23,4 +23,4 @@ Herramienta: [tools/headless-render](../tools/headless-render/README.md) pinta p
 
 ## Upstream
 
-`upstream` apunta a https://github.com/jimrandomh/faceclaw. Para traer cambios: `git fetch upstream && git merge upstream/main`. Todo lo propio del fork vive en `research/` y `tools/` para que las fusiones no choquen.
+**Regla dura: nunca mandar PRs, issues ni comentarios a upstream, ni hacer push a `upstream`** (ver `CLAUDE.md` y `AGENTS.md`). `upstream` apunta a https://github.com/jimrandomh/faceclaw y solo se usa para traer cambios: `git fetch upstream && git merge upstream/main`. Lo propio del fork vive en `research/`, `tools/` y `AGENTS.md`; la única edición a un archivo de upstream es la sección de regla al inicio de `CLAUDE.md`, que puede dar conflicto al fusionar.
