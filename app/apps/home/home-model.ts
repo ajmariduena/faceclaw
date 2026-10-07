@@ -52,6 +52,40 @@ export function emptyCardStatus(card: HomeCardId): string {
   }
 }
 
-export function celsiusFromSnapshot(temperatureF: number | null | undefined): number | null {
-  return temperatureF == null || !Number.isFinite(temperatureF) ? null : Math.round((temperatureF - 32) * 5 / 9);
+const WEEKDAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+const MONTH_NAMES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const clockTime = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+
+export type HorizonteClock = {
+  time: string;
+  date: string;
+  eventLine: string | null;
+  nextLine: string | null;
+  title: string | null;
+};
+
+export function horizonteClockState(calendar: HomeCalendar, now: Date): HorizonteClock {
+  const state: HorizonteClock = {
+    time: clockTime(now),
+    date: `${WEEKDAY_NAMES[now.getDay()]} ${now.getDate()} ${MONTH_NAMES[now.getMonth()]}`,
+    eventLine: calendar.status === "Sin eventos hoy" ? "Sin eventos" : null,
+    nextLine: null,
+    title: null,
+  };
+  const event = calendar.events[0] ?? calendar.nextEvent;
+  if (!event || event.endMs <= now.getTime()) return state;
+  const start = new Date(event.startMs);
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  state.title = (event.title || "Sin título").replace(/[\r\n\t]/g, " ");
+  if (event.startMs < tomorrow.getTime()) {
+    const status = event.startMs <= now.getTime() ? "Ahora" : `en ${Math.ceil((event.startMs - now.getTime()) / 60_000)} min`;
+    state.eventLine = `${event.allDay ? "Todo el día" : clockTime(start)} · ${status}`;
+  } else {
+    const dayAfterTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+    const day = event.startMs < dayAfterTomorrow.getTime() ? "Mañana"
+      : `${HOME_WEEKDAYS[start.getDay()]} ${start.getDate()} ${MONTH_NAMES[start.getMonth()]}`;
+    state.eventLine = "Sin eventos hoy";
+    state.nextLine = `${day} ${event.allDay ? "· Todo el día" : clockTime(start)}`;
+  }
+  return state;
 }

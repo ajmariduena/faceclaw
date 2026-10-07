@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
-const { HomeModel, HOME_CARDS, calendarCardState, emptyCardStatus, celsiusFromSnapshot } = loader()('app/apps/home/home-model.ts');
+const { HomeModel, HOME_CARDS, calendarCardState, emptyCardStatus, horizonteClockState } = loader()('app/apps/home/home-model.ts');
 
 test('five stable cards wrap in both directions, including empty cards', () => {
   const model = new HomeModel();
@@ -52,11 +52,6 @@ test('calendar separates absent permission, loading, errors and an empty day', (
   assert.equal(calendarCardState(true, events.slice(0, 1), now).status, 'Sin eventos hoy');
 });
 
-test('weather uses an existing Fahrenheit snapshot, with no invented temperature', () => {
-  assert.equal(celsiusFromSnapshot(75.2), 24);
-  assert.equal(celsiusFromSnapshot(14), -10);
-  for (const missing of [null, undefined, NaN]) assert.equal(celsiusFromSnapshot(missing), null);
-});
 
 test('an empty today includes the next future event, sorted, without leaking unpermitted data', () => {
   const now = new Date(2026, 9, 7, 16, 19).getTime();
@@ -73,4 +68,38 @@ test('an empty today includes the next future event, sorted, without leaking unp
   assert.equal(calendarCardState(true, events, now, 'error').nextEvent, null);
   assert.equal(calendarCardState(true, events, new Date(2026, 9, 9, 12).getTime()).nextEvent, null);
   assert.equal(calendarCardState(true, events, new Date(2026, 9, 9, 12).getTime()).events[0], friday);
+});
+
+test('Horizonte counts real minutes, enters Ahora at the start, and drops expired events', () => {
+  const startMs = new Date(2026, 9, 7, 10, 30).getTime();
+  const event = { title: 'Daily con el equipo', startMs, endMs: startMs + 30 * 60_000, allDay: false };
+  const stateAt = ms => horizonteClockState(calendarCardState(true, [event], ms), new Date(ms));
+  assert.equal(stateAt(startMs - 25 * 60_000).eventLine, '10:30 · en 25 min');
+  assert.equal(stateAt(startMs - 24 * 60_000).eventLine, '10:30 · en 24 min');
+  assert.equal(stateAt(startMs - 1).eventLine, '10:30 · en 1 min');
+  assert.equal(stateAt(startMs).eventLine, '10:30 · Ahora');
+  assert.equal(stateAt(event.endMs - 1).title, event.title);
+  assert.equal(stateAt(event.endMs).eventLine, 'Sin eventos');
+  assert.equal(stateAt(event.endMs).title, null);
+  assert.equal(stateAt(startMs).date, 'Miércoles 7 oct');
+  assert.equal(stateAt(startMs).time, '10:30');
+});
+
+test('Horizonte distinguishes tomorrow, later dates, all-day events and denied calendars', () => {
+  const now = new Date(2026, 11, 31, 22, 27);
+  const event = { title: 'Plan del año', allDay: false,
+    startMs: new Date(2027, 0, 1, 9, 30).getTime(), endMs: new Date(2027, 0, 1, 10, 30).getTime() };
+  const stateAt = (events, date = now) => horizonteClockState(calendarCardState(true, events, date.getTime()), date);
+  assert.equal(stateAt([event]).time, '22:27');
+  assert.equal(stateAt([event]).eventLine, 'Sin eventos hoy');
+  assert.equal(stateAt([event]).nextLine, 'Mañana 09:30');
+  const later = { ...event, startMs: new Date(2027, 0, 2, 9, 30).getTime(), endMs: new Date(2027, 0, 2, 10, 30).getTime() };
+  assert.equal(stateAt([later]).nextLine, 'Sab 2 ene 09:30');
+  const allDay = { ...event, allDay: true, startMs: new Date(2027, 0, 1).getTime(), endMs: new Date(2027, 0, 2).getTime() };
+  assert.equal(stateAt([allDay]).nextLine, 'Mañana · Todo el día');
+  assert.equal(stateAt([allDay], new Date(2027, 0, 1, 12)).eventLine, 'Todo el día · Ahora');
+  assert.equal(stateAt([]).title, null);
+  const denied = horizonteClockState(calendarCardState(false, [event], now.getTime()), now);
+  assert.equal(denied.title, null);
+  assert.equal(denied.eventLine, null);
 });

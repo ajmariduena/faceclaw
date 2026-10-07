@@ -2,32 +2,39 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
 
-function harness(stockAvailable = false) {
+function harness(stockAvailable = false, clockAvailable = true) {
   let options, painted, permitted = false, subscriptions = 0, reads = 0, renders = 0;
-  const timers = new Set(), launched = [], frames = [];
+  let nowMs = new Date(2026, 9, 7, 10, 5).getTime(), events = [];
+  const timers = new Set(), launched = [], frames = [], clockLoads = [], periods = [];
+  class ClockDate extends Date {
+    constructor(...args) { if (args.length) super(...args); else super(nowMs); }
+    static now() { return nowMs; }
+  }
   const subscribe = () => { subscriptions++; return () => subscriptions--; };
   const face = { lineHeight: 27, measureLine: s => s.length * 8, drawText() {}, hasGlyph: () => stockAvailable };
   const fallback = { lineHeight: 20, measureText: s => s.length * 10, drawText() {} };
-  const load = loader({ Date,
-    setInterval: fn => { timers.add(fn); return fn; }, clearInterval: fn => timers.delete(fn),
+  const load = loader({ Date: ClockDate,
+    setInterval: (fn, ms) => { periods.push(ms); timers.add(fn); return fn; }, clearInterval: fn => timers.delete(fn),
   }, {
+    '@nativescript/core': { knownFolders: { currentApp: () => ({ getFile: path => ({ path }) }) } },
+    '../../graphics/ttf-font': { TtfFont: { load: (path, size) => { clockLoads.push({ path, size }); return clockAvailable ? { ...fallback, lineHeight: 94 } : null; } } },
     '../../graphics/evenhub-font': { EvenHubFont: { get: () => face } },
-    '../../graphics/ui-fonts': { getDefaultSmallFont: () => fallback },
-    '../../native/calendar': { readUpcomingEvents: () => { reads++; return []; }, getCalendarReadState: () => 'ready', onCalendarChanged: subscribe },
+    '../../graphics/ui-fonts': { getDefaultSmallFont: () => fallback, getDefaultLargeFont: () => fallback },
+    '../../native/calendar': { readUpcomingEvents: () => { reads++; return events; }, getCalendarReadState: () => 'ready', onCalendarChanged: subscribe },
     '../../native/calendar-permissions': { hasCalendarPermission: () => permitted },
     '../../native/media-controller': { mediaControllerBridge: { snapshot: () => ({ available: true, title: 'Canción', artist: 'Artista', playbackState: 'playing' }), onStateChange: subscribe } },
     '../../native/notification-icons': { ALL_NOTIFICATIONS: 999, onAndroidNotificationPosted: subscribe,
       readActiveNotifications: () => [{ title: 'hidden', packageName: 'blocked', postTime: 20 }, { title: 'old', packageName: 'ok', postTime: 1 }, { title: 'new', packageName: 'ok', postTime: 2 }] },
     '../../native/notification-sources': { shouldShowNotificationOnGlasses: name => name !== 'blocked' },
-    '../../native/weather': { weatherBridge: { snapshot: () => ({ current: { temperatureF: 75.2 } }), onStateChange: subscribe } },
     '../../ui/shell/in-process-window': { createInProcessWindow: opts => { options = opts; return { window: {}, requestRender: () => renders++ }; } },
-    '../../ui/shell/shell': { shell: { isScreenOn: () => true, getBatteryLevels: () => ({ headset: null }), onBatteryLevelsChanged: subscribe } },
-    './home-painter': { paintHome: (index, data, font) => { painted = { index, data, font }; return painted; } },
+    '../../ui/shell/shell': { shell: { isScreenOn: () => true } },
+    './home-painter': { paintHome: (index, data, font, clockFont) => { painted = { index, data, font, clockFont }; return painted; } },
   });
   const { createHomeWindow } = load('app/apps/home/home-app.ts');
   const home = createHomeWindow({ actions: {}, launchApp: async id => launched.push(id),
     submitWindowFrame: (...args) => frames.push(args), setWindowSurfaceVisible() {} });
-  return { home, options, launched, timers, frames, paint: () => options.baseLayer.paint(),
+  return { home, options, launched, timers, frames, clockLoads, periods, setEvents: value => events = value,
+    advanceMinute: () => { nowMs += 60_000; for (const fn of timers) fn(); }, paint: () => options.baseLayer.paint(),
     input: type => options.baseLayer.handleInput({ type }), allowCalendar: () => permitted = true,
     counts: () => ({ subscriptions, reads, renders }) };
 }
@@ -38,7 +45,10 @@ test('home adapter uses real snapshots, respects notification filtering and avoi
   assert.equal(painted.font.lineHeight, 20);
   assert.equal(painted.data.calendar.status, 'Sin permiso de calendario');
   assert.equal(h.counts().reads, 0);
-  assert.equal(painted.data.temperatureC, 24);
+  assert.equal('temperatureC' in painted.data, false);
+  assert.equal('battery' in painted.data, false);
+  assert.equal(painted.clockFont.lineHeight, 94);
+  assert.deepEqual(h.clockLoads[0], { path: 'fonts/ttf/Roboto-Light.ttf', size: 80 });
   assert.equal(painted.data.music.title, 'Canción');
   assert.deepEqual(Array.from(painted.data.notifications, n => n.title), ['new', 'old']);
   h.allowCalendar();
@@ -76,7 +86,7 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
   const h = harness();
   assert.equal(h.counts().subscriptions, 0);
   h.options.onForegroundChanged(true);
-  assert.equal(h.counts().subscriptions, 5);
+  assert.equal(h.counts().subscriptions, 3);
   assert.equal(h.timers.size, 1);
   h.options.onForegroundChanged(true);
   assert.equal(h.timers.size, 1);
@@ -84,7 +94,7 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
   assert.equal(h.counts().subscriptions, 0);
   assert.equal(h.timers.size, 0);
   h.options.setScreenOn(true);
-  assert.equal(h.counts().subscriptions, 5);
+  assert.equal(h.counts().subscriptions, 3);
   h.options.onForegroundChanged(false);
   assert.equal(h.counts().subscriptions, 0);
   h.options.onForegroundChanged(true);
@@ -112,4 +122,25 @@ test('Watch horizontal swipes paginate circularly without changing Ring or verti
   await h.input('swipe-left');
   await h.input('click');
   assert.equal(h.launched.at(-1), 'calendar');
+});
+
+test('the existing visible timer updates Horizonte from the same calendar read as the card', () => {
+  const { horizonteClockState } = loader()('app/apps/home/home-model.ts');
+  const h = harness();
+  h.allowCalendar();
+  h.setEvents([{ title: 'Daily', startMs: new Date(2026, 9, 7, 10, 30).getTime(), endMs: new Date(2026, 9, 7, 11).getTime() }]);
+  h.options.onForegroundChanged(true);
+  let painted = h.paint();
+  assert.equal(h.counts().reads, 1);
+  assert.equal(horizonteClockState(painted.data.calendar, painted.data.now).eventLine, '10:30 · en 25 min');
+  h.advanceMinute();
+  assert.equal(h.counts().renders, 1);
+  painted = h.paint();
+  assert.equal(h.counts().reads, 2);
+  assert.equal(horizonteClockState(painted.data.calendar, painted.data.now).eventLine, '10:30 · en 24 min');
+  assert.deepEqual(h.periods, [30_000]);
+  h.options.setScreenOn(false);
+  h.advanceMinute();
+  assert.equal(h.counts().renders, 1);
+  assert.equal(harness(false, false).paint().clockFont.lineHeight, 20);
 });

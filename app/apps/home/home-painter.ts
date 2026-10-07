@@ -1,7 +1,8 @@
 import * as graphics from "../../graphics/image";
 import type { GrayImage } from "../../graphics/image";
-import { HOME_CARDS, HOME_WEEKDAYS, emptyCardStatus, type HomeCalendar } from "./home-model";
+import { HOME_CARDS, HOME_WEEKDAYS, horizonteClockState, emptyCardStatus, type HomeCalendar } from "./home-model";
 import * as art from "./stock-art";
+import { paintHorizonte } from "./horizonte-painter";
 
 export type HomeFace = {
   readonly lineHeight: number;
@@ -10,23 +11,16 @@ export type HomeFace = {
 };
 export type HomeSnapshot = {
   now: Date;
-  battery: number | null;
-  temperatureC: number | null;
   calendar: HomeCalendar;
   music: { title: string; artist: string; playing: boolean } | null;
   notifications: readonly { title: string; text: string; appName: string }[];
 };
 
-const digits = new Map<string, GrayImage>();
 const icons = new Map<string, GrayImage>();
 function icon(image: GrayImage, name: keyof typeof art.patterns, x: number, y: number, size = 24) {
   const key = `${name}:${size}`;
   if (!icons.has(key)) icons.set(key, art.icon(graphics, name, size));
   image.drawImage(icons.get(key)!, x, y);
-}
-function clockDigit(value: string): GrayImage {
-  if (!digits.has(value)) digits.set(value, art.digit(graphics, value));
-  return digits.get(value)!;
 }
 function fitted(face: HomeFace, label: string, width: number): string {
   label = label.replace(/[\r\n\t]/g, " ");
@@ -36,7 +30,7 @@ function fitted(face: HomeFace, label: string, width: number): string {
   return chars.join("") + "…";
 }
 
-export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace): GrayImage {
+export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace, clockFace: HomeFace): GrayImage {
   const image = new graphics.GrayImage(576, 288);
   const card = HOME_CARDS[selected];
   const panel = new graphics.GrayImage(318, 260);
@@ -117,25 +111,7 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
     if (width > 278) centered(196, emptyCardStatus(card.id), 153);
   } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id) : emptyCardStatus(card.id));
 
-  const date = data.now;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const weekday = HOME_WEEKDAYS[date.getDay()];
-  art.dotText(image, 22, 21, `${weekday} ${pad(date.getDate())}/${pad(date.getMonth() + 1)}`);
-  if (data.battery === null || data.battery < 0 || data.battery > 100) image.fillRect(190, 27, 14, 2, 153);
-  else {
-    image.drawRect(185, 21, 22, 13, 255);
-    image.fillRect(207, 25, 2, 5, 255);
-    for (let i = 0; i < 4; i++) image.fillRect(188 + i * 4, 24, 2, 7, data.battery > i * 25 ? 255 : 51);
-  }
-  for (const [value, y] of [[pad(date.getHours()), 69], [pad(date.getMinutes()), 149]] as const) {
-    for (let i = 0; i < 2; i++) image.drawImage(clockDigit(value[i]), 58 + i * 62, y);
-  }
-  if (data.temperatureC !== null) {
-    icon(image, "cloud", 22, 248);
-    art.dotText(image, 52, 254, `${data.temperatureC}°C`);
-  }
-  icon(image, "bell", 155, 248);
-  art.dotText(image, 185, 254, data.notifications.length > 99 ? "99+" : String(data.notifications.length));
+  image.bitBlt(paintHorizonte(horizonteClockState(data.calendar, data.now), face, clockFace), 0, 0);
   image.bitBlt(panel.withDrawsBaked(), 230, 14);
   for (let i = 0; i < HOME_CARDS.length; i++) image.fillRect(218, 120 + i * 11, i === selected ? 4 : 2, 3, i === selected ? 255 : 85);
   return image.withDrawsBaked();

@@ -1,17 +1,18 @@
+import { knownFolders } from "@nativescript/core";
+import { TtfFont } from "../../graphics/ttf-font";
 import { EvenHubFont } from "../../graphics/evenhub-font";
-import { getDefaultSmallFont } from "../../graphics/ui-fonts";
+import { getDefaultSmallFont, getDefaultLargeFont } from "../../graphics/ui-fonts";
 import { readUpcomingEvents, getCalendarReadState, onCalendarChanged } from "../../native/calendar";
 import { hasCalendarPermission } from "../../native/calendar-permissions";
 import { mediaControllerBridge } from "../../native/media-controller";
 import { ALL_NOTIFICATIONS, onAndroidNotificationPosted, readActiveNotifications } from "../../native/notification-icons";
 import { shouldShowNotificationOnGlasses } from "../../native/notification-sources";
-import { weatherBridge } from "../../native/weather";
 import type { InputEvent } from "../../ui/gestures";
 import type { Layer } from "../../ui/layers";
 import { createInProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
 import type { AppContext } from "../app-definition";
-import { HomeModel, HOME_WINDOW_ID, HOME_SURFACE_ID, calendarCardState, celsiusFromSnapshot } from "./home-model";
+import { HomeModel, HOME_WINDOW_ID, HOME_SURFACE_ID, calendarCardState } from "./home-model";
 import { paintHome, type HomeFace } from "./home-painter";
 
 function homeFace(): HomeFace {
@@ -26,6 +27,16 @@ function homeFace(): HomeFace {
     lineHeight: font.lineHeight,
     measureLine: text => font.measureText(text),
     drawText: (image, x, y, text, value) => font.drawText(image, x, y, text, value),
+  };
+}
+
+function homeClockFace(): HomeFace {
+  const path = knownFolders.currentApp().getFile("fonts/ttf/Roboto-Light.ttf").path;
+  const font = TtfFont.load(path, 80) ?? getDefaultLargeFont();
+  return {
+    lineHeight: font.lineHeight,
+    measureLine: text => font.measureText(text),
+    drawText: (image, x, y, text, value = 255) => font.drawText(image, x, y, text, value),
   };
 }
 
@@ -55,13 +66,11 @@ export function createHomeWindow(ctx: AppContext) {
         .sort((a, b) => b.postTime - a.postTime);
       return paintHome(model.selectedIndex, {
         now,
-        battery: shell.getBatteryLevels().headset,
-        temperatureC: celsiusFromSnapshot(weatherBridge.snapshot().current?.temperatureF),
         calendar: calendarCardState(permitted, permitted ? readUpcomingEvents() : [], now.getTime(), getCalendarReadState()),
         music: media.available && (media.title || media.artist)
           ? { title: media.title, artist: media.artist, playing: media.playbackState === "playing" } : null,
         notifications,
-      }, homeFace());
+      }, homeFace(), homeClockFace());
     },
     handleInput: async (event: InputEvent) => {
       if (launching) return;
@@ -82,8 +91,6 @@ export function createHomeWindow(ctx: AppContext) {
         onCalendarChanged(requestRender),
         mediaControllerBridge.onStateChange(requestRender),
         onAndroidNotificationPosted(requestRender),
-        weatherBridge.onStateChange(requestRender),
-        shell.onBatteryLevelsChanged(requestRender),
       ];
     } else {
       if (tick !== null) clearInterval(tick);

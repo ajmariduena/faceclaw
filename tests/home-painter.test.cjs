@@ -6,7 +6,8 @@ const load = loader({ Uint32Array, Int32Array, DataView, ArrayBuffer }, {
   '@nativescript/core': { knownFolders: {} },
 });
 const { BdfFont } = load('app/graphics/bdffont.ts');
-const { paintHome } = load('app/apps/home/home-painter.ts');
+const { paintHome: paintHomeWithClock } = load('app/apps/home/home-painter.ts');
+const paintHome = (index, data, textFace) => paintHomeWithClock(index, data, textFace, face);
 const font = BdfFont.parse(fs.readFileSync('app/fonts/terminus/ter-u20n.bdf', 'utf8'));
 const textDraws = [];
 const face = {
@@ -19,10 +20,10 @@ const face = {
     font.drawText(image, x, y, text, value);
   },
 };
-const snapshot = () => ({ now: new Date(2026, 9, 7, 9, 41), battery: null, temperatureC: null,
-  calendar: { events: [], status: 'Sin eventos hoy' }, music: null, notifications: [] });
+const snapshot = () => ({ now: new Date(2026, 9, 7, 9, 41),
+  calendar: { events: [], nextEvent: null, status: 'Sin eventos hoy' }, music: null, notifications: [] });
 
-test('app paints one bordered v3 card with five stable dots and dynamic stock clock', () => {
+test('app paints one bordered v3 card with five stable dots and Horizonte clock', () => {
   const data = snapshot();
   for (let card = 0; card < 5; card++) {
     const image = paintHome(card, data, face);
@@ -37,12 +38,15 @@ test('app paints one bordered v3 card with five stable dots and dynamic stock cl
   assert.ok(textDraws.includes('Toca para empezar'));
 });
 
-test('all weekdays, midnight, unknown/full battery, negative weather and large counts paint safely', () => {
+test('all seven weekdays use a Spanish text date, without status icons on the left', () => {
+  const names = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   for (let day = 4; day <= 10; day++) {
-    const data = { ...snapshot(), now: new Date(2026, 9, day, 0, 0), battery: day === 4 ? null : 100,
-      temperatureC: -10, notifications: Array.from({ length: 120 }, () => ({ title: 'Mensaje', text: 'Hola', appName: 'App' })) };
-    const image = paintHome(2, data, face);
-    assert.ok(image.pixels.some(value => value !== 0));
+    const from = textDraws.length;
+    const data = { ...snapshot(), now: new Date(2026, 9, day, 0, 0) };
+    const image = paintHome(1, data, face);
+    assert.ok(textDraws.slice(from).some(text => text.startsWith(names[day - 4])));
+    assert.ok(textDraws.slice(from).includes('00:00'));
+    for (let y = 241; y < 288; y++) for (let x = 0; x < 212; x++) assert.equal(image.getPixel(x, y), 0);
   }
 });
 
@@ -75,24 +79,19 @@ test('future Calendar card keeps the empty-today label and fits the next all-day
   paintHome(0, data, face);
 });
 
-test('weekday lowercase dots have separate counters and all seven dates clear the battery', () => {
-  const { GrayImage } = load('app/graphics/image.ts');
-  const { dotText } = load('app/apps/home/stock-art.ts');
-  const glyph = letter => {
-    const image = new GrayImage(24, 15);
-    dotText(image, 0, 0, letter);
-    return image;
-  };
-  const e = glyph('e');
-  assert.equal(e.getPixel(3, 3), 0);
-  assert.equal(e.getPixel(6, 3), 0);
-  assert.equal(e.getPixel(3, 6), 255);
-  assert.equal(e.getPixel(9, 9), 0);
-  assert.notDeepEqual(glyph('a').pixels, glyph('o').pixels);
-  for (const day of ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']) {
-    const image = new GrayImage(230, 40);
-    dotText(image, 22, 21, `${day} 07/10`);
-    assert.ok(image.pixels.some(v => v !== 0));
-    for (let y = 0; y < image.height; y++) for (let x = 185; x < image.width; x++) assert.equal(image.getPixel(x, y), 0);
+
+test('Horizonte leaves all five existing right cards and pagination pixels unchanged', () => {
+  const expected = [
+    "6ee8264e1a1c2d4af49f43a20d7b3e0c83a7c11ee8d2c3a53d2e015505dc8585",
+    "5c5493a43ae99178b9f0b05ad709c06d8c13ee47148428ff1370fecdebba487e",
+    "10891bfaa518727befa7db8595c4e7de725faaf8310185f62a54b380da3dfc42",
+    "58a99c950082b0a1a1831bdbf1c8e4f77c679fd9b0df723d900797087550b011",
+    "c926e8b7b629dcfc0c3c53a00b08b77d309832fcad65fc31b12e299f88d1775f"
+];
+  const crypto = require('node:crypto');
+  for (let index = 0; index < 5; index++) {
+    const image = paintHome(index, snapshot(), face), pixels = [];
+    for (let y = 0; y < 288; y++) pixels.push(...image.pixels.slice(y * 576 + 218, (y + 1) * 576));
+    assert.equal(crypto.createHash('sha256').update(Buffer.from(pixels)).digest('hex'), expected[index]);
   }
 });
