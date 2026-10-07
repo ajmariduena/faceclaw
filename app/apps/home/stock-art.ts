@@ -110,5 +110,3 @@ export function dotText(image: GrayImage, x: number, y: number, text: string, va
     x += (rows[0].length+1)*3;
   }
 }
-
-

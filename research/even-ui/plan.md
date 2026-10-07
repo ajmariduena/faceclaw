@@ -4,6 +4,8 @@ Estado al 2026-10-07. **Vigente: v3 sin menú** (resumen abajo; detalle en [v3: 
 
 ## Plan vigente
 
+**Actualización de implementación (2026-10-07):** el código del PASO 1 está integrado en `feat/v3-home`; ver [prueba chica, ajustes y límites](paso-1.md). Validación local de modelo/painters/shell; compilación, instalación y aceptación en Preview Only pendientes del usuario. Las afirmaciones de “no integrado en app/” más abajo describen la etapa de render anterior.
+
 **Interfaz (v3):** reloj stock a la izquierda y una tarjeta a la derecha. Cinco tarjetas fijas y circulares: Calendario → Música → Notificaciones → Traducir → Más (Conversar, AI Chat, Teleprompter, Navegar, Timers, Ajustes). Swipe cambia de tarjeta, tap entra a la app, doble tap en una app vuelve a la misma tarjeta sin confirmar, doble tap en el inicio apaga la pantalla, despertar muestra Calendario. Solo se confirma al salir de Traducir/Conversar grabando. Entrada por deslizamiento de 200 ms. Tap+mantener conserva el menú del shell. Decidido con revisión de Fable y Astra.
 
 **Pasos:**
