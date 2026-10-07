@@ -1,0 +1,129 @@
+import * as graphics from "../../graphics/image";
+import type { GrayImage } from "../../graphics/image";
+import { HOME_CARDS, emptyCardStatus, type HomeCalendar } from "./home-model";
+import * as art from "./stock-art";
+
+export type HomeFace = {
+  readonly lineHeight: number;
+  measureLine(text: string): number;
+  drawText(image: GrayImage, x: number, y: number, text: string, value?: number): void;
+};
+export type HomeSnapshot = {
+  now: Date;
+  battery: number | null;
+  temperatureC: number | null;
+  calendar: HomeCalendar;
+  music: { title: string; artist: string; playing: boolean } | null;
+  notifications: readonly { title: string; text: string; appName: string }[];
+};
+
+const digits = new Map<string, GrayImage>();
+const icons = new Map<string, GrayImage>();
+function icon(image: GrayImage, name: keyof typeof art.patterns, x: number, y: number, size = 24) {
+  const key = `${name}:${size}`;
+  if (!icons.has(key)) icons.set(key, art.icon(graphics, name, size));
+  image.drawImage(icons.get(key)!, x, y);
+}
+function clockDigit(value: string): GrayImage {
+  if (!digits.has(value)) digits.set(value, art.digit(graphics, value));
+  return digits.get(value)!;
+}
+function fitted(face: HomeFace, label: string, width: number): string {
+  label = label.replace(/[\r\n\t]/g, " ");
+  if (face.measureLine(label) <= width) return label;
+  const chars = Array.from(label);
+  while (chars.length && face.measureLine(chars.join("") + "…") > width) chars.pop();
+  return chars.join("") + "…";
+}
+
+export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace): GrayImage {
+  const image = new graphics.GrayImage(576, 288);
+  const card = HOME_CARDS[selected];
+  const panel = new graphics.GrayImage(318, 260);
+  panel.drawRoundedRect(0, 0, 318, 260, 255, 6);
+  const text = (x: number, y: number, label: string, value = 255, width = 278) =>
+    face.drawText(panel, x, y, fitted(face, label, width), value);
+  const centered = (y: number, label: string, value = 255) => {
+    const line = fitted(face, label, 278);
+    face.drawText(panel, Math.round((318 - face.measureLine(line)) / 2), y, line, value);
+  };
+  const header = () => {
+    icon(panel, card.icon, 20, 18);
+    text(52, 16, card.name, 255, 246);
+  };
+  const generic = (status: string) => {
+    icon(panel, card.icon, 135, 54, 48);
+    centered(120, card.name);
+    centered(169, status, 153);
+  };
+  if (card.id === "calendar" && data.calendar.events.length) {
+    header();
+    data.calendar.events.forEach((event, i) => {
+      const y = i === 0 ? 69 : 183;
+      text(20, y, event.title || "Sin título");
+      const hhmm = (ms: number) => {
+        const date = new Date(ms);
+        return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+      };
+      const time = event.allDay ? "Todo el día" : `Hoy ${hhmm(event.startMs)} - ${hhmm(event.endMs)}`;
+      if (i === 0 && event.location) {
+        text(20, y + 27, event.location, 153);
+        text(20, y + 54, time, 153);
+      } else text(20, y + 27, time, 153);
+    });
+  } else if (card.id === "music" && data.music) {
+    header();
+    text(20, 69, data.music.title || "Sin título");
+    text(20, 96, data.music.artist, 153);
+    text(20, 139, data.music.playing ? "Sonando" : "En pausa", 153);
+  } else if (card.id === "notifications" && data.notifications.length) {
+    header();
+    data.notifications.slice(0, 2).forEach((item, i) => {
+      const y = i === 0 ? 69 : 183;
+      text(20, y, item.title || item.appName);
+      text(20, y + 27, item.text || item.appName, 153);
+    });
+  } else if (card.id === "translate") {
+    generic("");
+    const left = "ES ", right = " EN · Toca para empezar";
+    const width = face.measureLine(left) + 20 + face.measureLine(right);
+    const y = width <= 278 ? 169 : 157;
+    const suffix = width <= 278 ? right : " EN";
+    const x = Math.round((318 - face.measureLine(left) - 20 - face.measureLine(suffix)) / 2);
+    face.drawText(panel, x, y, left, 153);
+    const arrowX = x + face.measureLine(left);
+    panel.fillRect(arrowX, y + 7, 18, 2, 153);
+    panel.fillRect(arrowX + 2, y + 15, 18, 2, 153);
+    for (let step = 0; step < 3; step++) {
+      panel.fillRect(arrowX + 12 + step * 2, y + 3 + step * 2, 2, 2, 153);
+      panel.fillRect(arrowX + 12 + step * 2, y + 11 - step * 2, 2, 2, 153);
+      panel.fillRect(arrowX + 2 + step * 2, y + 15 + step * 2, 2, 2, 153);
+      panel.fillRect(arrowX + 2 + step * 2, y + 15 - step * 2, 2, 2, 153);
+    }
+    face.drawText(panel, arrowX + 20, y, suffix, 153);
+    if (width > 278) centered(196, emptyCardStatus(card.id), 153);
+  } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id) : emptyCardStatus(card.id));
+
+  const date = data.now;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const weekday = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"][date.getDay()];
+  art.dotText(image, 22, 21, `${weekday} ${pad(date.getDate())}/${pad(date.getMonth() + 1)}`);
+  if (data.battery === null || data.battery < 0 || data.battery > 100) image.fillRect(190, 27, 14, 2, 153);
+  else {
+    image.drawRect(185, 21, 22, 13, 255);
+    image.fillRect(207, 25, 2, 5, 255);
+    for (let i = 0; i < 4; i++) image.fillRect(188 + i * 4, 24, 2, 7, data.battery > i * 25 ? 255 : 51);
+  }
+  for (const [value, y] of [[pad(date.getHours()), 69], [pad(date.getMinutes()), 149]] as const) {
+    for (let i = 0; i < 2; i++) image.drawImage(clockDigit(value[i]), 58 + i * 62, y);
+  }
+  if (data.temperatureC !== null) {
+    icon(image, "cloud", 22, 248);
+    art.dotText(image, 52, 254, `${data.temperatureC}°C`);
+  }
+  icon(image, "bell", 155, 248);
+  art.dotText(image, 185, 254, data.notifications.length > 99 ? "99+" : String(data.notifications.length));
+  image.bitBlt(panel.withDrawsBaked(), 230, 14);
+  for (let i = 0; i < HOME_CARDS.length; i++) image.fillRect(218, 120 + i * 11, i === selected ? 4 : 2, 3, i === selected ? 255 : 85);
+  return image.withDrawsBaked();
+}
