@@ -7,10 +7,12 @@ Faceclaw is an alternative host for EvenHub apps on the Even Realities G2
 glasses. An app built against the standard
 [`@evenrealities/even_hub_sdk`](https://www.npmjs.com/package/@evenrealities/even_hub_sdk)
 runs in Faceclaw unchanged. This package lets the app detect that it is
-running in Faceclaw and use some extra capabilities there: a taller canvas, the
-glasses' compass and buzzer, window lifecycle events, voice-assistant tools, and
-the user's API keys (with their consent). In the stock Even app the extensions
-are absent, and the app runs as usual.
+running in Faceclaw and use some extra capabilities there: a taller canvas,
+choice of fonts, the glasses' compass and buzzer, touch-down events and which device an input came
+from, dictated or typed text, control of the app's switcher icon and the screen
+timeout, window lifecycle events, voice-assistant tools, and the user's API keys
+(with their consent). In the stock Even app the extensions are absent, and the
+app runs as usual.
 
 - [API reference](docs/api/README.md)
 
@@ -57,10 +59,14 @@ startup. You don't need to wait for the bridge first.
 ## How it works
 
 Faceclaw injects one global function, `window.getFaceclawExtensions`, into the
-app's webview. Every extension lives behind it. Faceclaw doesn't modify the
-standard SDK, other globals, or any built-in prototype, so an app that uses
+app's webview. Every extension method lives behind it. Faceclaw doesn't modify
+the standard SDK, other globals, or any built-in prototype, so an app that uses
 the extensions keeps working in any other host. `getFaceclawExtensions()` in
 this package checks whether that global exists and calls it.
+
+The one addition outside that global is data: Faceclaw adds a
+`faceclawInputSource` field to the raw JSON of stock gesture events, which
+`getInputSource()` reads. Stock apps ignore it.
 
 ## Checking for features
 
@@ -107,6 +113,18 @@ The [API reference](docs/api/README.md) documents every member in full.
 | `addCompassListener(fn)` | Turn on the magnetometer and receive headings. |
 | `createLayout(layout)` / `replaceLayout(layout)` | Build the page on the full 576×452 canvas, with no container limit, and optionally keep content across layouts. |
 | `setAssistantTools(tools)` | Offer tools to Faceclaw's voice assistant. |
+| `addTouchDownListener(fn)` | Hear the moment a finger touches the ring or watch, before the gesture is known. |
+| `addTextInputListener(fn)` | Receive dictated or typed text: the app becomes a "Type Into App" destination. |
+| `startVoiceInput()` | Open the voice dialog for the app. |
+| `setWindowIcon(icon)` | Replace the app's switcher icon with a pixel buffer. |
+| `setAttention(on)` | Show or clear the attention dot on the app's switcher icon. |
+| `setKeepScreenOn(on)` | Stop the display from sleeping for inactivity while the app is in front. |
+| `getFonts()` | List the font families available to text and list containers. |
+| `measureText(text, font)` | Measure text in a font, to size or centre it. |
+
+The package also exports `getInputSource(event)`, which tells you which device
+(`ring`, `left-touchpad`, `right-touchpad` or `watch`) produced a stock gesture
+event.
 
 ### Extended layout
 
@@ -121,6 +139,7 @@ classes. The differences:
 - A container with `preserve: true` keeps the content (text, pixels, or list
   items and selection) of the same-named container in the previous layout.
   Without it, the container starts blank.
+- Text and list containers can use other fonts (see [Fonts](#fonts)).
 
 ```ts
 import { ImageContainerProperty, TextContainerProperty } from "@evenrealities/even_hub_sdk";
@@ -140,6 +159,92 @@ await fc.replaceLayout({
 Keep using the stock `updateImageRawData` and `textContainerUpgrade` to update
 content; they address containers by `containerID`. Once an app has used an
 extended layout, its window stays at 576×452 for the rest of the session.
+
+### Fonts
+
+In an extended layout, text and list containers can set a `font` with a
+`family`, `size` (in pixels) and `weight`. A `font` on the layout is the
+default for all of them, and a container's own `font` overrides it field by
+field. Without either, text is in the stock firmware font, as before.
+
+```ts
+await fc.createLayout({
+  font: { family: "Inter", size: 22 },
+  textObject: [
+    { containerID: 1, containerName: "title", xPosition: 16, yPosition: 12, width: 544, height: 50, content: "Today", font: { size: 40, weight: "bold" } },
+    { containerID: 2, containerName: "body", xPosition: 16, yPosition: 70, width: 544, height: 360, content: "...", isEventCapture: 1 },
+  ],
+});
+```
+
+Faceclaw bundles Roboto, Inter, Montserrat and Roboto Mono (weights 300, 400
+and 700, any size from 6 to 128) and the bitmap font Terminus (sizes 12 to
+32, weights 400 and 700). `EvenHub` is the stock font, at 20px only. Users
+can install more fonts, and `getFonts()` lists everything available. An
+unknown family falls back to Roboto, and the nearest available weight and
+(for bitmap fonts) size are used.
+
+`measureText(text, font)` returns the text's width and line height in a
+font, so you can size containers or centre text. A list row is the font's
+line height plus 12 pixels.
+
+### Input sources and touch-down
+
+The stock `eventSource` field can't tell the watch from the ring, and scrolls
+don't carry it at all. Pass the event your `onEvenHubEvent` handler receives
+to `getInputSource()` to find out which device it came from:
+
+```ts
+import { getFaceclawExtensions, getInputSource } from "@faceclaw/evenhub-extensions";
+
+bridge.onEvenHubEvent((event) => {
+  const source = getInputSource(event); // "ring", "left-touchpad", "right-touchpad", "watch" or null
+});
+```
+
+It returns `null` when the source is unknown (some scrolls), for non-gesture
+events, and outside Faceclaw.
+
+A touch-down is the moment a finger lands on the ring or the watch's
+touchpad, before Faceclaw knows whether it will become a tap, a scroll or a
+hold. The interpreted gesture still arrives afterwards as the usual stock
+event. Touch-downs suit games and other latency-sensitive input:
+
+```ts
+fc.addTouchDownListener(({ source, timestampMs }) => flap());
+```
+
+The glasses' own touchpads don't report touch-down.
+
+### Text input
+
+While the app has a text-input listener, Faceclaw offers it as the "Type Into
+App" destination for its voice dialog, the phone keyboard and the watch. The
+app can also open the voice dialog itself:
+
+```ts
+fc.addTextInputListener(({ text }) => addNote(text));
+
+// For example, from a "Dictate" item in the app's menu:
+const opened = await fc.startVoiceInput();
+```
+
+### Window icon, attention dot, and screen timeout
+
+```ts
+// Draw a 32x32 icon on a canvas, light on black, and use it in the app switcher.
+fc.setWindowIcon(ctx.getImageData(0, 0, 32, 32));
+
+// Flag new activity while the app is in the background; clear it when seen.
+fc.setAttention(true);
+
+// Keep the display awake while the app is in front (e.g. a teleprompter).
+fc.setKeepScreenOn(true);
+```
+
+`setWindowIcon` takes `{ width, height, data }` with grayscale or RGBA pixels,
+up to 256×256, so an `ImageData` works as is. Pass `null` to restore the
+package's icon.
 
 ### Compass
 
@@ -190,6 +295,18 @@ sooner.
 keys. `requestApiKeyAccess(services)` shows a consent prompt on the glasses and
 resolves with the keys the user agreed to share. If the user declines, it
 resolves to `{}`. A grant lasts until the app closes.
+
+## Stock APIs in Faceclaw
+
+Faceclaw implements the stock SDK too. Some differences worth knowing:
+
+- `getDeviceInfo()` and `onDeviceStatusChanged` report the real glasses:
+  their serial number, whether they are connected and worn, the battery level,
+  and whether they are charging. `isInCase` is the same as `isCharging`, since
+  the G2 only charges in its case. Fields Faceclaw doesn't know yet (wear state
+  before the glasses first report it) are left out.
+- `shutDownPageContainer(1)` returns to the app switcher instead of asking to
+  quit. Use `quit()` to really quit.
 
 ## Stability
 

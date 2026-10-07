@@ -118,3 +118,26 @@ test("flags accept booleans (extension layouts) as well as 0/1 (stock)", () => {
   );
   assert.equal(page.containers[0].selectBorder, true);
 });
+
+test("a layout font is the default for text and list containers, which override it field by field", () => {
+  const page = parsePage({
+    font: { family: "Inter", size: 24 },
+    listObject: [{ containerID: 1, containerName: "l", font: { weight: "bold" } }],
+    textObject: [{ containerID: 2, containerName: "t" }, { containerID: 3, containerName: "u", font: { family: "Terminus" } }],
+    imageObject: [{ containerID: 4, containerName: "i" }],
+  });
+  assert.deepEqual(
+    page.containers.map((c) => [c.name, c.font]),
+    [
+      ["l", { family: "Inter", size: 24, weight: 700 }],
+      ["i", undefined],
+      ["t", { family: "Inter", size: 24 }],
+      ["u", { family: "Terminus", size: 24 }],
+    ],
+  );
+});
+
+test("containers without a font anywhere keep the stock font", () => {
+  const page = parsePage({ textObject: [{ containerID: 1, containerName: "t", content: "x" }] });
+  assert.equal(page.containers[0].font, undefined);
+});

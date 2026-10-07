@@ -69,18 +69,119 @@ export interface BuzzerStep {
  * An app can assume it starts `visible` and `focused` at launch. Events report
  * changes from there.
  *
- * @group Window lifecycle
+ * @group Window
  */
 export type WindowLifecycleEventType = "visible" | "hidden" | "focused" | "blurred";
 
 /**
  * Payload of a {@link FaceclawExtensions.addWindowLifecycleListener} callback.
  *
- * @group Window lifecycle
+ * @group Window
  */
 export interface WindowLifecycleEvent {
   /** Which transition happened. */
   type: WindowLifecycleEventType;
+}
+
+/**
+ * An image for {@link FaceclawExtensions.setWindowIcon}. An `ImageData` (from
+ * a canvas's `getImageData`) fits this shape and can be passed directly.
+ *
+ * Draw it like Faceclaw's own icons: light strokes on black. Brightness is
+ * coverage, so black is transparent, and Faceclaw inverts the icon for the
+ * selected window. The switcher draws icons at about 32×32; larger images are
+ * scaled down to fit, keeping their aspect ratio.
+ *
+ * @group Window
+ */
+export interface WindowIconImage {
+  /** Width in pixels, 1–256. */
+  width: number;
+  /** Height in pixels, 1–256. */
+  height: number;
+  /**
+   * Pixels in rows from the top left: either `width * height` grayscale
+   * values (0–255), or `width * height * 4` RGBA values, which Faceclaw
+   * converts to grayscale (luminance times alpha).
+   */
+  data: ArrayLike<number>;
+}
+
+// ---- Input ----
+
+/**
+ * The device an input came from:
+ *
+ * - `ring`: the Even R1 ring (or the ring pad in Faceclaw's phone app).
+ * - `left-touchpad` / `right-touchpad`: the touch areas on the glasses' arms.
+ * - `watch`: Faceclaw's Wear OS watch remote (or the watch pad in Faceclaw's
+ *   phone app).
+ *
+ * @group Input
+ */
+export type InputSource = "ring" | "left-touchpad" | "right-touchpad" | "watch";
+
+/**
+ * A touch-down, from {@link FaceclawExtensions.addTouchDownListener}.
+ *
+ * @group Input
+ */
+export interface TouchDownEvent {
+  /**
+   * Which device was touched. Currently always `ring` or `watch`: the
+   * glasses' touchpads don't report touch-down.
+   */
+  source: InputSource;
+  /** When Faceclaw received the touch, in milliseconds since the epoch (comparable with `Date.now()`). */
+  timestampMs: number;
+}
+
+/**
+ * Which device produced a stock EvenHub gesture event, or `null` if Faceclaw
+ * didn't say.
+ *
+ * The stock `eventSource` field only knows the stock devices, so Faceclaw
+ * reports the watch there as the ring. Faceclaw adds the real device to the
+ * event's raw JSON as `faceclawInputSource`, and this function reads it. Pass
+ * the event object your `onEvenHubEvent` handler receives.
+ *
+ * Faceclaw adds the field to clicks, double-clicks, long-presses and their
+ * releases, and scrolls, in both `sysEvent` and `listEvent`. It is missing when
+ * the glasses don't report a scroll's source, on non-gesture events, and in
+ * every other host.
+ *
+ * @example
+ * ```ts
+ * bridge.onEvenHubEvent((event) => {
+ *   if (event.sysEvent && getInputSource(event) === "watch") {
+ *     // ...
+ *   }
+ * });
+ * ```
+ *
+ * @group Input
+ */
+export function getInputSource(event: { jsonData?: Record<string, unknown> } | null | undefined): InputSource | null {
+  const value = event?.jsonData?.faceclawInputSource;
+  return value === "ring" || value === "left-touchpad" || value === "right-touchpad" || value === "watch" ? value : null;
+}
+
+// ---- Text input ----
+
+/**
+ * Text sent to the app, from {@link FaceclawExtensions.addTextInputListener}.
+ *
+ * @group Text input
+ */
+export interface TextInputEvent {
+  /** The finished text: a whole dictation, or a typed entry. */
+  text: string;
+  /**
+   * Present when the sender said whether to submit the text (`true`, like
+   * pressing Enter after it) or only insert it (`false`). Faceclaw's
+   * remote-input tool sets it; dictation and the phone keyboard leave it out.
+   */
+  submit?: boolean;
 }
 
 /**
@@ -118,6 +219,78 @@ export interface CompassReading {
   declinationDegrees?: number;
   /** `magneticHeadingDegrees` plus declination. Absent when `declinationDegrees` is. */
   trueHeadingDegrees?: number;
+}
+
+// ---- Fonts ----
+
+/**
+ * A font for text and list containers in an extended layout, from
+ * {@link FaceclawLayout.font} and the containers' own `font`. A container
+ * that has no font, and whose layout has none, uses the stock firmware font.
+ *
+ * Available families (see {@link FaceclawExtensions.getFonts}):
+ *
+ * - `Roboto`, `Inter`, `Montserrat` and `Roboto Mono`: bundled TrueType
+ *   fonts in weights 300, 400 and 700, at any size.
+ * - `Terminus`: a monospace bitmap font, in sizes 12, 14, 16, 18, 20, 22, 24,
+ *   28 and 32, and weights 400 and 700.
+ * - `EvenHub`: the stock firmware font, 20px only. Use it to bring back the
+ *   stock font for one container when the layout sets another.
+ * - Any font the user has installed in Faceclaw.
+ *
+ * Text in the stock font wraps exactly as on the stock firmware. Text in
+ * other fonts wraps with Faceclaw's own line breaking.
+ *
+ * @group Fonts
+ */
+export interface FaceclawFont {
+  /**
+   * Font family, matched without regard to case, spaces or punctuation. An
+   * unknown family falls back to Roboto.
+   * @defaultValue "Roboto"
+   */
+  family?: string;
+  /**
+   * Size in pixels: the em size, as in CSS `font-size`. A line is somewhat
+   * taller; {@link FaceclawExtensions.measureText} reports its height. 6–128.
+   * Bitmap families use their nearest size.
+   * @defaultValue 20
+   */
+  size?: number;
+  /**
+   * Weight, 100–900, where `"normal"` is 400 and `"bold"` is 700. The nearest
+   * weight the family has is used, as CSS chooses it.
+   * @defaultValue 400
+   */
+  weight?: number | "normal" | "bold";
+}
+
+/**
+ * A font family Faceclaw can draw, from {@link FaceclawExtensions.getFonts}.
+ *
+ * @group Fonts
+ */
+export interface FaceclawFontFamily {
+  /** The name to use as {@link FaceclawFont.family}. */
+  family: string;
+  /** The weights the family has, lightest first. */
+  weights: number[];
+  /** For a bitmap family, the sizes it has. Absent for a scalable family, which takes any size. */
+  sizes?: number[];
+  /** Whether every character has the same width. */
+  monospace: boolean;
+}
+
+/**
+ * The size of some text, from {@link FaceclawExtensions.measureText}.
+ *
+ * @group Fonts
+ */
+export interface TextMeasurement {
+  /** Width in pixels of the widest line (lines are split at `\n`). */
+  width: number;
+  /** Height in pixels of one line. A text container advances by this much per line. */
+  lineHeight: number;
 }
 
 // ---- Extended layout (a superset of the stock EvenHub page containers) ----
@@ -185,6 +358,12 @@ export interface FaceclawTextContainer extends FaceclawContainerCommon {
   borderRadius?: number;
   /** Padding between the border and the text, in pixels. */
   paddingLength?: number;
+  /**
+   * The text's font. Its fields override the layout's
+   * {@link FaceclawLayout.font} one by one. With neither, the text is in the
+   * stock firmware font.
+   */
+  font?: FaceclawFont;
 }
 
 /**
@@ -233,6 +412,13 @@ export interface FaceclawListContainer extends FaceclawContainerCommon {
   borderRadius?: number;
   /** Padding between the border and the items, in pixels. */
   paddingLength?: number;
+  /**
+   * The items' font. Its fields override the layout's
+   * {@link FaceclawLayout.font} one by one. With neither, the items are in
+   * the stock firmware font. Each row is the font's line height plus 12
+   * pixels.
+   */
+  font?: FaceclawFont;
 }
 
 /**
@@ -262,6 +448,8 @@ export interface FaceclawMenu {
  * - Each container may set `preserve: true` to inherit its content from the
  *   same-named container in the previous layout.
  *
+ * Text and list containers can also use other fonts (see {@link FaceclawFont}).
+ *
  * @group Extended layout
  */
 export interface FaceclawLayout {
@@ -275,6 +463,8 @@ export interface FaceclawLayout {
   menuObject?: FaceclawMenu;
   /** Accepted for compatibility with stock payloads and ignored: there is no container limit. */
   containerTotalNum?: number;
+  /** The default font for every text and list container in the layout. */
+  font?: FaceclawFont;
 }
 
 // ---- Voice-assistant tools ----
@@ -445,6 +635,82 @@ export interface FaceclawExtensions {
    * @param tools - The tools to offer. Pass `[]` to remove them all.
    */
   setAssistantTools(tools: AssistantTool[]): void;
+
+  /**
+   * Receive touch-downs: the moment a finger touches the ring or the watch's
+   * touchpad, before Faceclaw knows whether it will become a tap, a scroll or
+   * a hold. The interpreted gesture still arrives afterwards as the usual
+   * stock event. Use it where latency matters, as in games.
+   *
+   * Touch-downs arrive only while the app's window has input focus. The
+   * glasses' own touchpads don't report them.
+   *
+   * @param listener - Called on each touch-down.
+   * @returns A function that unsubscribes `listener`.
+   */
+  addTouchDownListener(listener: (event: TouchDownEvent) => void): () => void;
+
+  /**
+   * Receive text the user sends to the app. While at least one listener is
+   * registered and the app is in the foreground, Faceclaw offers the app as
+   * the "Type Into App" destination of its voice dialog, the phone keyboard
+   * and the watch.
+   *
+   * @param listener - Called with each piece of text.
+   * @returns A function that unsubscribes `listener`.
+   */
+  addTextInputListener(listener: (event: TextInputEvent) => void): () => void;
+
+  /**
+   * Open Faceclaw's voice dialog for this app. When the user sends the
+   * dictation with Type Into App, it arrives at the text-input listeners.
+   *
+   * @returns A promise that resolves to true if the dialog is opening, or
+   *   false if it can't open: there is no text-input listener, the app isn't
+   *   in the foreground, voice input is unavailable, or another dialog is up.
+   */
+  startVoiceInput(): Promise<boolean>;
+
+  /**
+   * Replace the app's icon in the app switcher, or pass `null` to go back to
+   * the package's icon. See {@link WindowIconImage} for the format.
+   *
+   * @returns A promise that resolves once the icon is set, and rejects if the
+   *   image is malformed or larger than 256×256.
+   */
+  setWindowIcon(icon: WindowIconImage | null): Promise<void>;
+
+  /**
+   * Show or clear the attention dot on the app's switcher icon, for example
+   * when something new arrives while the app is in the background. The dot
+   * stays until the app clears it or closes.
+   */
+  setAttention(attention: boolean): void;
+
+  /**
+   * Stop the glasses display from turning off for inactivity while the app is
+   * in the foreground, as a teleprompter or navigation app needs. It has no
+   * effect while another window is in front, and the user can still turn the
+   * display off. Pass `false` to restore the normal timeout.
+   */
+  setKeepScreenOn(keepOn: boolean): void;
+
+  /**
+   * List the font families available for {@link FaceclawFont.family},
+   * including any the user has installed.
+   */
+  getFonts(): Promise<FaceclawFontFamily[]>;
+
+  /**
+   * Measure text as a container with this font would draw it, for example to
+   * size a text container or centre a label.
+   *
+   * @param text - The text. Lines split at `\n` are measured separately.
+   * @param font - The font to measure in. Unlike a container's font, it
+   *   isn't combined with a layout default. Omit it to measure in the stock
+   *   font.
+   */
+  measureText(text: string, font?: FaceclawFont): Promise<TextMeasurement>;
 }
 
 declare global {

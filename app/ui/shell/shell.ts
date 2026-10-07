@@ -394,6 +394,7 @@ class Shell {
   private battery: ShellChromeState["battery"] = {
     headset: null, headsetCharging: null, ring: null, ringCharging: null, watch: null, watchCharging: null,
   };
+  private readonly batteryListeners = new Set<() => void>();
   private attention = new Map<string, boolean>();
   /** Set while the switcher's selection is on a notification (see NotificationSelection). */
   private selectedNotification: NotificationSelection | null = null;
@@ -584,7 +585,19 @@ class Shell {
   }
 
   setBatteryLevels(levels: Partial<ShellChromeState["battery"]>): void {
-    this.battery = { ...this.battery, ...levels };
+    const next = { ...this.battery, ...levels };
+    const keys = Object.keys(next) as (keyof ShellChromeState["battery"])[];
+    if (keys.every((key) => next[key] === this.battery[key])) return;
+    this.battery = next;
+    for (const listener of Array.from(this.batteryListeners)) listener();
+  }
+
+  /** Called after any battery level or charging state changes. Returns an unsubscribe function. */
+  onBatteryLevelsChanged(listener: () => void): () => void {
+    this.batteryListeners.add(listener);
+    return () => {
+      this.batteryListeners.delete(listener);
+    };
   }
 
   /**
@@ -1397,16 +1410,20 @@ class Shell {
    * Open the voice dialog aimed at the foreground window. Called when the
    * user picks Voice input from the system menu (or an app asks via a
    * start-voice-input message). The menu click already ended the press, so
-   * the dialog finishes on click instead of long-press-release.
+   * the dialog finishes on click instead of long-press-release. Returns
+   * false when the dialog can't open now (voice input disabled, screen off,
+   * another dialog or overlay up); true means it is opening, though a
+   * microphone-permission prompt can still stop it.
    */
-  startVoiceInput(): void {
-    if (this.config.voiceInputEnabled === false) return;
-    if (!this.screenOn || this.activeVoiceLayer || !this.stack.isAtBase()) return;
+  startVoiceInput(): boolean {
+    if (this.config.voiceInputEnabled === false || this.voiceDialogPending) return false;
+    if (!this.screenOn || this.activeVoiceLayer || !this.stack.isAtBase()) return false;
     // The transcript is aimed at the window whose menu requested it; the menu
     // entry point defaults the highlight to Type Into App.
     this.focus = "window";
     this.openVoiceDialog({ finishOnClick: true, defaultTarget: "app" });
     this.config.requestShellRender();
+    return true;
   }
 
   /**

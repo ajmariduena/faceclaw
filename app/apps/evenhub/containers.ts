@@ -5,6 +5,7 @@
  * (Container_ID), and numbers sometimes arrive as strings, so all field
  * reads go through loose key matching (the SDK's pickLoose behavior).
  */
+import { mergeFontSpecs, parseFontSpec, type EvenHubFontSpec } from "./font-spec";
 
 export type EvenHubTextContainer = {
   kind: "text";
@@ -24,6 +25,8 @@ export type EvenHubTextContainer = {
   content: string;
   /** SDK 0.0.14 textColor: brightness level 0..4; undefined means the device default (4). */
   textColor: number | undefined;
+  /** Extended-layout font (merged with the layout's default); undefined is the stock font. */
+  font: EvenHubFontSpec | undefined;
 };
 
 export type EvenHubImageContainer = {
@@ -63,6 +66,8 @@ export type EvenHubListContainer = {
   selectBorder: boolean;
   /** Selection is host-local: scroll moves it with no app round-trip. */
   selectedIndex: number;
+  /** Extended-layout font (merged with the layout's default); undefined is the stock font. */
+  font: EvenHubFontSpec | undefined;
 };
 
 export type EvenHubContainer = EvenHubTextContainer | EvenHubImageContainer | EvenHubListContainer;
@@ -149,7 +154,12 @@ function readBorderWidth(json: Record<string, unknown>): number {
   return Math.max(0, Math.min(MAX_BORDER_WIDTH, readNumber(json, "borderWidth", 0)));
 }
 
-function parseTextContainer(json: Record<string, unknown>): EvenHubTextContainer {
+/** A container's font: its own `font` over the layout-wide default. */
+function readFont(json: Record<string, unknown>, layoutFont: EvenHubFontSpec | undefined): EvenHubFontSpec | undefined {
+  return mergeFontSpecs(layoutFont, parseFontSpec(pickLoose(json, "font")));
+}
+
+function parseTextContainer(json: Record<string, unknown>, layoutFont: EvenHubFontSpec | undefined): EvenHubTextContainer {
   return {
     kind: "text",
     id: readNumber(json, "containerID", 0),
@@ -166,6 +176,7 @@ function parseTextContainer(json: Record<string, unknown>): EvenHubTextContainer
     preserve: readFlag(json, "preserve"),
     content: readString(json, "content", ""),
     textColor: readTextBrightness(json),
+    font: readFont(json, layoutFont),
   };
 }
 
@@ -238,7 +249,7 @@ function parseImageContainer(json: Record<string, unknown>): EvenHubImageContain
   };
 }
 
-function parseListContainer(json: Record<string, unknown>): EvenHubListContainer {
+function parseListContainer(json: Record<string, unknown>, layoutFont: EvenHubFontSpec | undefined): EvenHubListContainer {
   const itemContainer = asRecord(pickLoose(json, "itemContainer"));
   const itemNamesRaw = pickLoose(itemContainer, "itemName");
   const itemNames = Array.isArray(itemNamesRaw) ? itemNamesRaw.map(String) : [];
@@ -260,6 +271,7 @@ function parseListContainer(json: Record<string, unknown>): EvenHubListContainer
     itemWidth: readNumber(itemContainer, "itemWidth", 0),
     selectBorder: readFlag(itemContainer, "isItemSelectBorderEn"),
     selectedIndex: 0,
+    font: readFont(json, layoutFont),
   };
 }
 
@@ -274,9 +286,11 @@ function parseListContainer(json: Record<string, unknown>): EvenHubListContainer
  */
 export function parsePage(data: Record<string, unknown>): EvenHubPage {
   const containers: EvenHubContainer[] = [];
+  // Extended layouts may set a default font for every text and list container.
+  const layoutFont = parseFontSpec(pickLoose(data, "font"));
   const lists = pickLoose(data, "listObject");
   if (Array.isArray(lists)) {
-    for (const item of lists) containers.push(parseListContainer(asRecord(item)));
+    for (const item of lists) containers.push(parseListContainer(asRecord(item), layoutFont));
   }
   const images = pickLoose(data, "imageObject");
   if (Array.isArray(images)) {
@@ -284,7 +298,7 @@ export function parsePage(data: Record<string, unknown>): EvenHubPage {
   }
   const texts = pickLoose(data, "textObject");
   if (Array.isArray(texts)) {
-    for (const item of texts) containers.push(parseTextContainer(asRecord(item)));
+    for (const item of texts) containers.push(parseTextContainer(asRecord(item), layoutFont));
   }
   return { containers, menuItems: parseMenuItems(data) };
 }

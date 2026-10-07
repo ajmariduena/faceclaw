@@ -99,3 +99,66 @@ test('assistant tools send specs to the host and run handlers on invoke', async 
   const results = posted.filter((p) => p.name === 'faceclawExtToolResult').map((p) => p.args).sort((a, b) => a[0] - b[0]);
   assert.deepEqual(results, [[7, true, 42], [8, false, 'nope'], [9, false, 'unknown tool missing']]);
 });
+
+test('touch-down and text input are requested while someone listens, and unsubscribing twice is harmless', () => {
+  const { win, fc, posted } = page();
+  const seen = [];
+  const offTouch = fc.addTouchDownListener((e) => seen.push(`touch:${e.source}`));
+  const offText1 = fc.addTextInputListener((e) => seen.push(`text1:${e.text}`));
+  const offText2 = fc.addTextInputListener((e) => seen.push(`text2:${e.text}`));
+  win.__fcExtEvent('touchDown', { source: 'watch', timestampMs: 5 });
+  win.__fcExtEvent('textInput', { text: 'hi' });
+  offText1();
+  offText1();
+  win.__fcExtEvent('textInput', { text: 'again' });
+  offText2();
+  offTouch();
+  assert.deepEqual(seen, ['touch:watch', 'text1:hi', 'text2:hi', 'text2:again']);
+  assert.deepEqual(posted.map((p) => p.args), [
+    ['setTouchDown', true],
+    ['setTextInput', true],
+    ['setTextInput', false],
+    ['setTouchDown', false],
+  ]);
+});
+
+test('window icons are sent as plain arrays, and clearing sends null', async () => {
+  const { win, fc, posted } = page();
+  const set = fc.setWindowIcon({ width: 1, height: 2, data: new Uint8ClampedArray([7, 9]) });
+  const clear = fc.setWindowIcon(null);
+  assert.deepEqual(posted.map((p) => p.args), [
+    ['setWindowIcon', { width: 1, height: 2, data: [7, 9] }],
+    ['setWindowIcon', null],
+  ]);
+  win.__fcExtResolve(posted[0].id, true, null);
+  win.__fcExtResolve(posted[1].id, false, 'setWindowIcon: bad');
+  await set;
+  await assert.rejects(clear, /setWindowIcon: bad/);
+});
+
+test('window controls are fire-and-forget; startVoiceInput resolves the host answer', async () => {
+  const { win, fc, posted } = page();
+  fc.setAttention(1);
+  fc.setKeepScreenOn(false);
+  const voice = fc.startVoiceInput();
+  assert.deepEqual(posted.map((p) => [p.args, p.id === 0]), [
+    [['setAttention', true], true],
+    [['setKeepScreenOn', false], true],
+    [['startVoiceInput'], false],
+  ]);
+  win.__fcExtResolve(posted[2].id, true, false);
+  assert.equal(await voice, false);
+});
+
+test('font queries are calls; measureText sends null for no font', () => {
+  const { fc, posted } = page();
+  void fc.getFonts();
+  void fc.measureText('hi');
+  void fc.measureText(42, { family: 'Inter', size: 30 });
+  assert.deepEqual(posted.map((p) => p.args), [
+    ['getFonts'],
+    ['measureText', 'hi', null],
+    ['measureText', '42', { family: 'Inter', size: 30 }],
+  ]);
+  assert.ok(posted.every((p) => p.id > 0));
+});

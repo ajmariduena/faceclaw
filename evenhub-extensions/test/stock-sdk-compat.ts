@@ -10,9 +10,12 @@ import {
   MenuItemProperty,
   RebuildPageContainer,
   TextContainerProperty,
+  type EvenHubEvent,
 } from "@evenrealities/even_hub_sdk";
+import { getInputSource } from "../src/index";
 import type {
   FaceclawExtensions,
+  InputSource,
   FaceclawImageContainer,
   FaceclawLayout,
   FaceclawListContainer,
@@ -62,3 +65,12 @@ void fc.createLayout(fromCreate);
 void fc.replaceLayout(fromRebuild);
 void fc.replaceLayout(mixed);
 void fc.replaceLayout(new RebuildPageContainer({ textObject: [new TextContainerProperty({ containerID: 1 })] }));
+
+// The stock event the SDK hands onEvenHubEvent carries the source field.
+declare const stockEvent: EvenHubEvent;
+const source: InputSource | null = getInputSource(stockEvent);
+void source;
+
+// A canvas ImageData is accepted as a window icon.
+declare const imageData: ImageData;
+void fc.setWindowIcon(imageData);

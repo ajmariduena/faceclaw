@@ -25,6 +25,7 @@ import { GlanceHost, type GlanceDisplay } from './glance-host'
 import { createLockScreenImage, LOCK_SCREEN_SURFACE_ID } from './lock-screen'
 import { OsEventTypeList } from './events'
 import { loadDeviceAddresses } from './device-addresses'
+import { updateGlassesPresence } from './glasses-presence'
 import { firmwareIncompatibilityMessage, hasCompatibleFirmware } from './firmware-compat'
 import { isHaltedSessionPhase, suppressAutoReconnect } from './reconnect-policy'
 import { deviceAddressError } from './ios-peripheral-identity'
@@ -373,6 +374,7 @@ export class IosPreviewController {
     // a session's first snapshot) wakes the screen, to the lock notice if locked.
     const putOn = wearing && this.glassesWorn === false
     this.glassesWorn = wearing
+    this.syncPresence()
     this.logBluetooth(`Glasses wear state: ${wearing ? 'ON_HEAD' : 'OFF_HEAD'}`)
     if (!wearing && this.phoneLocked && this.lockEnabled) this.setGlassesLocked(true)
     if (putOn && this.runtimeRunning && !shell.isScreenOn()) shell.wake('sidebar')
@@ -672,6 +674,10 @@ export class IosPreviewController {
     this.logBluetooth(status)
     this.emitState()
   }
+  /** Mirror the session into glasses-presence (read by EvenHub's device status and Timers). */
+  private syncPresence(): void {
+    updateGlassesPresence({ connected: this.state.phase === 'connected', worn: this.glassesWorn, charging: this.state.charging ?? false })
+  }
   private emitState(): void {
     if (this.state.phase !== 'connected') resetRingInputFilter()
     this.pushBrightness()
@@ -679,6 +685,7 @@ export class IosPreviewController {
     if (this.state.phase !== 'connected' && this.state.phase !== 'connecting') this.glassesWorn = null
     if (this.state.phase !== 'connected') iosVoiceInput.handleSessionEnded()
     shell.setBatteryLevels({ headset: this.state.battery, headsetCharging: this.state.charging })
+    this.syncPresence()
     this.syncRuntime()
     if (this.active) this.onConnectionState({ ...this.state })
     this.requestShellRender()
