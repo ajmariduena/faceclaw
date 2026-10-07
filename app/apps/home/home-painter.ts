@@ -1,6 +1,6 @@
 import * as graphics from "../../graphics/image";
 import type { GrayImage } from "../../graphics/image";
-import { HOME_CARDS, emptyCardStatus, type HomeCalendar } from "./home-model";
+import { HOME_CARDS, HOME_WEEKDAYS, emptyCardStatus, type HomeCalendar } from "./home-model";
 import * as art from "./stock-art";
 
 export type HomeFace = {
@@ -71,6 +71,19 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
         text(20, y + 54, time, 153);
       } else text(20, y + 27, time, 153);
     });
+  } else if (card.id === "calendar" && data.calendar.nextEvent) {
+    const next = data.calendar.nextEvent;
+    const date = new Date(next.startMs);
+    header();
+    text(20, 65, "Sin eventos hoy", 153);
+    text(20, 106, `Próximo: ${HOME_WEEKDAYS[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`, 153);
+    const words = (next.title || "Sin título").trim().split(/\s+/);
+    let first = words.shift()!;
+    while (words.length && face.measureLine(`${first} ${words[0]}`) <= 278) first += ` ${words.shift()}`;
+    text(20, 139, first);
+    if (words.length) text(20, 166, words.join(" "));
+    text(20, 210, next.allDay ? "Todo el día"
+      : `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`, 153);
   } else if (card.id === "music" && data.music) {
     header();
     text(20, 69, data.music.title || "Sin título");
@@ -106,7 +119,7 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
 
   const date = data.now;
   const pad = (n: number) => String(n).padStart(2, "0");
-  const weekday = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"][date.getDay()];
+  const weekday = HOME_WEEKDAYS[date.getDay()];
   art.dotText(image, 22, 21, `${weekday} ${pad(date.getDate())}/${pad(date.getMonth() + 1)}`);
   if (data.battery === null || data.battery < 0 || data.battery > 100) image.fillRect(190, 27, 14, 2, 153);
   else {

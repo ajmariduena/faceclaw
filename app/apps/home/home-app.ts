@@ -65,8 +65,8 @@ export function createHomeWindow(ctx: AppContext) {
     },
     handleInput: async (event: InputEvent) => {
       if (launching) return;
-      if (event.type === "scroll-up" || event.type === "swipe-up") model.move(-1);
-      else if (event.type === "scroll-down" || event.type === "swipe-down") model.move(1);
+      if (event.type === "scroll-up" || event.type === "swipe-up" || event.type === "swipe-right") model.move(-1);
+      else if (event.type === "scroll-down" || event.type === "swipe-down" || event.type === "swipe-left") model.move(1);
       else if (event.type === "click") await launch();
     },
     hitTest: async (x, y) => {

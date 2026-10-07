@@ -92,3 +92,24 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
   assert.equal(h.counts().subscriptions, 0);
   assert.equal(h.timers.size, 0);
 });
+
+test('Watch horizontal swipes paginate circularly without changing Ring or vertical mappings', async () => {
+  const h = harness();
+  for (let index = 1; index <= 5; index++) {
+    await h.input('swipe-left');
+    assert.equal(h.paint().index, index % 5);
+  }
+  await h.input('swipe-right');
+  assert.equal(h.paint().index, 4);
+  await h.input('scroll-down');
+  assert.equal(h.paint().index, 0);
+  await h.input('scroll-up');
+  assert.equal(h.paint().index, 4);
+  await h.input('swipe-down');
+  assert.equal(h.paint().index, 0);
+  await h.input('swipe-up');
+  assert.equal(h.paint().index, 4);
+  await h.input('swipe-left');
+  await h.input('click');
+  assert.equal(h.launched.at(-1), 'calendar');
+});

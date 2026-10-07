@@ -27,17 +27,18 @@ export class HomeModel {
   wake(): void { this.index = 0; this.returnHome(); }
 }
 
-export type HomeCalendar = { events: CalendarEvent[]; status: string | null };
+export const HOME_WEEKDAYS = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"] as const;
+export type HomeCalendar = { events: CalendarEvent[]; nextEvent: CalendarEvent | null; status: string | null };
 export function calendarCardState(
   permitted: boolean, events: readonly CalendarEvent[], nowMs: number, readState: CalendarReadState = "ready",
 ): HomeCalendar {
-  if (!permitted) return { events: [], status: "Sin permiso de calendario" };
+  if (!permitted) return { events: [], nextEvent: null, status: "Sin permiso de calendario" };
   const tomorrow = new Date(nowMs);
   tomorrow.setHours(24, 0, 0, 0);
-  const upcoming = events.filter(event => event.endMs > nowMs && event.startMs < tomorrow.getTime())
-    .sort((a, b) => a.startMs - b.startMs).slice(0, 2);
-  if (upcoming.length) return { events: upcoming, status: null };
-  return { events: [], status: readState === "loading" ? "Cargando calendario…"
+  const upcoming = events.filter(event => event.endMs > nowMs).sort((a, b) => a.startMs - b.startMs);
+  const today = upcoming.filter(event => event.startMs < tomorrow.getTime()).slice(0, 2);
+  if (today.length) return { events: today, nextEvent: null, status: null };
+  return { events: [], nextEvent: readState === "ready" ? upcoming[0] ?? null : null, status: readState === "loading" ? "Cargando calendario…"
     : readState === "error" ? "Calendario no disponible" : "Sin eventos hoy" };
 }
 

@@ -59,3 +59,40 @@ test('long real titles are clipped to the card and data changes repaint the cloc
   assert.ok(textDraws.includes('Sonando'));
   assert.ok(textDraws.some(text => text.endsWith('…')));
 });
+
+test('future Calendar card keeps the empty-today label and fits the next all-day event', () => {
+  const data = snapshot();
+  data.calendar.nextEvent = { title: 'Independencia de Guayaquil', allDay: true,
+    startMs: new Date(2026, 9, 9).getTime(), endMs: new Date(2026, 9, 10).getTime() };
+  const from = textDraws.length;
+  paintHome(0, data, face);
+  const drawn = textDraws.slice(from);
+  assert.ok(drawn.includes('Sin eventos hoy'));
+  assert.ok(drawn.includes('Próximo: Vie 9/10'));
+  assert.ok(drawn.includes('Independencia de Guayaquil'));
+  assert.ok(drawn.includes('Todo el día'));
+  data.calendar.nextEvent.title = 'Una reunión con un nombre extremadamente largo que ocupa más de dos líneas';
+  paintHome(0, data, face);
+});
+
+test('weekday lowercase dots have separate counters and all seven dates clear the battery', () => {
+  const { GrayImage } = load('app/graphics/image.ts');
+  const { dotText } = load('app/apps/home/stock-art.ts');
+  const glyph = letter => {
+    const image = new GrayImage(24, 15);
+    dotText(image, 0, 0, letter);
+    return image;
+  };
+  const e = glyph('e');
+  assert.equal(e.getPixel(3, 3), 0);
+  assert.equal(e.getPixel(6, 3), 0);
+  assert.equal(e.getPixel(3, 6), 255);
+  assert.equal(e.getPixel(9, 9), 0);
+  assert.notDeepEqual(glyph('a').pixels, glyph('o').pixels);
+  for (const day of ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']) {
+    const image = new GrayImage(230, 40);
+    dotText(image, 22, 21, `${day} 07/10`);
+    assert.ok(image.pixels.some(v => v !== 0));
+    for (let y = 0; y < image.height; y++) for (let x = 185; x < image.width; x++) assert.equal(image.getPixel(x, y), 0);
+  }
+});
