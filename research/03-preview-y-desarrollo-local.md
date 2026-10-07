@@ -32,7 +32,15 @@ done
 adb shell am force-stop $P
 ```
 
-Los swipes inyectados con `adb shell input swipe` sobre el recuadro no los reconoce el detector de NativeScript; los toques sí. Para controlar la UI desde la Mac, crear un token de entrada y usar `scripts/faceclaw-input.cjs` con `adb forward tcp:8791 tcp:8791`.
+En XOS (Infinix), "Hiber" descarta los broadcasts a Faceclaw mientras su proceso está vivo (`dumpsys activity broadcasts` muestra `Hiber/broadcast restricted`): hacer `force-stop` antes de cada export/import, y las dos importaciones en un solo `adb shell` para que caigan dentro de los 500 ms antes del `System.exit`.
+
+Control desde la Mac con modo Watch:
+
+- Swipe: `adb shell input swipe 550 1200 150 1200 120`. Tiene que ser rápido (~120 ms); con 250 ms o más el detector de NativeScript no lo reconoce como swipe.
+- Seleccionar: `adb shell input tap 360 1150`. Mantener: `adb shell input swipe 360 1150 360 1150 900`.
+- El doble toque inyectado no es fiable.
+
+`scripts/faceclaw-input.cjs` no sirve en Preview Only en Android: `ready()` exige gafas conectadas (`app/g2/dashboard-controller.ts:473`) y responde "Faceclaw is not ready for input".
 
 ## Render en la Mac
 
