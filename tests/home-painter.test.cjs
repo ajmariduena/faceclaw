@@ -23,17 +23,18 @@ const face = {
 const snapshot = () => ({ now: new Date(2026, 9, 7, 9, 41),
   calendar: { events: [], nextEvent: null, status: 'Sin eventos hoy' }, music: null, notifications: [] });
 
-test('app paints one bordered v3 card with five stable dots and Horizonte clock', () => {
+test('app paints one bordered v3 card with six stable dots and Horizonte clock', () => {
   const data = snapshot();
-  for (let card = 0; card < 5; card++) {
+  for (let card = 0; card < 6; card++) {
     const image = paintHome(card, data, face);
     assert.equal(image.width, 576);
     assert.equal(image.height, 288);
     assert.equal(image.pixels[14 * 576 + 250], 255);
-    for (let i = 0; i < 5; i++) assert.equal(image.pixels[(120 + i * 11) * 576 + 218], i === card ? 255 : 85);
+    for (let i = 0; i < 6; i++) assert.equal(image.pixels[(115 + i * 11) * 576 + 218], i === card ? 255 : 85);
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(image.pixels[y * 576 + x], 0);
   }
   assert.ok(textDraws.includes('Nada sonando'));
+  assert.ok(textDraws.includes('Toca para emparejar'));
   assert.ok(textDraws.includes('Sin notificaciones'));
   assert.ok(textDraws.includes('Toca para empezar'));
 });
@@ -59,7 +60,7 @@ test('long real titles are clipped to the card and data changes repaint the cloc
   const second = paintHome(0, data, face);
   assert.notDeepEqual(first.pixels, second.pixels);
   data.music = { title: 'Canción '.repeat(30), artist: 'Artista '.repeat(30), playing: true };
-  paintHome(1, data, face);
+  paintHome(2, data, face);
   assert.ok(textDraws.includes('Sonando'));
   assert.ok(textDraws.some(text => text.endsWith('…')));
 });
@@ -80,18 +81,40 @@ test('future Calendar card keeps the empty-today label and fits the next all-day
 });
 
 
-test('Horizonte leaves all five existing right cards and pagination pixels unchanged', () => {
-  const expected = [
-    "6ee8264e1a1c2d4af49f43a20d7b3e0c83a7c11ee8d2c3a53d2e015505dc8585",
-    "5c5493a43ae99178b9f0b05ad709c06d8c13ee47148428ff1370fecdebba487e",
-    "10891bfaa518727befa7db8595c4e7de725faaf8310185f62a54b380da3dfc42",
-    "58a99c950082b0a1a1831bdbf1c8e4f77c679fd9b0df723d900797087550b011",
-    "c926e8b7b629dcfc0c3c53a00b08b77d309832fcad65fc31b12e299f88d1775f"
-];
+test('the five original cards are unchanged at their new indices, with six dots beside them', () => {
+  // Card area (x >= 230) hashes of the pre-Paseo painter, verified identical when the card was added.
+  const expected = {
+    0: 'e323243b57beb4587536d4936c3a0875bbe777a97107791ff8df62e656fef5ee',
+    2: '4526ae89c60d46ad6d5f0ce6d20f9af9d86e73327ed1311d049f5b4d3ecd8257',
+    3: '9f5b2f6a403a77163678871aa69bab0f858811c4ce9e790675b98d1f0e0a07bf',
+    4: 'f4430a406d530ebc9b18efbe4f93a54130dc50e2d59a7caef5eef7040e4bb950',
+    5: 'a50b1a59495fccbee8b762445781d37f5600af2a1c8650168ba953c2f718a958',
+  };
   const crypto = require('node:crypto');
-  for (let index = 0; index < 5; index++) {
-    const image = paintHome(index, snapshot(), face), pixels = [];
-    for (let y = 0; y < 288; y++) pixels.push(...image.pixels.slice(y * 576 + 218, (y + 1) * 576));
-    assert.equal(crypto.createHash('sha256').update(Buffer.from(pixels)).digest('hex'), expected[index]);
+  for (const [index, hash] of Object.entries(expected)) {
+    const image = paintHome(Number(index), snapshot(), face), pixels = [];
+    for (let y = 0; y < 288; y++) pixels.push(...image.pixels.slice(y * 576 + 230, (y + 1) * 576));
+    assert.equal(crypto.createHash('sha256').update(Buffer.from(pixels)).digest('hex'), hash);
+    for (let y = 0; y < 288; y++) for (let x = 218; x < 230; x++) {
+      const dot = y >= 115 && y < 115 + 6 * 11 && (y - 115) % 11 < 3 && x < 218 + (Math.floor((y - 115) / 11) === Number(index) ? 4 : 2);
+      assert.equal(image.getPixel(x, y), dot ? (Math.floor((y - 115) / 11) === Number(index) ? 255 : 85) : 0);
+    }
   }
+});
+
+test('the Paseo card shows two updates with dim agent lines and white summaries, clipped to the card', () => {
+  const data = snapshot();
+  data.paseo = { configured: true, status: '', needs: 1, working: 0, updates: [
+    { agentId: 'a', title: 'Fix reconnect BLE', bucket: 'needs', activityMs: data.now.getTime() - 60_000, line: '¿Apruebas correr los tests de BLE?' },
+    { agentId: 'b', title: 'PR #1221 jelou-cli', bucket: 'review', activityMs: data.now.getTime() - 240_000, line: 'Listo para fusionar a producción. '.repeat(6) },
+  ] };
+  const from = textDraws.length;
+  paintHome(1, data, face);
+  const drawn = textDraws.slice(from);
+  assert.ok(drawn.includes('Fix reconnect BLE · 1 min'));
+  assert.ok(drawn.includes('PR #1221 jelou-cli · 4 min'));
+  assert.ok(drawn.some(text => text.startsWith('¿Apruebas')));
+  data.paseo = { configured: true, status: 'Conectando…', updates: [], needs: 0, working: 0 };
+  paintHome(1, data, face);
+  assert.ok(textDraws.includes('Conectando…'));
 });

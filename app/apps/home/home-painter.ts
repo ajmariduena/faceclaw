@@ -3,6 +3,8 @@ import type { GrayImage } from "../../graphics/image";
 import { HOME_CARDS, HOME_WEEKDAYS, horizonteClockState, emptyCardStatus, type HomeCalendar } from "./home-model";
 import * as art from "./stock-art";
 import { paintHorizonte } from "./horizonte-painter";
+import { glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
+import { formatAge } from "../paseo/paseo-model";
 
 export type HomeFace = {
   readonly lineHeight: number;
@@ -14,7 +16,12 @@ export type HomeSnapshot = {
   calendar: HomeCalendar;
   music: { title: string; artist: string; playing: boolean } | null;
   notifications: readonly { title: string; text: string; appName: string }[];
+  /** What the Paseo worker last published; null before it publishes (or when the app never ran). */
+  paseo?: PaseoGlanceSnapshot | null;
 };
+
+/** Six dots centred where the five sat (120 + i * 11). */
+export const HOME_DOTS_TOP = 115;
 
 const icons = new Map<string, GrayImage>();
 function icon(image: GrayImage, name: keyof typeof art.patterns, x: number, y: number, size = 24) {
@@ -78,6 +85,31 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace, 
     if (words.length) text(20, 166, words.join(" "));
     text(20, 210, next.allDay ? "Todo el día"
       : `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`, 153);
+  } else if (card.id === "paseo" && data.paseo?.updates.length) {
+    header();
+    const nowMs = data.now.getTime();
+    let y = 62;
+    for (const update of data.paseo.updates) {
+      if (y + 27 > 240) break;
+      const age = ` · ${formatAge(update.activityMs, nowMs)}`;
+      text(20, y, `${fitted(face, update.title, 278 - face.measureLine(age))}${age}`, 153);
+      y += 27;
+      const words = (update.line || "…").trim().split(/\s+/);
+      let line = "";
+      const lines: string[] = [];
+      for (const word of words) {
+        const next = line ? `${line} ${word}` : word;
+        if (face.measureLine(next) <= 278) line = next;
+        else { if (line) lines.push(line); line = word; }
+      }
+      if (line) lines.push(line);
+      for (const wrapped of lines.slice(0, 2)) {
+        if (y + 27 > 254) break;
+        text(20, y, wrapped);
+        y += 27;
+      }
+      y += 14;
+    }
   } else if (card.id === "music" && data.music) {
     header();
     text(20, 69, data.music.title || "Sin título");
@@ -109,10 +141,11 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace, 
     }
     face.drawText(panel, arrowX + 20, y, suffix, 153);
     if (width > 278) centered(196, emptyCardStatus(card.id), 153);
-  } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id) : emptyCardStatus(card.id));
+  } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id)
+    : card.id === "paseo" ? glanceEmptyStatus(data.paseo) : emptyCardStatus(card.id));
 
   image.bitBlt(paintHorizonte(horizonteClockState(data.calendar, data.now), face, clockFace), 0, 0);
   image.bitBlt(panel.withDrawsBaked(), 230, 14);
-  for (let i = 0; i < HOME_CARDS.length; i++) image.fillRect(218, 120 + i * 11, i === selected ? 4 : 2, 3, i === selected ? 255 : 85);
+  for (let i = 0; i < HOME_CARDS.length; i++) image.fillRect(218, HOME_DOTS_TOP + i * 11, i === selected ? 4 : 2, 3, i === selected ? 255 : 85);
   return image.withDrawsBaked();
 }

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
 
 function harness(stockAvailable = false, clockAvailable = true) {
-  let options, painted, permitted = false, subscriptions = 0, reads = 0, renders = 0;
+  let options, painted, permitted = false, subscriptions = 0, reads = 0, renders = 0, paseoState;
   let nowMs = new Date(2026, 9, 7, 10, 5).getTime(), events = [];
   const timers = new Set(), launched = [], frames = [], clockLoads = [], periods = [];
   class ClockDate extends Date {
@@ -28,12 +28,13 @@ function harness(stockAvailable = false, clockAvailable = true) {
     '../../native/notification-sources': { shouldShowNotificationOnGlasses: name => name !== 'blocked' },
     '../../ui/shell/in-process-window': { createInProcessWindow: opts => { options = opts; return { window: {}, requestRender: () => renders++ }; } },
     '../../ui/shell/shell': { shell: { isScreenOn: () => true } },
+    '../../ui/shell/worker-state': { readWorkerState: () => paseoState, onWorkerStateChanged: subscribe },
     './home-painter': { paintHome: (index, data, font, clockFont) => { painted = { index, data, font, clockFont }; return painted; } },
   });
   const { createHomeWindow } = load('app/apps/home/home-app.ts');
   const home = createHomeWindow({ actions: {}, launchApp: async id => launched.push(id),
     submitWindowFrame: (...args) => frames.push(args), setWindowSurfaceVisible() {} });
-  return { home, options, launched, timers, frames, clockLoads, periods, setEvents: value => events = value,
+  return { home, options, launched, timers, frames, clockLoads, periods, setEvents: value => events = value, setPaseo: value => paseoState = value,
     advanceMinute: () => { nowMs += 60_000; for (const fn of timers) fn(); }, paint: () => options.baseLayer.paint(),
     input: type => options.baseLayer.handleInput({ type }), allowCalendar: () => permitted = true,
     counts: () => ({ subscriptions, reads, renders }) };
@@ -68,25 +69,27 @@ test('home window scroll/swipe/tap and direct card touch launch existing apps; r
   await h.input('scroll-down');
   await h.input('click');
   await h.input('scroll-down');
+  await h.input('click');
+  await h.input('scroll-down');
   await h.options.baseLayer.hitTest(300, 100);
-  assert.deepEqual(h.launched, ['calendar', 'music', 'notifications', 'microphones', 'launcher']);
+  assert.deepEqual(h.launched, ['calendar', 'paseo', 'music', 'notifications', 'microphones', 'launcher']);
   h.home.onShow(false);
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   h.home.onShow(true);
   assert.equal(h.paint().index, 0);
   await h.input('swipe-up');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.input('scroll-up');
-  assert.equal(h.paint().index, 3);
+  assert.equal(h.paint().index, 4);
   await h.options.baseLayer.hitTest(10, 10);
-  assert.equal(h.launched.length, 5);
+  assert.equal(h.launched.length, 6);
 });
 
 test('home stops its polling and subscriptions while hidden or asleep and reconnects on return', () => {
   const h = harness();
   assert.equal(h.counts().subscriptions, 0);
   h.options.onForegroundChanged(true);
-  assert.equal(h.counts().subscriptions, 3);
+  assert.equal(h.counts().subscriptions, 4);
   assert.equal(h.timers.size, 1);
   h.options.onForegroundChanged(true);
   assert.equal(h.timers.size, 1);
@@ -94,7 +97,7 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
   assert.equal(h.counts().subscriptions, 0);
   assert.equal(h.timers.size, 0);
   h.options.setScreenOn(true);
-  assert.equal(h.counts().subscriptions, 3);
+  assert.equal(h.counts().subscriptions, 4);
   h.options.onForegroundChanged(false);
   assert.equal(h.counts().subscriptions, 0);
   h.options.onForegroundChanged(true);
@@ -105,20 +108,20 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
 
 test('Watch horizontal swipes paginate circularly without changing Ring or vertical mappings', async () => {
   const h = harness();
-  for (let index = 1; index <= 5; index++) {
+  for (let index = 1; index <= 6; index++) {
     await h.input('swipe-left');
-    assert.equal(h.paint().index, index % 5);
+    assert.equal(h.paint().index, index % 6);
   }
   await h.input('swipe-right');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.input('scroll-down');
   assert.equal(h.paint().index, 0);
   await h.input('scroll-up');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.input('swipe-down');
   assert.equal(h.paint().index, 0);
   await h.input('swipe-up');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.input('swipe-left');
   await h.input('click');
   assert.equal(h.launched.at(-1), 'calendar');
@@ -143,4 +146,13 @@ test('the existing visible timer updates Horizonte from the same calendar read a
   h.advanceMinute();
   assert.equal(h.counts().renders, 1);
   assert.equal(harness(false, false).paint().clockFont.lineHeight, 20);
+});
+
+test('the Paseo card paints what the worker last published and repaints on its updates', () => {
+  const h = harness();
+  assert.equal(h.paint().data.paseo, null);
+  h.setPaseo({ configured: true, status: '', updates: [{ agentId: 'a', title: 'Fix', bucket: 'done', activityMs: 1, line: 'Listo.' }], needs: 0, working: 0 });
+  assert.equal(h.paint().data.paseo.updates[0].line, 'Listo.');
+  h.options.onForegroundChanged(true);
+  assert.equal(h.counts().subscriptions, 4);
 });

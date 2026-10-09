@@ -40,7 +40,7 @@ test('six Horizonte clock/event combinations fit the unchanged app card and dots
       const data = { now, calendar: calendarCardState(true, events, now.getTime()), music: null, notifications: [] };
       const image = paintHome(1, data, face, clockFace);
       for (let y = 0; y < 288; y++) for (let x = 212; x < 218; x++) assert.equal(image.getPixel(x, y), 0);
-      for (let i = 0; i < 5; i++) assert.equal(image.getPixel(218, 120 + i * 11), i === 1 ? 255 : 85);
+      for (let i = 0; i < 6; i++) assert.equal(image.getPixel(218, 115 + i * 11), i === 1 ? 255 : 85);
       assert.equal(image.getPixel(250, 14), 255);
       if (process.env.HORIZONTE_REVIEW_DIR) {
         fs.mkdirSync(process.env.HORIZONTE_REVIEW_DIR, { recursive: true });

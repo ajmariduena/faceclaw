@@ -4,6 +4,7 @@ export const HOME_WINDOW_ID = "home";
 export const HOME_SURFACE_ID = "window:home";
 export const HOME_CARDS = [
   { id: "calendar", name: "Calendario", icon: "calendar", appId: "calendar" },
+  { id: "paseo", name: "Paseo", icon: "ai", appId: "paseo" },
   { id: "music", name: "Música", icon: "music", appId: "music" },
   { id: "notifications", name: "Notificaciones", icon: "bell", appId: "notifications" },
   { id: "translate", name: "Traducir", icon: "translate", appId: "microphones" },
@@ -45,6 +46,7 @@ export function calendarCardState(
 export function emptyCardStatus(card: HomeCardId): string {
   switch (card) {
     case "calendar": return "Sin eventos hoy";
+    case "paseo": return "Sin novedades";
     case "music": return "Nada sonando";
     case "notifications": return "Sin notificaciones";
     case "translate": return "Toca para empezar";

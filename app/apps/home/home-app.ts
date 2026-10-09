@@ -11,6 +11,8 @@ import type { InputEvent } from "../../ui/gestures";
 import type { Layer } from "../../ui/layers";
 import { createInProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
+import { onWorkerStateChanged, readWorkerState } from "../../ui/shell/worker-state";
+import { PASEO_GLANCE_STATE_KEY, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import type { AppContext } from "../app-definition";
 import { HomeModel, HOME_WINDOW_ID, HOME_SURFACE_ID, calendarCardState } from "./home-model";
 import { paintHome, type HomeFace } from "./home-painter";
@@ -70,6 +72,7 @@ export function createHomeWindow(ctx: AppContext) {
         music: media.available && (media.title || media.artist)
           ? { title: media.title, artist: media.artist, playing: media.playbackState === "playing" } : null,
         notifications,
+        paseo: (readWorkerState(PASEO_GLANCE_STATE_KEY) as PaseoGlanceSnapshot | undefined) ?? null,
       }, homeFace(), homeClockFace());
     },
     handleInput: async (event: InputEvent) => {
@@ -91,6 +94,7 @@ export function createHomeWindow(ctx: AppContext) {
         onCalendarChanged(requestRender),
         mediaControllerBridge.onStateChange(requestRender),
         onAndroidNotificationPosted(requestRender),
+        onWorkerStateChanged(PASEO_GLANCE_STATE_KEY, requestRender),
       ];
     } else {
       if (tick !== null) clearInterval(tick);

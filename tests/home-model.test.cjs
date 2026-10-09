@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
 const { HomeModel, HOME_CARDS, calendarCardState, emptyCardStatus, horizonteClockState } = loader()('app/apps/home/home-model.ts');
 
-test('five stable cards wrap in both directions, including empty cards', () => {
+test('six stable cards wrap in both directions, including empty cards', () => {
   const model = new HomeModel();
-  assert.deepEqual(Array.from(HOME_CARDS, card => card.id), ['calendar', 'music', 'notifications', 'translate', 'more']);
+  assert.deepEqual(Array.from(HOME_CARDS, card => card.id), ['calendar', 'paseo', 'music', 'notifications', 'translate', 'more']);
   model.move(-1);
   assert.equal(model.selected.id, 'more');
   model.move(1);
