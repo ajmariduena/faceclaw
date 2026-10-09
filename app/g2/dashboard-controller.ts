@@ -51,6 +51,7 @@ import { type GlanceEvent } from "./glance-state";
 import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from "../phone-ui/onboarding-state";
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
+import { encodeBase64 } from "../util/base64";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
 import { prepareFrameDraws } from "../graphics/glyph-wire";
@@ -2438,9 +2439,30 @@ class DashboardController {
         }
       },
       endTextSettingEdit: () => this.endTextSettingEdit(),
+      startRawMic: (deliver) => this.startRawMicTap(deliver),
     });
     this.appHosts.set(appId, host);
     return host;
+  }
+
+  /**
+   * The decode-only glasses mic tap for a worker app (Paseo dictation): the
+   * same tap EvenHub mic apps use, so an STT session preempts it and the
+   * worker is told the mic is busy rather than getting silence.
+   */
+  private startRawMicTap(deliver: (pcmBase64: string) => void): { stop: () => void } | string {
+    if (!global.isAndroid) return "The glasses mic tap is Android-only.";
+    const unsubscribe = voiceControlBridge.onRawPcm((pcm) => deliver(encodeBase64(pcm)));
+    if (!voiceControlBridge.startRawCapture({ communicator: this.communicator?.getNativeCommunicator() ?? null })) {
+      unsubscribe();
+      return "The microphone is in use.";
+    }
+    return {
+      stop: () => {
+        unsubscribe();
+        voiceControlBridge.stopRawCapture();
+      },
+    };
   }
 
   /** The services an app's launch/boot callbacks may use; see AppContext. */

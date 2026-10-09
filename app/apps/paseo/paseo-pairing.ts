@@ -69,7 +69,7 @@ function parseOffer(encoded: string): PairingParseResult {
   const key = typeof offer.daemonPublicKeyB64 === "string" ? offer.daemonPublicKeyB64.trim() : "";
   const endpoint = typeof offer.relay?.endpoint === "string" ? offer.relay.endpoint.trim() : "";
   if (!serverId || !key || !endpoint) return { ok: false, error: "That link's offer is missing the server id, key or relay." };
-  const useTls = typeof offer.relay.useTls === "boolean" ? offer.relay.useTls : /:443$/.test(endpoint);
+  const useTls = typeof offer.relay.useTls === "boolean" ? offer.relay.useTls : endpoint.endsWith(":443");
   return { ok: true, pairing: { kind: "relay", serverId, daemonPublicKeyB64: key, relay: { endpoint, useTls } } };
 }
 
@@ -79,7 +79,7 @@ export function parsePairingInput(input: string): PairingParseResult {
   const offer = /#offer=(\S+)/.exec(text);
   if (offer) return parseOffer(offer[1]!);
   const direct = /^(wss?:\/\/)?([^/\s?#]+)(\/ws\/?)?$/i.exec(text);
-  if (direct && /^[\w.\-]+(:\d+)?$|^\[[^\]]+\](:\d+)?$/.test(direct[2]!)) {
+  if (direct && /^[\w.-]+(:\d+)?$|^\[[^\]]+\](:\d+)?$/.test(direct[2]!)) {
     const scheme = (direct[1] ?? "ws://").toLowerCase();
     const hasPort = /:\d+$/.test(direct[2]!);
     // A bare host means the daemon's default port; TLS hosts sit behind a proxy on 443.

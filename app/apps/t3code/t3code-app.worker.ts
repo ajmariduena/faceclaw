@@ -385,6 +385,8 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         .catch((error) => post({ type: "tool-result", callId, result: { ok: false, error: errorMessage(error) } }));
       break;
     }
+    case "raw-mic-state":
+    case "raw-pcm":
     case "input-focus":
     case "navigation-sensors":
       break;

@@ -54,7 +54,7 @@ test('home owns boot focus; app double tap returns without closing it or changin
   h.shell.focusWindow('calendar');
   await h.input('double-click');
   assert.equal(h.shell.foregroundWindow(), h.home);
-  assert.equal(h.model.selected.id, 'music');
+  assert.equal(h.model.selected.id, 'paseo');
   assert.equal(h.model.view, 'home');
   assert.equal(h.app.closes, 0);
   assert.deepEqual(h.app.inputs, []);
@@ -78,7 +78,7 @@ test('double tap on home sleeps; wake from home or app selects Calendar and focu
   assert.equal(h.model.selected.id, 'calendar');
   h.model.move(1);
   await h.input('display-wake');
-  assert.equal(h.model.selected.id, 'music');
+  assert.equal(h.model.selected.id, 'paseo');
   assert.equal(h.counts().wakes, 2);
 });
 
@@ -116,5 +116,5 @@ test('startup stays on home instead of restoring workers that can steal focus la
   assert.equal(h.shell.foregroundWindow(), h.home);
   h.model.move(1);
   await controller.restoreOpenApps();
-  assert.equal(h.model.selected.id, 'music');
+  assert.equal(h.model.selected.id, 'paseo');
 });

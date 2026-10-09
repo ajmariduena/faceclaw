@@ -205,6 +205,8 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       if (window.foreground) renderAndSubmit(window, 0);
       break;
     }
+    case "raw-mic-state":
+    case "raw-pcm":
     case "input-focus":
     case "navigation-sensors":
     case "resize-window":

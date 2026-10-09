@@ -287,6 +287,8 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         syncTickTimer(window);
       }
       break;
+    case "raw-mic-state":
+    case "raw-pcm":
     case "navigation-sensors":
     case "text-input":
     case "tool-call":

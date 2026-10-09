@@ -7,9 +7,6 @@ import { appViewportSize, type WindowHeightMode } from "./geometry";
 import * as frameTimings from "../../native/frame-timings";
 import { shell, type ShellWindow } from "./shell";
 import { publishWorkerState } from "./worker-state";
-import { voiceControlBridge } from "../../native/voice-control";
-import { encodeBase64 } from "../../native/cloud-stt";
-import { activeCommunicator } from "../../apps/evenhub/mic-router";
 
 /**
  * Messages between the shell (main thread) and an app worker. One worker
@@ -218,6 +215,12 @@ export type WorkerAppHostOptions = {
   requestShellRender: () => void;
   submitPixels?: (surfaceId: string, pixels: Uint8Array, width: number, height: number, draws: ArrayBuffer | null) => void;
   startTextInput?: () => void;
+  /**
+   * Start the decode-only glasses mic tap, delivering each decoded packet
+   * (16 kHz mono S16LE) as base64; returns the stop handle, or the reason it
+   * can't run (another capture owns the mic, no glasses mic on this OS).
+   */
+  startRawMic?: (deliver: (pcmBase64: string) => void) => { stop: () => void } | string;
   /** Open or focus the Settings app, optionally selecting a section. */
   openSettings: (section?: string) => void;
   /** Open the phone app's text editor on a string setting (by id). */
@@ -266,8 +269,8 @@ export class WorkerAppHost {
   private terminated = false;
   private shutdownTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly publishedStateKeys = new Set<string>();
-  /** The window receiving the glasses mic tap, with its PCM unsubscribe. */
-  private rawMic: { windowId: string; unsubscribe: () => void } | null = null;
+  /** The window receiving the glasses mic tap, with the tap's stop handle. */
+  private rawMic: { windowId: string; stop: () => void } | null = null;
 
   constructor(private readonly options: WorkerAppHostOptions) {
     options.worker.onmessage = (event: MessageEvent) => {
@@ -447,23 +450,22 @@ export class WorkerAppHost {
       return;
     }
     this.stopRawMic();
-    if (!global.isAndroid) {
-      reply(false, "The glasses mic tap is Android-only.");
+    if (!this.options.startRawMic) {
+      reply(false, "The glasses mic tap is not available here.");
       return;
     }
     if (shell.foregroundWindow()?.windowId !== windowId) {
       reply(false, "The window is not in the foreground.");
       return;
     }
-    const unsubscribe = voiceControlBridge.onRawPcm((pcm) => {
-      if (this.rawMic?.windowId === windowId) this.post({ type: "raw-pcm", windowId, pcm: encodeBase64(pcm) });
+    const started = this.options.startRawMic((pcm) => {
+      if (this.rawMic?.windowId === windowId) this.post({ type: "raw-pcm", windowId, pcm });
     });
-    if (!voiceControlBridge.startRawCapture({ communicator: activeCommunicator() })) {
-      unsubscribe();
-      reply(false, "The microphone is busy.");
+    if (typeof started === "string") {
+      reply(false, started);
       return;
     }
-    this.rawMic = { windowId, unsubscribe };
+    this.rawMic = { windowId, stop: started.stop };
     reply(true);
   }
 
@@ -471,8 +473,7 @@ export class WorkerAppHost {
     const current = this.rawMic;
     if (!current) return;
     this.rawMic = null;
-    current.unsubscribe();
-    voiceControlBridge.stopRawCapture();
+    current.stop();
   }
 
   private shutdown(): void {

@@ -16,6 +16,9 @@
 import type { DaemonTransport, WebSocketFactory } from "./vendor/paseo-transport";
 import { relaySocketUrl, type PaseoPairing } from "./paseo-pairing";
 
+// Provided by the NativeScript runtime and Node; absent from the test tsconfig's ES2020 lib.
+declare const TextDecoder: new () => { decode(input: Uint8Array): string };
+
 export type ClientPhase = "idle" | "connecting" | "connected" | "retrying";
 
 export type TransportAdapters = {

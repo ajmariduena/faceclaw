@@ -251,6 +251,8 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         );
       break;
     }
+    case "raw-mic-state":
+    case "raw-pcm":
     case "input-focus":
     case "navigation-sensors":
     case "resize-window":

@@ -250,6 +250,8 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         syncClock(window);
       }
       break;
+    case "raw-mic-state":
+    case "raw-pcm":
     case "navigation-sensors":
     case "resize-window":
     case "text-input":

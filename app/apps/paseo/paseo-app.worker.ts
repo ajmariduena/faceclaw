@@ -580,7 +580,7 @@ function refreshGlanceLines(agentIds: string[]): void {
     if (glanceLines.get(agentId)?.updatedAt === agent.updatedAt || glanceFetching.has(agentId)) continue;
     glanceFetching.add(agentId);
     const updatedAt = agent.updatedAt;
-    current
+    void current
       .fetchAgentTimeline(agentId, GLANCE_TAIL)
       .then(async (page) => {
         const entries = chatEntries(page.entries);
@@ -704,7 +704,7 @@ function closeChat(): void {
   if (!chat) return;
   chat = null;
   const current = client;
-  if (current?.connected) current.setTimelineSubscription([]).catch(() => {});
+  if (current?.connected) void current.setTimelineSubscription([]).catch(() => {});
 }
 
 function chatAgent(): AgentSnapshot | null {
