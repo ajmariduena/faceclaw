@@ -12,7 +12,7 @@ const scope: any = typeof globalThis !== "undefined" ? globalThis : global;
 function secureRandomBytes(length: number): Uint8Array {
   const out = new Uint8Array(length);
   if (typeof java !== "undefined") {
-    const bytes = Array.create("byte", length);
+    const bytes = (Array as any).create("byte", length);
     new java.security.SecureRandom().nextBytes(bytes);
     for (let i = 0; i < length; i++) out[i] = bytes[i] & 0xff;
     return out;

@@ -5,12 +5,7 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
-  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
-}) : x)(function(x) {
-  if (typeof require !== "undefined") return require.apply(this, arguments);
-  throw Error('Dynamic require of "' + x + '" is not supported');
-});
+var __require = (x) => { throw Error("Dynamic require of " + x + " is not supported"); };
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
@@ -39,14 +34,14 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// ../../../../../private/var/folders/0x/2c152xtd10ldtc_t8v388zjw0000gn/T/tmp.4CAmnutNXf/empty.js
+// ../../../../../private/var/folders/0x/2c152xtd10ldtc_t8v388zjw0000gn/T/tmp.t5L9vlwZzs/empty.js
 var empty_exports = {};
 __export(empty_exports, {
   default: () => empty_default
 });
 var empty_default;
 var init_empty = __esm({
-  "../../../../../private/var/folders/0x/2c152xtd10ldtc_t8v388zjw0000gn/T/tmp.4CAmnutNXf/empty.js"() {
+  "../../../../../private/var/folders/0x/2c152xtd10ldtc_t8v388zjw0000gn/T/tmp.t5L9vlwZzs/empty.js"() {
     empty_default = {};
   }
 });
