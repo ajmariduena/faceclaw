@@ -215,3 +215,89 @@ test('chat: user right / agent left, one rule above the newest, newest bright, d
   painter.paintPair(image6, face, { title: 'Pair Paseo', steps: ['Run "paseo daemon pair" on the computer', 'Paste the link into the phone app, then tap'], draft: 'https://app.paseo.sh/#offer=…', busy: '', error: '' });
   save(image6, 'paseo-app-pair');
 });
+
+test('questions and plans: choice box with ">" and details, multi-select marks, Other… dictation, plan approval and steps', async () => {
+  const face = await facePromise;
+  const R = load('app/apps/paseo/paseo-requests.ts');
+  const questions = R.parseQuestionFormQuestions({ questions: [
+    { question: '¿Dónde guardamos los casos?', header: 'Storage', options: [{ label: 'Postgres', description: 'La misma base del directorio' }, { label: 'SQLite' }], allowOther: true },
+    { question: '¿Qué canales unificamos primero?', header: 'Channels', options: [{ label: 'WhatsApp' }, { label: 'Correo' }, { label: 'Slack' }], multiSelect: true, allowOther: true },
+  ] });
+  const flow = R.startQuestionFlow('p', questions);
+  const rowsFor = (question, picked) => R.questionRows(question).map((row) => ({ label: row.label, ...(row.description ? { detail: row.description } : {}), ...(row.kind === 'option' && question.multiSelect ? { check: picked.has(row.index) } : {}) }));
+  // Single select with a context line.
+  const single = { heading: { text: 'Necesito dos decisiones antes de seguir.', value: 187, maxLines: 1, gap: 9 }, question: questions[0].question, rows: rowsFor(questions[0], new Set()), selected: 0, footer: { left: '· Question', right: '1/2' } };
+  const t1 = tracing(face);
+  const image1 = new graphics.GrayImage(576, 288);
+  painter.paintChoice(image1, t1.face, single);
+  save(image1, 'paseo-app-q-single');
+  const q = t1.draws.find((d) => d.text === '¿Dónde guardamos los casos?');
+  assert.ok(q && q.x === 28 && q.y === 50 + 8, `question at ${q && q.y}`);
+  assert.ok(t1.draws.some((d) => d.text === 'Postgres' && d.value === 255 && d.x === 48));
+  assert.ok(t1.draws.some((d) => d.text === 'La misma base del directorio' && d.value === 119));
+  assert.ok(t1.draws.some((d) => d.text === 'SQLite' && d.value === 136));
+  assert.ok(t1.draws.some((d) => d.text === 'Other…'));
+  assert.ok(t1.draws.some((d) => d.text === 'Necesito dos decisiones antes de seguir.' && d.value === 187 && d.y === 14));
+  assert.ok(t1.draws.some((d) => d.text === '1/2' && d.x + face.measureLine('1/2') === 554));
+  assert.equal(image1.getPixel(14 + 8, 50), 255, 'box top edge');
+  assert.equal(image1.getPixel(14 + 8, 236 - 1), 255, 'box bottom edge');
+  // Multi-select, two picked, cursor on the third.
+  R.chooseQuestionRow(flow);
+  flow.cursor = 0; R.chooseQuestionRow(flow);
+  flow.cursor = 1; R.chooseQuestionRow(flow);
+  flow.cursor = 2;
+  const multi = { heading: null, question: questions[1].question, rows: rowsFor(questions[1], flow.selections[1]), selected: flow.cursor, footer: { left: '· Question', right: '2/2' } };
+  const t2 = tracing(face);
+  const image2 = new graphics.GrayImage(576, 288);
+  painter.paintChoice(image2, t2.face, multi);
+  save(image2, 'paseo-app-q-multi');
+  assert.ok(t2.draws.some((d) => d.text === '[x] WhatsApp' && d.value === 136));
+  assert.ok(t2.draws.some((d) => d.text === '[ ] Slack' && d.value === 255));
+  assert.ok(t2.draws.some((d) => d.text === 'Submit'));
+  assert.ok(t2.draws.some((d) => d.text === '>' && d.y === t2.draws.find((e) => e.text === '[ ] Slack').y));
+  assert.equal(image2.getPixel(14 + 8, 14), 255, 'box top at the band top without a heading');
+  // Other… while dictating.
+  const other = { heading: null, question: '¿Cómo llamamos al nuevo servicio?', rows: [{ label: 'casos-api' }, { label: 'tickets' }, { label: 'Other…' }], selected: 2, live: 'Ponle soporte-hub', footer: { left: '· Listening', right: '0:03' } };
+  const t3 = tracing(face);
+  const image3 = new graphics.GrayImage(576, 288);
+  painter.paintChoice(image3, t3.face, other);
+  save(image3, 'paseo-app-q-other');
+  const live = t3.draws.find((d) => d.text === 'Ponle soporte-hub');
+  assert.ok(live && live.value === 255 && live.x + face.measureLine(live.text) === 554 - 18 && live.y < 236 && live.y > 150);
+  assert.ok(t3.draws.some((d) => d.text === '· Listening'));
+  // Many options scroll inside the box, keeping the selection visible.
+  const many = { heading: null, question: 'Pick one', rows: Array.from({ length: 12 }, (_, i) => ({ label: `Option ${i + 1}` })), selected: 10, footer: { left: '· Question', right: '1/1' } };
+  const t4 = tracing(face);
+  painter.paintChoice(new graphics.GrayImage(576, 288), t4.face, many);
+  assert.ok(t4.draws.some((d) => d.text === 'Option 11' && d.value === 255));
+  assert.ok(!t4.draws.some((d) => d.text === 'Option 1'));
+  assert.ok(t4.draws.filter((d) => d.y < 244).every((d) => d.y + 27 <= 236 + 4));
+  // Plan approval and steps.
+  const plan = '# Plan\n\nUnificar tickets en Casos: migrar WhatsApp y correo, vincular por empresa y desplegar detrás de un flag.\n\n1. Crear tabla de casos y vínculos por empresa.\n2. Migrar los tickets de WhatsApp.\n3. Migrar los hilos de correo.\n4. Resolver la empresa por nombre o dominio.\n5. Pruebas con 50 pares reales.\n6. Desplegar detrás de un flag.\n';
+  const request = { id: 'plan', kind: 'plan', name: 'ExitPlanMode', input: { plan }, actions: [{ id: 'reject', label: 'Reject', behavior: 'deny' }, { id: 'implement', label: 'Implement', behavior: 'allow' }] };
+  const actions = R.planActions(request);
+  const steps = R.planSteps(plan);
+  assert.equal(steps.length, 6);
+  const planView = { heading: { text: R.planSummary(plan), value: 255, maxLines: 3, gap: 60 }, question: 'Approve this plan?', rows: actions.map((a) => ({ label: R.planActionLabel(a, actions) })), selected: 0, footer: { left: '· Plan', right: '6 steps' } };
+  const t5 = tracing(face);
+  const image5 = new graphics.GrayImage(576, 288);
+  painter.paintChoice(image5, t5.face, planView);
+  save(image5, 'paseo-app-plan');
+  assert.ok(t5.draws.some((d) => d.text.startsWith('Unificar tickets') && d.value === 255 && d.y === 14));
+  const approve = t5.draws.find((d) => d.text === 'Approve plan');
+  assert.ok(approve && approve.value === 255);
+  assert.ok(t5.draws.some((d) => d.text === 'Keep planning' && d.value === 136));
+  assert.ok(t5.draws.some((d) => d.text === 'Approve this plan?' && d.y === 128 + 8));
+  assert.ok(t5.draws.some((d) => d.text === '6 steps'));
+  const t6 = tracing(face);
+  const image6 = new graphics.GrayImage(576, 288);
+  painter.paintPlanSteps(image6, t6.face, { steps, selected: 2, footer: { left: '· Plan', right: '3/6' } });
+  save(image6, 'paseo-app-plan-steps');
+  assert.ok(t6.draws.some((d) => d.text === '3. Migrar los hilos de correo.' && d.value === 255 && d.y === 14 + 2 * 36));
+  assert.ok(t6.draws.some((d) => d.text === '1. Crear tabla de casos y vínculos por empresa.' && d.value === 170));
+  assert.ok(t6.draws.some((d) => d.text === '3/6'));
+  const t7 = tracing(face);
+  painter.paintPlanSteps(new graphics.GrayImage(576, 288), t7.face, { steps: Array.from({ length: 10 }, (_, i) => `Paso ${i + 1}`), selected: 9, footer: { left: '· Plan', right: '10/10' } });
+  assert.ok(t7.draws.some((d) => d.text === '10. Paso 10' && d.value === 255));
+  assert.ok(t7.draws.filter((d) => d.y < 244).every((d) => d.y + 27 <= 244));
+});

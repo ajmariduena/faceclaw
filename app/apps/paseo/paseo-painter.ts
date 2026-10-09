@@ -237,6 +237,105 @@ export function paintChat(image: GrayImage, face: Face, view: ChatView): void {
 }
 
 // ---------------------------------------------------------------------------
+// Choices: an agent's question, or a plan to approve (approved renders in
+// tools/headless-render/paseo-questions.cjs)
+
+export type ChoiceRow = {
+  label: string;
+  /** Shown dim under the row while it is selected. */
+  detail?: string;
+  /** Multi-select mark: "[x]" / "[ ]". */
+  check?: boolean;
+};
+
+export type ChoiceView = {
+  /** Above the box: the agent's last line (dim) or the plan summary (white), with the gap to the box. */
+  heading: { text: string; value: number; maxLines: number; gap: number } | null;
+  question: string;
+  rows: readonly ChoiceRow[];
+  selected: number;
+  /** "Other…" dictation in progress, right-aligned inside the box. */
+  live?: string;
+  footer: { left: string; right: string };
+};
+
+const BOX_LEFT = 14;
+const BOX_WIDTH = 548;
+const BOX_TEXT_LEFT = 28;
+const ROW_LEFT = 48;
+const CHOICE_DIM = 136;
+
+export function paintChoice(image: GrayImage, face: Face, view: ChoiceView): void {
+  paintFrame(image);
+  let top = CONTENT_TOP;
+  if (view.heading) {
+    const lines = wrapCapped(face, view.heading.text, RIGHT - LEFT, view.heading.maxLines);
+    lines.forEach((line, index) => face.drawText(image, LEFT, CONTENT_TOP + index * PITCH, line, view.heading!.value));
+    top = CONTENT_TOP + lines.length * PITCH + view.heading.gap;
+  }
+  const bottom = CONTENT_BOTTOM;
+  const questionLines = wrapCapped(face, view.question, BOX_WIDTH - 32, 3);
+  const liveLines = view.live !== undefined ? 1 : 0;
+  // Rows fit between the question and the bottom; the selected row's detail needs a second line.
+  const needed = (questionLines.length + Math.min(view.rows.length, 2) + liveLines) * PITCH + 18;
+  if (bottom - top < needed) top = Math.max(CONTENT_TOP, bottom - needed);
+  const capacity = Math.max(1, Math.floor((bottom - top - 18 - (questionLines.length + liveLines) * PITCH) / PITCH));
+  const selected = Math.min(Math.max(0, view.selected), Math.max(0, view.rows.length - 1));
+  const detailLines = view.rows[selected]?.detail ? 1 : 0;
+  const window = windowRows(view.rows.length, selected, Math.max(1, capacity - detailLines));
+  image.drawRoundedRect(BOX_LEFT, top, BOX_WIDTH, bottom - top, 255, 6);
+  let y = top + 8;
+  for (const line of questionLines) {
+    face.drawText(image, BOX_TEXT_LEFT, y, line, 255);
+    y += PITCH;
+  }
+  for (let index = window.first; index < window.end; index++) {
+    const row = view.rows[index]!;
+    const active = index === selected;
+    if (active) face.drawText(image, BOX_TEXT_LEFT, y, ">", 255);
+    const mark = row.check === undefined ? "" : row.check ? "[x] " : "[ ] ";
+    face.drawText(image, ROW_LEFT, y, fitLine(face, `${mark}${row.label}`, 500), active ? 255 : CHOICE_DIM);
+    y += PITCH;
+    if (active && row.detail) {
+      face.drawText(image, ROW_LEFT, y, fitLine(face, row.detail, 500), RULE_VALUE);
+      y += PITCH;
+    }
+  }
+  if (view.live !== undefined) {
+    const text = fitLine(face, view.live || "…", 500);
+    face.drawText(image, RIGHT - 18 - face.measureLine(text), bottom - 10 - PITCH - 13, text, 255);
+  }
+  paintFooter(image, face, view.footer.left, view.footer.right);
+}
+
+/** The window of `count` rows showing `selected`, `capacity` rows tall. */
+function windowRows(count: number, selected: number, capacity: number): { first: number; end: number } {
+  if (count <= capacity) return { first: 0, end: count };
+  const first = Math.min(Math.max(0, selected - Math.floor(capacity / 2)), count - capacity);
+  return { first, end: first + capacity };
+}
+
+export type PlanStepsView = {
+  steps: readonly string[];
+  selected: number;
+  footer: { left: string; right: string };
+};
+
+const STEP_PITCH = 36;
+const STEP_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / STEP_PITCH);
+
+export function paintPlanSteps(image: GrayImage, face: Face, view: PlanStepsView): void {
+  paintFrame(image);
+  const selected = Math.min(Math.max(0, view.selected), Math.max(0, view.steps.length - 1));
+  const window = windowRows(view.steps.length, selected, STEP_CAPACITY);
+  for (let index = window.first; index < window.end; index++) {
+    const y = CONTENT_TOP + (index - window.first) * STEP_PITCH;
+    face.drawText(image, LEFT, y, fitLine(face, `${index + 1}. ${view.steps[index]}`, RIGHT - LEFT), index === selected ? 255 : 170);
+  }
+  paintFooter(image, face, view.footer.left, view.footer.right);
+}
+
+// ---------------------------------------------------------------------------
 // Pairing
 
 export type PairView = {

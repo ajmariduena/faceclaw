@@ -65,14 +65,37 @@ import {
   chatMaxScrollBack,
   listScrollTop,
   paintChat,
+  paintChoice,
   paintList,
   paintPair,
+  paintPlanSteps,
   type ChatLine,
   type ChatView,
+  type ChoiceView,
   type Face,
   type ListRow,
   type ListView,
 } from "./paseo-painter";
+import {
+  answerQuestionByText,
+  chooseQuestionRow,
+  currentQuestion,
+  moveQuestionCursor,
+  parseQuestionFormQuestions,
+  planActionLabel,
+  planActionResponse,
+  planActions,
+  planSteps,
+  planSummary,
+  planText,
+  questionDismissResponse,
+  questionRows,
+  questionSubmitResponse,
+  requestKind,
+  startQuestionFlow,
+  type PermissionResponse,
+  type QuestionFlow,
+} from "./paseo-requests";
 import { parsePairingInput, pairingLabel, type PaseoPairing } from "./paseo-pairing";
 import { hasPaseoBackgroundWork, loadPairing, PASEO_PAIRING_KEY, savePairing } from "./paseo-store";
 
@@ -117,7 +140,15 @@ type ChatState = {
   loaded: boolean;
   error: string;
   scrollBack: number;
+  /** ">" among the permission options or plan actions. */
   permissionIndex: number;
+  /** The question form being answered (per request id). */
+  flow: QuestionFlow | null;
+  /** Reading the plan's steps instead of the approval box. */
+  planSteps: boolean;
+  planIndex: number;
+  /** Where the shell voice dialog's text goes (the glasses mic path carries its own target). */
+  textTarget: "message" | "other";
 };
 
 type Dictation = {
@@ -128,6 +159,8 @@ type Dictation = {
   partial: string;
   preroll: string[];
   micActive: boolean;
+  /** Where the final text goes: a message to the agent, or the "Other…" answer of a question. */
+  target: "message" | "other";
 };
 
 let window: AppWindow | null = null;
@@ -445,7 +478,7 @@ function onAgentUpdate(payload: any): void {
     const agent = payload.agent as AgentSnapshot;
     agents.set(agent.id, agent);
     noteAttention(agent);
-    if (chat?.agentId === agent.id && chat.permissionIndex >= (agent.pendingPermissions?.length ? PERMISSION_OPTIONS.length : 0)) chat.permissionIndex = 0;
+    if (chat?.agentId === agent.id) syncPendingRequest(agent);
     if (window) post({ type: "set-title", windowId: window.windowId, title: screen.kind === "chat" ? chatTitle() : APP_TITLE });
   } else if (typeof payload.agentId === "string") {
     agents.delete(payload.agentId);
@@ -672,7 +705,9 @@ function goBack(frameId: number): void {
 
 function openChat(agentId: string): void {
   closeChat();
-  chat = { agentId, entries: [], loaded: false, error: "", scrollBack: 0, permissionIndex: 0 };
+  chat = { agentId, entries: [], loaded: false, error: "", scrollBack: 0, permissionIndex: 0, flow: null, planSteps: false, planIndex: 0, textTarget: "message" };
+  const agent = agents.get(agentId);
+  if (agent) syncPendingRequest(agent);
   setScreen({ kind: "chat", agentId });
   listSelectionKey = agentId;
   if (window) post({ type: "set-attention", windowId: window.windowId, attention: false });
@@ -815,15 +850,24 @@ function handleChatInput(event: InputEvent, frameId: number): void {
   }
   const agent = chatAgent();
   const request = agent?.pendingPermissions?.[0] ?? null;
+  const kind = request ? requestKind(request) : null;
   switch (event.type) {
     case "scroll-up":
     case "scroll-down": {
-      const delta = event.type === "scroll-up" ? 1 : -1;
-      if (request && !dictation) {
-        current.permissionIndex = (current.permissionIndex - delta + PERMISSION_OPTIONS.length) % PERMISSION_OPTIONS.length;
+      const down = event.type === "scroll-down";
+      if (dictation) {
+        frameTimings.finishFrame(frameId, "discarded: paseo dictating");
+        return;
+      }
+      if (kind === "question" && current.flow) {
+        moveQuestionCursor(current.flow, down ? 1 : -1);
+      } else if (kind === "plan" && request) {
+        movePlanCursor(current, planSteps(planText(request)).length, planActions(request).length, down);
+      } else if (kind === "permission") {
+        current.permissionIndex = (current.permissionIndex + (down ? 1 : -1) + PERMISSION_OPTIONS.length) % PERMISSION_OPTIONS.length;
       } else {
         const max = chatMaxScrollBack(face(), chatView());
-        current.scrollBack = Math.min(max, Math.max(0, current.scrollBack + delta));
+        current.scrollBack = Math.min(max, Math.max(0, current.scrollBack + (down ? -1 : 1)));
       }
       renderNow(frameId);
       return;
@@ -835,12 +879,27 @@ function handleChatInput(event: InputEvent, frameId: number): void {
         return;
       }
       if (request && agent) {
-        answerPermission(agent, request, current.permissionIndex);
+        if (kind === "question" && current.flow) {
+          const action = chooseQuestionRow(current.flow);
+          if (action.type === "dictate") {
+            frameTimings.finishFrame(frameId, "discarded: paseo dictating an answer");
+            void startDictation("other");
+            return;
+          }
+          if (action.type === "submit") submitQuestions(agent, request, current.flow);
+        } else if (kind === "plan") {
+          if (current.planSteps) current.planSteps = false;
+          else {
+            const actions = planActions(request);
+            const action = actions[Math.min(current.permissionIndex, actions.length - 1)];
+            if (action) respond(agent, request, planActionResponse(action), action.behavior === "allow" ? "Approved" : "Kept planning");
+          }
+        } else answerPermission(agent, request, current.permissionIndex);
         renderNow(frameId);
         return;
       }
       frameTimings.finishFrame(frameId, "discarded: paseo starting dictation");
-      void startDictation();
+      void startDictation("message");
       return;
     default:
       frameTimings.finishFrame(frameId, "discarded: paseo chat ignored input");
@@ -855,7 +914,10 @@ function handleTextInput(text: string): void {
       render();
       return;
     case "chat":
-      if (chat) void sendMessage(chat.agentId, text);
+      if (chat?.textTarget === "other") {
+        chat.textTarget = "message";
+        deliverTextAnswer(text);
+      } else if (chat) void sendMessage(chat.agentId, text);
       return;
     default:
       showNotice("Open an agent to send it a message.");
@@ -883,6 +945,9 @@ async function sendMessage(agentId: string, text: string): Promise<void> {
 
 /** "Allow Claude to run npm test -- ble-session?" */
 function permissionQuestion(agent: AgentSnapshot, request: PermissionRequest): string {
+  const kind = requestKind(request);
+  if (kind === "question") return parseQuestionFormQuestions(request.input)?.[0]?.question ?? "The agent has a question.";
+  if (kind === "plan") return "Approve this plan?";
   const who = providerName(agent.provider);
   const input = (request.input ?? {}) as Record<string, unknown>;
   const name = request.name || request.kind || "a tool";
@@ -902,6 +967,62 @@ function providerName(provider: string | undefined): string {
   if (/codex|openai/i.test(id)) return "Codex";
   if (/gemini/i.test(id)) return "Gemini";
   return id ? id.charAt(0).toUpperCase() + id.slice(1) : "the agent";
+}
+
+/** Track the pending request's UI state: a fresh question form per request, cursors reset when it changes. */
+function syncPendingRequest(agent: AgentSnapshot): void {
+  const current = chat;
+  if (!current) return;
+  const request = agent.pendingPermissions?.[0] ?? null;
+  const kind = request ? requestKind(request) : null;
+  if (kind === "question" && request && current.flow?.requestId !== request.id) {
+    const questions = parseQuestionFormQuestions(request.input);
+    current.flow = questions ? startQuestionFlow(request.id, questions) : null;
+    current.permissionIndex = 0;
+    current.planSteps = false;
+  } else if (kind !== "question" && current.flow) {
+    current.flow = null;
+  }
+  if (!request) {
+    current.permissionIndex = 0;
+    current.planSteps = false;
+  }
+  if (kind === "permission" && current.permissionIndex >= PERMISSION_OPTIONS.length) current.permissionIndex = 0;
+}
+
+/** Ring on a plan: up from the first action opens the steps; down past the last step returns to the actions. */
+function movePlanCursor(current: ChatState, stepCount: number, actionCount: number, down: boolean): void {
+  if (current.planSteps) {
+    if (down) {
+      if (current.planIndex + 1 >= stepCount) current.planSteps = false;
+      else current.planIndex++;
+    } else current.planIndex = Math.max(0, current.planIndex - 1);
+    return;
+  }
+  if (down) current.permissionIndex = Math.min(actionCount - 1, current.permissionIndex + 1);
+  else if (current.permissionIndex > 0) current.permissionIndex--;
+  else if (stepCount > 0) {
+    current.planSteps = true;
+    current.planIndex = stepCount - 1;
+  }
+}
+
+function submitQuestions(agent: AgentSnapshot, request: PermissionRequest, flow: QuestionFlow): void {
+  respond(agent, request, questionSubmitResponse(request, flow.questions, flow.selections, flow.otherTexts), "Answered");
+}
+
+function respond(agent: AgentSnapshot, request: PermissionRequest, response: PermissionResponse, done: string): void {
+  const current = client;
+  if (!current?.connected) {
+    showNotice("Not connected to Paseo.");
+    return;
+  }
+  try {
+    current.respondToPermission(agent.id, request.id, response);
+    showNotice(done);
+  } catch (error) {
+    showNotice(`Failed: ${errorMessage(error)}`);
+  }
 }
 
 function answerPermission(agent: AgentSnapshot, request: PermissionRequest, option: number): void {
@@ -924,7 +1045,7 @@ function answerPermission(agent: AgentSnapshot, request: PermissionRequest, opti
 // ---------------------------------------------------------------------------
 // Dictation: glasses mic -> daemon speech-to-text -> message
 
-async function startDictation(): Promise<void> {
+async function startDictation(target: Dictation["target"]): Promise<void> {
   const current = client;
   const agentId = chat?.agentId;
   if (!current?.connected || !agentId || !window) {
@@ -932,11 +1053,12 @@ async function startDictation(): Promise<void> {
     return;
   }
   if (!global.isAndroid) {
+    if (chat) chat.textTarget = target;
     post({ type: "start-voice-input", windowId: window.windowId });
     return;
   }
   const id = `glasses-${Date.now().toString(36)}`;
-  dictation = { id, state: "starting", seq: 0, startedMs: Date.now(), partial: "", preroll: [], micActive: false };
+  dictation = { id, state: "starting", seq: 0, startedMs: Date.now(), partial: "", preroll: [], micActive: false, target };
   post({ type: "raw-mic", windowId: window.windowId, on: true });
   updateTicker();
   render();
@@ -958,7 +1080,9 @@ function handleRawMicState(active: boolean, reason?: string): void {
   dictation.micActive = active;
   if (active) return;
   // No glasses mic: the shell's voice dialog still reaches the agent as text.
+  const target = dictation.target;
   cancelDictation();
+  if (chat) chat.textTarget = target;
   if (window) post({ type: "start-voice-input", windowId: window.windowId });
   if (reason) console.log(`paseo: mic tap unavailable: ${reason}`);
   render();
@@ -1005,6 +1129,10 @@ async function finishDictation(): Promise<void> {
       showNotice("Nothing heard.");
       return;
     }
+    if (current.target === "other") {
+      deliverTextAnswer(text);
+      return;
+    }
     if (chat?.agentId === agentId) upsertEntry(chat.entries, { id: `local:${current.id}`, role: "user", text });
     await sendMessage(agentId, text);
   } catch (error) {
@@ -1022,6 +1150,21 @@ function cancelDictation(): void {
   if (window) post({ type: "raw-mic", windowId: window.windowId, on: false });
   if (current.state !== "starting") client?.cancelDictation(current.id);
   updateTicker();
+}
+
+/** A dictated "Other…" answer for the question on screen. */
+function deliverTextAnswer(text: string): void {
+  const current = chat;
+  const agent = chatAgent();
+  const request = agent?.pendingPermissions?.[0] ?? null;
+  if (!current?.flow || !agent || !request || current.flow.requestId !== request.id) {
+    showNotice("That question is gone.");
+    return;
+  }
+  const action = answerQuestionByText(current.flow, text);
+  if (action.type === "submit") submitQuestions(agent, request, current.flow);
+  else if (action.type === "stay") showNotice("Nothing heard.");
+  render();
 }
 
 // ---------------------------------------------------------------------------
@@ -1083,6 +1226,16 @@ function chatMenuItems(): MenuItem[] {
       onSelect: (ctx) => {
         ctx.stack.pop();
         void act(() => client!.cancelAgent(agent.id), "Stopping…");
+      },
+    });
+  }
+  const request = agent.pendingPermissions?.[0];
+  if (request && current.flow && requestKind(request) === "question") {
+    items.push({
+      label: "Dismiss question",
+      onSelect: (ctx) => {
+        ctx.stack.pop();
+        respond(agent, request, questionDismissResponse(request, current.flow!.questions, current.flow!.selections, current.flow!.otherTexts), "Dismissed");
       },
     });
   }
@@ -1190,7 +1343,7 @@ function chatView(): ChatView {
   if (dictation) lines.push({ role: "user", text: dictation.partial || "…", live: true });
   const request = agent?.pendingPermissions?.[0] ?? null;
   const permission =
-    request && agent && !dictation
+    request && agent && !dictation && requestKind(request) === "permission"
       ? { question: permissionQuestion(agent, request), options: [...PERMISSION_OPTIONS], selected: current.permissionIndex }
       : null;
   return {
@@ -1200,6 +1353,69 @@ function chatView(): ChatView {
     permission,
     message: current.error ? current.error : !current.loaded ? (client?.connected ? "Loading…" : client?.status || "Connecting…") : "No messages yet.",
   };
+}
+
+/** The question or plan screen when the pending request is one; null paints the chat. */
+function choiceView(): { kind: "choice"; view: ChoiceView } | { kind: "steps"; steps: string[]; selected: number } | null {
+  const current = chat;
+  const agent = chatAgent();
+  const request = agent?.pendingPermissions?.[0] ?? null;
+  if (!current || !agent || !request) return null;
+  const kind = requestKind(request);
+  const nowMs = Date.now();
+  const listening = dictation && dictation.target === "other"
+    ? { left: dictation.state === "finishing" ? "· Sending" : "· Listening", right: formatClock(nowMs - dictation.startedMs) }
+    : null;
+  if (kind === "question" && current.flow) {
+    const flow = current.flow;
+    const question = currentQuestion(flow);
+    const picked = flow.selections[flow.index] ?? new Set<number>();
+    const rows = questionRows(question).map((row) => ({
+      label: row.label,
+      ...(row.kind === "option" && row.description ? { detail: row.description } : {}),
+      ...(row.kind === "option" && question.multiSelect ? { check: picked.has(row.index) } : {}),
+    }));
+    const last = [...current.entries].reverse().find((entry) => entry.role === "assistant");
+    return {
+      kind: "choice",
+      view: {
+        heading: last && flow.index === 0 ? { text: lineFor(last), value: 187, maxLines: 1, gap: 9 } : null,
+        question: question.question,
+        rows,
+        selected: flow.cursor,
+        ...(dictation && dictation.target === "other" ? { live: dictation.partial } : {}),
+        footer: notice ? { left: `· ${notice.text}`, right: "" } : listening ?? { left: "· Question", right: `${flow.index + 1}/${flow.questions.length}` },
+      },
+    };
+  }
+  if (kind === "plan") {
+    const text = planText(request);
+    const steps = planSteps(text);
+    if (current.planSteps) return { kind: "steps", steps, selected: Math.min(current.planIndex, steps.length - 1) };
+    const actions = planActions(request);
+    return {
+      kind: "choice",
+      view: {
+        heading: text ? { text: planLine(request.id, text), value: 255, maxLines: 3, gap: 60 } : null,
+        question: "Approve this plan?",
+        rows: actions.map((action) => ({ label: planActionLabel(action, actions) })),
+        selected: Math.min(current.permissionIndex, actions.length - 1),
+        footer: notice ? { left: `· ${notice.text}`, right: "" } : { left: "· Plan", right: `${steps.length} step${steps.length === 1 ? "" : "s"}` },
+      },
+    };
+  }
+  return null;
+}
+
+/** The plan's one-line summary: the daemon's glance summary when it has one, else the first sentence. */
+function planLine(requestId: string, text: string): string {
+  const id = `plan:${requestId}`;
+  const cached = summaries.get(id);
+  if (cached) return cached;
+  if (chat && client?.supportsGlanceSummary && !summariesPending.has(id)) {
+    void summarize(chat.agentId, [{ id, role: "assistant", text }]).then(() => scheduleRender());
+  }
+  return planSummary(text);
 }
 
 function chatFooter(agent: AgentSnapshot | null): { left: string; right: string } {
@@ -1234,9 +1450,14 @@ function paintContent(win: AppWindow): GrayImage {
       paintList(image, f, view, listTop);
       break;
     }
-    case "chat":
-      paintChat(image, f, chatView());
+    case "chat": {
+      const choice = choiceView();
+      if (!choice) paintChat(image, f, chatView());
+      else if (choice.kind === "steps") {
+        paintPlanSteps(image, f, { steps: choice.steps, selected: choice.selected, footer: { left: "· Plan", right: `${choice.selected + 1}/${choice.steps.length}` } });
+      } else paintChoice(image, f, choice.view);
       break;
+    }
     case "pair":
       paintPair(image, f, {
         title: loadPairing() ? "Pair again" : "Pair Paseo",

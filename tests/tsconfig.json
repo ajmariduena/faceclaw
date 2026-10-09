@@ -66,6 +66,7 @@
     "../app/apps/paseo/paseo-glance.ts",
     "../app/apps/paseo/paseo-pairing.ts",
     "../app/apps/paseo/paseo-client.ts",
-    "../app/apps/paseo/paseo-painter.ts"
+    "../app/apps/paseo/paseo-painter.ts",
+    "../app/apps/paseo/paseo-requests.ts"
   ]
 }
