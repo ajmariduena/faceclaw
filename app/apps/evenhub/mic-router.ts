@@ -24,7 +24,7 @@ export type EvenHubMicClient = {
   deliverAudioPcm(pcm: Uint8Array): void;
 };
 
-function activeCommunicator(): any {
+export function activeCommunicator(): any {
   if (!global.isAndroid) return null;
   try {
     return com.faceclaw.app.FaceclawBleCommunicator.getActive();

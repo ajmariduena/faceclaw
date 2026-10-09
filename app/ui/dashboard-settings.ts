@@ -944,6 +944,31 @@ export const t3codePairingLinkSetting = new ConfigSettingString({
   normalize: (value) => (value ?? "").replace(/[\x00-\x1f]+/g, " ").trim(),
 });
 
+/**
+ * Staging buffer for the Paseo app's pairing screen: the phone text editor
+ * types the `paseo daemon pair` link into it, and the app reads it back when
+ * the user confirms on the glasses. Cleared after each attempt (the link
+ * carries the daemon's key).
+ */
+export const paseoPairingLinkSetting = new ConfigSettingString({
+  id: "paseo-pairing-link",
+  label: "Paseo pairing link",
+  storageKey: "paseo.pairingDraft",
+  defaultValue: "",
+  editorTitle: "Paseo pairing link (from `paseo daemon pair`)",
+  glassesEditTitle: "Pair Paseo",
+  normalize: (value) => (value ?? "").replace(/[\x00-\x1f]+/g, " ").trim(),
+});
+
+export const paseoWakeOnAttentionSetting = new ConfigSettingBoolean({
+  id: "paseo-wake-on-attention",
+  label: "Wake when an agent needs you",
+  storageKey: "paseo.wakeOnAttention",
+  defaultValue: true,
+  description:
+    "When a Paseo agent asks for permission or finishes while the glasses are asleep, buzz, wake them and show the agent.",
+});
+
 export const t3codeWakeOnAttentionSetting = new ConfigSettingBoolean({
   id: "t3code-wake-on-attention",
   label: "Wake when a thread needs you",

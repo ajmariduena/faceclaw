@@ -7,6 +7,9 @@ import { appViewportSize, type WindowHeightMode } from "./geometry";
 import * as frameTimings from "../../native/frame-timings";
 import { shell, type ShellWindow } from "./shell";
 import { publishWorkerState } from "./worker-state";
+import { voiceControlBridge } from "../../native/voice-control";
+import { encodeBase64 } from "../../native/cloud-stt";
+import { activeCommunicator } from "../../apps/evenhub/mic-router";
 
 /**
  * Messages between the shell (main thread) and an app worker. One worker
@@ -35,7 +38,11 @@ export type WorkerAppMessage =
   | { type: "input-focus"; windowId: string; focused: boolean }
   | { type: "screen"; on: boolean }
   /** Assistant tool invocation aimed at a window; reply with tool-result. */
-  | { type: "tool-call"; callId: string; windowId: string; name: string; args: unknown };
+  | { type: "tool-call"; callId: string; windowId: string; name: string; args: unknown }
+  /** Answer to raw-mic: whether the glasses mic tap is running for the window (reason when not). */
+  | { type: "raw-mic-state"; windowId: string; active: boolean; reason?: string }
+  /** One decoded glasses mic packet (16 kHz mono S16LE), base64, while the raw mic tap runs. */
+  | { type: "raw-pcm"; windowId: string; pcm: string };
 
 export type WorkerAppReply =
   | { type: "worker-idle" }
@@ -87,6 +94,17 @@ export type WorkerAppReply =
       /** Open the shell's voice dialog aimed at this window (a menu pick). */
       type: "start-voice-input";
       windowId: string;
+    }
+  | {
+      /**
+       * Start or stop the decode-only glasses mic tap for this window; the
+       * host answers raw-mic-state and then streams raw-pcm messages. Only
+       * the foreground window gets audio; a live voice dialog or STT session
+       * owns the mic and the request fails until it ends.
+       */
+      type: "raw-mic";
+      windowId: string;
+      on: boolean;
     }
   | {
       /** Close this window (the shell owns the close path). */
@@ -248,6 +266,8 @@ export class WorkerAppHost {
   private terminated = false;
   private shutdownTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly publishedStateKeys = new Set<string>();
+  /** The window receiving the glasses mic tap, with its PCM unsubscribe. */
+  private rawMic: { windowId: string; unsubscribe: () => void } | null = null;
 
   constructor(private readonly options: WorkerAppHostOptions) {
     options.worker.onmessage = (event: MessageEvent) => {
@@ -330,6 +350,10 @@ export class WorkerAppHost {
             if (this.options.startTextInput) this.options.startTextInput();
             else shell.startVoiceInput();
           }
+          break;
+        case "raw-mic":
+          if (message.on) this.startRawMic(message.windowId);
+          else this.stopRawMic();
           break;
         case "close-window-request":
           if (this.openWindows.has(message.windowId)) {
@@ -415,12 +439,49 @@ export class WorkerAppHost {
     return this.openWindows.size;
   }
 
+  private startRawMic(windowId: string): void {
+    const reply = (active: boolean, reason?: string) =>
+      this.post({ type: "raw-mic-state", windowId, active, ...(reason ? { reason } : {}) });
+    if (this.rawMic?.windowId === windowId) {
+      reply(true);
+      return;
+    }
+    this.stopRawMic();
+    if (!global.isAndroid) {
+      reply(false, "The glasses mic tap is Android-only.");
+      return;
+    }
+    if (shell.foregroundWindow()?.windowId !== windowId) {
+      reply(false, "The window is not in the foreground.");
+      return;
+    }
+    const unsubscribe = voiceControlBridge.onRawPcm((pcm) => {
+      if (this.rawMic?.windowId === windowId) this.post({ type: "raw-pcm", windowId, pcm: encodeBase64(pcm) });
+    });
+    if (!voiceControlBridge.startRawCapture({ communicator: activeCommunicator() })) {
+      unsubscribe();
+      reply(false, "The microphone is busy.");
+      return;
+    }
+    this.rawMic = { windowId, unsubscribe };
+    reply(true);
+  }
+
+  private stopRawMic(): void {
+    const current = this.rawMic;
+    if (!current) return;
+    this.rawMic = null;
+    current.unsubscribe();
+    voiceControlBridge.stopRawCapture();
+  }
+
   private shutdown(): void {
     if (this.stopping) return;
     this.stopping = true;
     this.options.onStopping?.();
     this.queuedMessages.length = 0;
     this.options.navigationSensors?.stop();
+    this.stopRawMic();
     shell.setTrayIcon(this.options.appId, null);
     for (const key of this.publishedStateKeys) publishWorkerState(key, undefined);
     this.publishedStateKeys.clear();
