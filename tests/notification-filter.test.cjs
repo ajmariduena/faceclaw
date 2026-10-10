@@ -194,6 +194,7 @@ test('controller filters before waking or opening a popup, and still refreshes t
   const prefs = store();
   let wakes = 0, popups = 0, renders = 0;
   const { Harness } = evaluate(`export class Harness { ${handler.getText(file)} }`, null, {
+    LEAN_NOTIFICATION_POPUPS: true,
     ALL_NOTIFICATIONS: 0x7fffffff,
     readActiveNotifications: () => [{ ...mail, key: 'key' }],
     shouldShowNotificationOnGlasses: prefs.shouldShowNotificationOnGlasses,
@@ -212,4 +213,19 @@ test('controller filters before waking or opening a popup, and still refreshes t
   await instance.handleAndroidNotificationPosted('key');
   assert.equal(wakes, 1);
   assert.equal(popups, 1);
+  // The lean build gates popups off entirely: no wake, no popup, still a tray refresh.
+  const lean = evaluate(`export class Harness { ${handler.getText(file)} }`, null, {
+    LEAN_NOTIFICATION_POPUPS: false,
+    ALL_NOTIFICATIONS: 0x7fffffff,
+    readActiveNotifications: () => [{ ...mail, key: 'key' }],
+    shouldShowNotificationOnGlasses: prefs.shouldShowNotificationOnGlasses,
+    shell: { isScreenOn: () => false, wake: () => { wakes++; return true; }, openNotificationModal: () => popups++ },
+  });
+  const gated = new lean.Harness();
+  gated.requestShellRender = () => renders++;
+  gated.appendLog = () => {};
+  await gated.handleAndroidNotificationPosted('key');
+  assert.equal(wakes, 1);
+  assert.equal(popups, 1);
+  assert.equal(renders, 4);
 });
