@@ -107,6 +107,25 @@ export const ICON_SVGS = {
     '<svg viewBox="0 0 24 24" fill="none"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" /></svg>',
   navigation:
     '<svg viewBox="0 0 24 24" fill="none"><polygon points="3 11 22 2 13 21 11 13 3 11" /></svg>',
+  // Home column complications (lucide-static v1.55.0).
+  glasses:
+    '<svg viewBox="0 0 24 24" fill="none"><circle cx="6" cy="15" r="4" /><circle cx="18" cy="15" r="4" /><path d="M14 15a2 2 0 0 0-2-2 2 2 0 0 0-2 2" /><path d="M2.5 13 5 7c.7-1.3 1.4-2 3-2" /><path d="M21.5 13 19 7c-.7-1.3-1.5-2-3-2" /></svg>',
+  circle:
+    '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" /></svg>',
+  battery:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M 22 14 L 22 10" /><rect x="2" y="6" width="16" height="12" rx="2" /></svg>',
+  sun:
+    '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4" /><path d="M12 2v2" /><path d="M12 20v2" /><path d="m4.93 4.93 1.41 1.41" /><path d="m17.66 17.66 1.41 1.41" /><path d="M2 12h2" /><path d="M20 12h2" /><path d="m6.34 17.66-1.41 1.41" /><path d="m19.07 4.93-1.41 1.41" /></svg>',
+  moon:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" /></svg>',
+  cloud:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" /></svg>',
+  "cloud-moon":
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M13 16a3 3 0 0 1 0 6H7a5 5 0 1 1 4.9-6z" /><path d="M18.376 14.512a6 6 0 0 0 3.461-4.127c.148-.625-.659-.97-1.248-.714a4 4 0 0 1-5.259-5.26c.255-.589-.09-1.395-.716-1.248a6 6 0 0 0-4.594 5.36" /></svg>',
+  "cloud-rain":
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" /><path d="M16 14v6" /><path d="M8 14v6" /><path d="M12 16v6" /></svg>',
+  "cloud-lightning":
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973" /><path d="m13 12-3 5h4l-3 5" /></svg>',
 } as const;
 
 export type IconName = keyof typeof ICON_SVGS;
