@@ -67,6 +67,7 @@ import { assistantBridge } from "../assistant/bridge-client";
 import { registerWindowTools } from "../assistant/window-tools";
 import { WorkerAppHost } from "../ui/shell/worker-window";
 import { ALL_APPS } from "../apps/all-apps";
+import { LEAN_NOTIFICATION_POPUPS } from "../lean";
 import { type AppContext, type AppDefinition, type AppLaunchParams, type TextEditorHost } from "../apps/app-definition";
 import { type InProcessAppOptions, type InProcessWindow } from "../ui/shell/in-process-window";
 import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-apps-persistence";
@@ -2748,7 +2749,7 @@ class DashboardController {
 
   private async handleAndroidNotificationPosted(notificationKey: string): Promise<void> {
     const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
-    if (!notification || !shouldShowNotificationOnGlasses(notification.packageName)) {
+    if (!LEAN_NOTIFICATION_POPUPS || !notification || !shouldShowNotificationOnGlasses(notification.packageName)) {
       this.requestShellRender();
       return;
     }
