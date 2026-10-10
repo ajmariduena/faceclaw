@@ -4,8 +4,7 @@ import { HOME_CARDS, homeColumnState, emptyCardStatus, clockTime, type HomeBatte
 import { renderIcon, type IconName } from "../../graphics/icons";
 import { paintHomeColumn } from "./column-painter";
 import type { HomeWeatherReading } from "./home-weather";
-import { glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
-import { formatAge } from "../paseo/paseo-model";
+import { glanceEmptyStatus, glanceVerdict, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 
 export type HomeFace = {
   readonly lineHeight: number;
@@ -102,22 +101,22 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
         text(20, y + 54, time, DIM);
       } else text(20, y + 27, time, DIM);
     });
-  } else if (card.id === "paseo" && data.paseo?.updates.length) {
+  } else if (card.id === "paseo" && glanceVerdict(data.paseo, data.now.getTime())) {
+    // Verdict, the agent behind it (title dim, line white), and the ledger pinned to the last row.
+    const paseo = glanceVerdict(data.paseo, data.now.getTime())!;
+    const pitch = Math.max(27, face.lineHeight + 4);
+    const rows: number[] = [];
+    for (let y = 62; y + face.lineHeight <= 254; y += pitch) rows.push(y);
     header();
-    const nowMs = data.now.getTime();
-    let y = 62;
-    for (const update of data.paseo.updates) {
-      if (y + 27 > 240) break;
-      const tail = ` · ${update.bucket === "needs" ? "needs you" : formatAge(update.activityMs, nowMs)}`;
-      text(20, y, `${fitted(face, update.title, CARD_TEXT_WIDTH - face.measureLine(tail))}${tail}`, DIM);
-      y += 27;
-      for (const line of wrapped(face, update.line, CARD_TEXT_WIDTH, 2)) {
-        if (y + 27 > 254) break;
-        text(20, y, line);
-        y += 27;
-      }
-      y += 14;
-    }
+    text(20, rows[0]!, paseo.verdict);
+    if (paseo.lead) {
+      text(20, rows[1]!, paseo.lead.title, DIM);
+      const max = Math.min(2, rows.length - 3);
+      const lines = wrapped(face, paseo.lead.line, CARD_TEXT_WIDTH, max + 1);
+      if (lines.length > max) { lines.length = max; lines[max - 1] = `${lines[max - 1]}…`; }
+      lines.forEach((line, i) => text(20, rows[2 + i]!, line));
+    } else if (paseo.note) text(20, rows[1]!, paseo.note, DIM);
+    if (paseo.ledger) text(20, rows[rows.length - 1]!, paseo.ledger, DIM);
   } else if (card.id === "translate") {
     glance(() => {
       const left = "ES ", right = " EN";

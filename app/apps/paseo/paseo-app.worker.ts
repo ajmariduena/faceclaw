@@ -41,7 +41,7 @@ import { WindowMenu, WindowMenuLayer } from "../../ui/window-menu";
 import type { WorkerAppMessage, WorkerAppReply } from "../../ui/shell/worker-window";
 import type { InputEvent } from "../../ui/gestures";
 import { errorMessage, PaseoDaemonClient, type GlanceItem } from "./paseo-client";
-import { buildGlanceSnapshot, PASEO_GLANCE_STATE_KEY } from "./paseo-glance";
+import { buildGlanceSnapshot, glanceUrgentAgent, PASEO_GLANCE_STATE_KEY, type BucketCounts } from "./paseo-glance";
 import {
   agentBucket,
   agentTitle,
@@ -279,6 +279,7 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       break;
     case "foreground":
       if (!window || window.windowId !== message.windowId) break;
+      if (message.foreground && !window.foreground) openUrgentAgent();
       window.foreground = message.foreground;
       window.focused = message.focused;
       if (!window.foreground && dictation) cancelDictation();
@@ -492,6 +493,10 @@ function buzz(payload: Uint8Array): void {
 
 let publishTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPublished = "";
+/** The last connected snapshot's counts, so the card can say what it looked like when the Mac dropped. */
+let lastGood: { counts: BucketCounts; atMs: number } | null = null;
+/** The agent the card's verdict points at while it asks the user to go in. */
+let urgentAgentId: string | null = null;
 
 function schedulePublish(): void {
   if (publishTimer) return;
@@ -507,10 +512,13 @@ function publishGlanceSnapshot(): void {
       configured: loadPairing() !== null,
       connected: Boolean(client?.connected && agentsLoaded),
       status: client ? connectionStatus(client) : "",
+      lastGood,
     },
     agents.values(),
     (agent) => agentGlanceLine(agent),
   );
+  if (!snapshot.status && snapshot.configured) lastGood = { counts: snapshot.counts, atMs: Date.now() };
+  urgentAgentId = glanceUrgentAgent(snapshot);
   refreshGlanceLines(snapshot.updates.map((update) => update.agentId));
   const encoded = JSON.stringify(snapshot);
   if (encoded === lastPublished) return;
@@ -662,6 +670,12 @@ function goBack(frameId: number): void {
       break;
   }
   renderNow(frameId);
+}
+
+/** Coming to the front from the home: straight into the agent the card said needs the user. */
+function openUrgentAgent(): void {
+  if (screen.kind !== "list" || !urgentAgentId || !agents.has(urgentAgentId)) return;
+  openChat(urgentAgentId);
 }
 
 function openChat(agentId: string): void {

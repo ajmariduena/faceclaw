@@ -56,7 +56,7 @@ async function main() {
     { title: 'Daily con el equipo', startMs: at(10, 30), endMs: at(11, 0), allDay: false },
     { title: 'Revisión del plan de soporte', startMs: at(14, 0), endMs: at(15, 0), allDay: false },
   ], now.getTime());
-  const paseo = { configured: true, status: '', needs: 2, working: 1, updates: [
+  const paseo = { configured: true, status: '', needs: 1, working: 2, counts: { needs: 1, failed: 0, review: 0, working: 2, done: 3 }, lastSeenMs: null, lastCounts: null, updates: [
     { agentId: 'a', title: 'Fix reconnect after BLE drop', bucket: 'needs-input', activityMs: now.getTime() - 60_000, line: '¿Apruebas correr los tests de BLE?' },
     { agentId: 'b', title: 'Revisar PR #1221 jelou-cli', bucket: 'ready', activityMs: now.getTime() - 240_000, line: 'Listo para fusionar a producción.' },
   ] };

@@ -55,26 +55,31 @@ test('the Translate card says Ready with a Soniox key and the Paseo card shows c
   assert.equal(textDraws.find(draw => draw.text === 'Mac unreachable').value, 153);
   textDraws = [];
   paintHome(0, snapshot({ paseo: { configured: true, status: '', updates: [], needs: 0, working: 0 } }), face);
-  assert.ok(texts().includes('No updates'));
+  assert.ok(texts().includes('No agents'));
+  textDraws = [];
+  const lastCounts = { needs: 1, failed: 0, review: 0, working: 2, done: 3 };
+  paintHome(0, snapshot({ paseo: { configured: true, status: 'Mac unreachable', updates: [], needs: 0, working: 0, lastSeenMs: NOW.getTime() - 29 * 60_000, lastCounts } }), face);
+  const offline = textDraws.filter(draw => draw.x === 20);
+  assert.deepEqual(offline.slice(0, 2).map(draw => [draw.text, draw.value]), [['Mac unreachable', 255], ['Last seen 29 min ago', 153]]);
+  // Terminus is wider than the stock font, so the ledger clips.
+  assert.ok(offline[2].text.startsWith('Was: 1 needs you') && offline[2].value === 153, offline[2].text);
 });
 
-test('the Paseo card shows two updates, needs-you first with a dim agent line and white summary lines', () => {
+test('the Paseo card states a verdict, the agent behind it and a ledger on the last row', () => {
   textDraws = [];
-  const paseo = { configured: true, status: '', needs: 1, working: 1, updates: [
+  const counts = { needs: 1, failed: 0, review: 0, working: 2, done: 3 };
+  const paseo = { configured: true, status: '', needs: 1, working: 2, counts, lastSeenMs: null, lastCounts: null, updates: [
     { agentId: 'a', title: 'Fix reconnect BLE', bucket: 'needs', activityMs: NOW.getTime() - 60_000, line: '¿Apruebo correr los tests de BLE?' },
-    { agentId: 'b', title: 'PR #1221 jelou-cli', bucket: 'done', activityMs: NOW.getTime() - 240_000, line: 'Listo para fusionar a producción.' },
+    { agentId: 'b', title: 'PR #1221 jelou-cli', bucket: 'working', activityMs: NOW.getTime() - 240_000, line: 'Corriendo los tests.' },
   ] };
-  const image = paintHome(0, snapshot({ paseo }), face);
-  assert.equal(image.width, 576);
-  // Card text is drawn into the 318 px panel at x=20 (the panel lands at x=230 of the band).
-  const who = textDraws.filter(draw => draw.value === 153 && draw.x === 20);
-  // Terminus is wider than the stock font, so long titles clip before the tail.
-  assert.ok(who[0].text.startsWith('Fix reconnect') && who[0].text.endsWith(' · needs you'), who[0].text);
-  assert.ok(who[1].text.startsWith('PR #1221') && who[1].text.endsWith(' · 4 min'), who[1].text);
-  assert.ok(who[0].y < who[1].y);
-  const white = textDraws.filter(draw => draw.value === 255 && draw.x === 20 && draw.y > 60);
-  assert.ok(white.some(draw => draw.text.startsWith('¿Apruebo')));
-  assert.ok(white.some(draw => draw.text.startsWith('Listo para')));
+  paintHome(0, snapshot({ paseo }), face);
+  const card = textDraws.filter(draw => draw.x === 20);
+  assert.deepEqual(card.slice(0, 2).map(draw => [draw.text, draw.value]), [['1 needs you', 255], ['Fix reconnect BLE', 153]]);
+  assert.ok(card.some(draw => draw.value === 255 && draw.text.startsWith('¿Apruebo')));
+  const ledger = card[card.length - 1];
+  assert.deepEqual([ledger.text, ledger.value], ['2 working · 3 done', 153]);
+  assert.ok(ledger.y > card[card.length - 2].y + 27, 'a blank row before the ledger');
+  assert.ok(!texts().includes('PR #1221 jelou-cli'), 'only the lead agent is named');
   assert.equal(textDraws.find(draw => draw.text === 'Paseo').y, 16, 'header keeps the name');
 });
 
