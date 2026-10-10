@@ -22,7 +22,7 @@
  */
 import "@nativescript/core/globals";
 import "./paseo-polyfills";
-import { createEncryptedTransport, createWebSocketTransportFactory, type WebSocketLike } from "./vendor/paseo-transport";
+import { createEncryptedTransport, createWebSocketTransportFactory } from "./vendor/paseo-transport";
 import { finishWorkerShutdown } from "../../ui/shell/worker-lifecycle";
 import { GrayImage } from "../../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../../graphics/plane";
@@ -32,10 +32,11 @@ import { EvenHubFont } from "../../graphics/evenhub-font";
 import * as frameTimings from "../../native/frame-timings";
 import { getActiveDisplay } from "../../native/active-display";
 import { onSettingsStoreChanged } from "../../native/settings-store";
-import { openSocket } from "../../native/socket";
+import { createGlassesWebSocket } from "./paseo-socket";
 import { playWorkerBuzzerSequence } from "../../native/worker-buzzer";
 import { buildSoundSequencePayload } from "../../ui/sound-effects";
-import { paseoPairingLinkSetting, paseoWakeOnAttentionSetting, toggleSettingMenuItem } from "../../ui/dashboard-settings";
+import { paseoChatDraftSetting, paseoPairingLinkSetting, paseoWakeOnAttentionSetting, toggleSettingMenuItem } from "../../ui/dashboard-settings";
+import { ChatDraft, DRAFT_OPTIONS } from "../../ui/chat-draft";
 import { submenuItem, type MenuItem } from "../../ui/menu";
 import { WindowMenu, WindowMenuLayer } from "../../ui/window-menu";
 import type { WorkerAppMessage, WorkerAppReply } from "../../ui/shell/worker-window";
@@ -172,6 +173,9 @@ const agents = new Map<string, AgentSnapshot>();
 let agentsLoaded = false;
 let chat: ChatState | null = null;
 let dictation: Dictation | null = null;
+const draft = new ChatDraft();
+let draftTarget: Dictation["target"] = "message";
+let sendingDraft = false;
 let listSelectionKey: string | null = null;
 let listTop = 0;
 let notice: { text: string; untilMs: number } | null = null;
@@ -213,58 +217,6 @@ function face(): Face {
 // ---------------------------------------------------------------------------
 // Socket adapter (OkHttp, text frames) for the vendored transport
 
-function createGlassesWebSocket(url: string): WebSocketLike {
-  const listeners = new Map<string, Set<(event: unknown) => void>>();
-  const emit = (type: string, event: unknown) => {
-    for (const listener of [...(listeners.get(type) ?? [])]) listener(event);
-  };
-  const ws: WebSocketLike = {
-    readyState: 0,
-    binaryType: "arraybuffer",
-    addEventListener: (type, listener) => {
-      let set = listeners.get(type);
-      if (!set) listeners.set(type, (set = new Set()));
-      set.add(listener);
-    },
-    removeEventListener: (type, listener) => {
-      listeners.get(type)?.delete(listener);
-    },
-    send: (data) => {
-      if (typeof data !== "string") throw new Error("Binary frames are not supported on the glasses socket.");
-      socket.sendText(data);
-    },
-    close: (code, reason) => {
-      if (ws.readyState >= 2) return;
-      ws.readyState = 2;
-      socket.close(code ?? 1000, reason ?? "");
-    },
-  };
-  const socket = openSocket(url, {
-    onOpen: () => {
-      ws.readyState = 1;
-      emit("open", {});
-    },
-    onTextMessage: (text) => emit("message", { data: text }),
-    onClosed: (code, reason) => {
-      ws.readyState = 3;
-      emit("close", { code, reason });
-    },
-    onFailure: (message) => {
-      // OkHttp reports a failure instead of a close; the transport expects both.
-      ws.readyState = 3;
-      emit("error", { message: describeSocketFailure(message) });
-      emit("close", { code: 1006, reason: describeSocketFailure(message) });
-    },
-  });
-  return ws;
-}
-
-function describeSocketFailure(message: string): string {
-  const text = String(message).replace(/^[\w.]*(Exception|Error):\s*/, "");
-  if (/Failed to connect|ECONNREFUSED|Connection refused|Unable to resolve host/i.test(text)) return "Can't reach the relay.";
-  if (/timeout/i.test(text)) return "Connection timed out.";
-  return text || "Connection failed.";
-}
 
 // ---------------------------------------------------------------------------
 // Worker messages
@@ -375,6 +327,7 @@ function inferForeground(focused: boolean): void {
 }
 
 onSettingsStoreChanged((key) => {
+  if (key === "paseo.chatDraft" && draft.editing) { draft.text = paseoChatDraftSetting.get(); render(); }
   if (key === PASEO_PAIRING_KEY) {
     syncClient();
     if (!window) reportIdle();
@@ -565,7 +518,7 @@ function publishGlanceSnapshot(): void {
     {
       configured: loadPairing() !== null,
       connected: Boolean(client?.connected && agentsLoaded),
-      status: client ? connectionStatusEs(client) : "",
+      status: client ? connectionStatus(client) : "",
     },
     agents.values(),
     (agent) => agentGlanceLine(agent),
@@ -577,17 +530,16 @@ function publishGlanceSnapshot(): void {
   post({ type: "publish-state", key: PASEO_GLANCE_STATE_KEY, state: snapshot });
 }
 
-/** The home is Spanish; the app's chrome is English. */
-function connectionStatusEs(current: PaseoDaemonClient): string {
+function connectionStatus(current: PaseoDaemonClient): string {
   switch (current.phase) {
     case "connected":
-      return agentsLoaded ? "" : "Cargando…";
+      return agentsLoaded ? "" : "Loading…";
     case "connecting":
-      return "Conectando…";
+      return "Connecting…";
     case "retrying":
-      return "Sin conexión";
+      return "Mac unreachable";
     case "idle":
-      return "Desconectado";
+      return "Disconnected";
   }
 }
 
@@ -690,6 +642,8 @@ function leaveScreenSideEffects(): void {
 }
 
 function goBack(frameId: number): void {
+  if (dictation) { cancelDictation(); renderNow(frameId); return; }
+  if (draft.active) { draft.discard(); paseoChatDraftSetting.set(""); renderNow(frameId); return; }
   switch (screen.kind) {
     case "list":
       frameTimings.finishFrame(frameId, "discarded: paseo yielded focus");
@@ -736,6 +690,7 @@ async function loadChat(agentId: string): Promise<void> {
 }
 
 function closeChat(): void {
+  draft.discard(); paseoChatDraftSetting.set("");
   if (!chat) return;
   chat = null;
   const current = client;
@@ -859,12 +814,13 @@ function handleChatInput(event: InputEvent, frameId: number): void {
         frameTimings.finishFrame(frameId, "discarded: paseo dictating");
         return;
       }
-      if (kind === "question" && current.flow) {
+      if (draft.active) { draft.move(down ? 1 : -1); }
+      else if (kind === "question" && current.flow) {
         moveQuestionCursor(current.flow, down ? 1 : -1);
       } else if (kind === "plan" && request) {
         movePlanCursor(current, planSteps(planText(request)).length, planActions(request).length, down);
       } else if (kind === "permission") {
-        current.permissionIndex = (current.permissionIndex + (down ? 1 : -1) + PERMISSION_OPTIONS.length) % PERMISSION_OPTIONS.length;
+        current.permissionIndex = Math.max(0, Math.min(PERMISSION_OPTIONS.length - 1, current.permissionIndex + (down ? 1 : -1)));
       } else {
         const max = chatMaxScrollBack(face(), chatView());
         current.scrollBack = Math.min(max, Math.max(0, current.scrollBack + (down ? -1 : 1)));
@@ -877,6 +833,28 @@ function handleChatInput(event: InputEvent, frameId: number): void {
         frameTimings.finishFrame(frameId, "discarded: paseo finishing dictation");
         void finishDictation();
         return;
+      }
+      if (draft.active) {
+        if (sendingDraft) { renderNow(frameId); return; }
+        if (draft.selected === 0 && draft.text.trim()) {
+          const text = draft.text.trim();
+          if (draftTarget === "other") { draft.discard(); deliverTextAnswer(text); }
+          else if (client?.connected) {
+            sendingDraft = true;
+            void sendMessage(current.agentId, text).then(sent => {
+              sendingDraft = false;
+              if (sent && chat === current && draft.text.trim() === text) {
+                draft.discard(); paseoChatDraftSetting.set("");
+                upsertEntry(current.entries, { id: `local:${Date.now()}`, role: "user", text });
+              }
+              render();
+            });
+          } else showNotice("Not connected to Paseo.");
+        } else if (draft.selected === 1) {
+          paseoChatDraftSetting.set(draft.text); draft.editing = true;
+          post({ type: "start-text-setting-edit", settingId: paseoChatDraftSetting.id });
+        } else if (draft.selected === 2) { draft.discard(); paseoChatDraftSetting.set(""); }
+        renderNow(frameId); return;
       }
       if (request && agent) {
         if (kind === "question" && current.flow) {
@@ -916,27 +894,30 @@ function handleTextInput(text: string): void {
     case "chat":
       if (chat?.textTarget === "other") {
         chat.textTarget = "message";
-        deliverTextAnswer(text);
-      } else if (chat) void sendMessage(chat.agentId, text);
+        draftTarget = "other"; draft.review(text);
+      } else if (chat) { draftTarget = "message"; draft.review(text); }
+      render();
       return;
     default:
       showNotice("Open an agent to send it a message.");
   }
 }
 
-async function sendMessage(agentId: string, text: string): Promise<void> {
+async function sendMessage(agentId: string, text: string): Promise<boolean> {
   const current = client;
   if (!current?.connected) {
     showNotice("Not connected to Paseo.");
-    return;
+    return false;
   }
   if (chat?.agentId === agentId) chat.scrollBack = 0;
   showNotice("Sending…");
   try {
     const disposition = await current.sendAgentMessage(agentId, text);
     showNotice(disposition === "queued" ? "Sent (queued after this turn)" : disposition === "steered" ? "Sent to the running agent" : "Sent");
+    return true;
   } catch (error) {
     showNotice(`Not sent: ${errorMessage(error)}`);
+    return false;
   }
 }
 
@@ -1064,7 +1045,7 @@ async function startDictation(target: Dictation["target"]): Promise<void> {
   render();
   try {
     await current.startDictation(id, DICTATION_FORMAT);
-    if (dictation?.id !== id) return;
+    if (dictation?.id !== id) { current.cancelDictation(id); return; }
     dictation.state = "listening";
     for (const chunk of dictation.preroll.splice(0)) sendDictationChunk(chunk);
   } catch (error) {
@@ -1129,12 +1110,9 @@ async function finishDictation(): Promise<void> {
       showNotice("Nothing heard.");
       return;
     }
-    if (current.target === "other") {
-      deliverTextAnswer(text);
-      return;
-    }
-    if (chat?.agentId === agentId) upsertEntry(chat.entries, { id: `local:${current.id}`, role: "user", text });
-    await sendMessage(agentId, text);
+    if (chat?.agentId !== agentId) return;
+    draftTarget = current.target;
+    draft.review(text);
   } catch (error) {
     if (dictation === current) dictation = null;
     updateTicker();
@@ -1309,9 +1287,9 @@ async function pairFromDraft(): Promise<void> {
 
 /** The draft link with the daemon's key hidden. */
 function maskedDraft(): string {
-  const draft = paseoPairingLinkSetting.get();
-  if (!draft) return "";
-  return draft.replace(/#offer=[^&\s]+/, "#offer=…");
+  const pairingDraft = paseoPairingLinkSetting.get();
+  if (!pairingDraft) return "";
+  return pairingDraft.replace(/#offer=[^&\s]+/, "#offer=…");
 }
 
 // ---------------------------------------------------------------------------
@@ -1320,7 +1298,7 @@ function maskedDraft(): string {
 function listView(): ListView {
   const paired = loadPairing();
   if (!paired) {
-    return { rows: [], selected: -1, footerRight: "", message: "Not paired. Tap to pair with the link from \"paseo daemon pair\"." };
+    return { rows: [], selected: -1, footerRight: "", message: "Not paired" };
   }
   const rows: ListRow[] = [];
   const sections = sectionAgents(agents.values());
@@ -1341,6 +1319,7 @@ function chatView(): ChatView {
   if (!current) return { lines: [], scrollBack: 0, footer: null, permission: null };
   const lines: ChatLine[] = current.entries.map((entry) => ({ role: entry.role, text: lineFor(entry) }));
   if (dictation) lines.push({ role: "user", text: dictation.partial || "…", live: true });
+  else if (draft.active) lines.push({ role: "user", text: draft.text || "…", live: true });
   const request = agent?.pendingPermissions?.[0] ?? null;
   const permission =
     request && agent && !dictation && requestKind(request) === "permission"
@@ -1350,7 +1329,7 @@ function chatView(): ChatView {
     lines,
     scrollBack: current.scrollBack,
     footer: chatFooter(agent),
-    permission,
+    permission: draft.active ? { question: sendingDraft ? "Sending" : draft.editing ? "Edit on phone" : "Draft", options: DRAFT_OPTIONS, selected: draft.selected } : permission,
     message: current.error ? current.error : !current.loaded ? (client?.connected ? "Loading…" : client?.status || "Connecting…") : "No messages yet.",
   };
 }
@@ -1360,11 +1339,11 @@ function choiceView(): { kind: "choice"; view: ChoiceView } | { kind: "steps"; s
   const current = chat;
   const agent = chatAgent();
   const request = agent?.pendingPermissions?.[0] ?? null;
-  if (!current || !agent || !request) return null;
+  if (draft.active || !current || !agent || !request) return null;
   const kind = requestKind(request);
   const nowMs = Date.now();
   const listening = dictation && dictation.target === "other"
-    ? { left: dictation.state === "finishing" ? "· Sending" : "· Listening", right: formatClock(nowMs - dictation.startedMs) }
+    ? { left: dictation.state === "finishing" ? "· Finishing" : "· Listening", right: formatClock(nowMs - dictation.startedMs) }
     : null;
   if (kind === "question" && current.flow) {
     const flow = current.flow;
@@ -1421,7 +1400,7 @@ function planLine(requestId: string, text: string): string {
 function chatFooter(agent: AgentSnapshot | null): { left: string; right: string } {
   const nowMs = Date.now();
   if (notice) return { left: `· ${notice.text}`, right: "" };
-  if (dictation) return { left: dictation.state === "finishing" ? "· Sending" : "· Listening", right: formatClock(nowMs - dictation.startedMs) };
+  if (dictation) return { left: dictation.state === "finishing" ? "· Finishing" : "· Listening", right: formatClock(nowMs - dictation.startedMs) };
   if (!client?.connected) return { left: `· ${client?.status || "Offline"}`, right: "" };
   if (!agent) return { left: "· Gone", right: "" };
   const bucket = agentBucket(agent);
@@ -1461,7 +1440,7 @@ function paintContent(win: AppWindow): GrayImage {
     case "pair":
       paintPair(image, f, {
         title: loadPairing() ? "Pair again" : "Pair Paseo",
-        steps: ["Run \"paseo daemon pair\" on the computer", "Paste the link into the phone app, then tap"],
+        steps: ["Run \"paseo daemon pair\" on the computer", "Pairing link in the phone app"],
         draft: maskedDraft(),
         busy: busyText,
         error: screenError,

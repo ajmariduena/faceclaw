@@ -1,119 +1,125 @@
-import { GrayImage, type UiFont } from "../../graphics/image";
+import { GrayImage } from "../../graphics/image";
 import { getDefaultSmallFont } from "../../graphics/ui-fonts";
-import { truncateText, wrapText } from "../../graphics/textwrap";
+import { EvenHubFont } from "../../graphics/evenhub-font";
+import { paintChat, chatMaxScrollBack, type Face, type ChatView } from "../../graphics/terminal-painter";
 import { ASSISTANT_MODEL_CHOICES, assistantModelLabel, resolveAssistantModel } from "../../assistant/models";
-import type { AssistantTranscriptEntry } from "../../assistant/session";
 import type { AssistantConversations, ReasoningLevel } from "../../assistant/conversations";
-import { anthropicApiKeySetting, assistantBackendSetting, openAiApiKeySetting } from "../../ui/dashboard-settings";
-import { GESTURE_CLICK, GESTURE_DOUBLE_CLICK, GESTURE_LONG_PRESS, gestureHints, type InputEvent } from "../../ui/gestures";
+import { anthropicApiKeySetting, assistantBackendSetting, openAiApiKeySetting, openRouterApiKeySetting, aiChatDraftSetting } from "../../ui/dashboard-settings";
+import { onSettingsStoreChanged } from "../../native/settings-store";
+import type { InputEvent } from "../../ui/gestures";
 import type { Layer, LayerContext } from "../../ui/layers";
 import type { MenuItem } from "../../ui/menu";
 import { WindowMenuLayer } from "../../ui/window-menu";
 import { createInProcessWindow, type InProcessAppOptions, type InProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
 import { VoiceDraft } from "./voice-draft";
+import { ChatDraft, DRAFT_OPTIONS } from "../../ui/chat-draft";
+
+let activeChatLayer: AiChatLayer | null = null;
+
+/** Call after launching AI Chat; an existing capture or review is never replaced. */
+export function startAiChatDictation(): boolean { return activeChatLayer?.startListening() ?? false; }
 
 class AiChatLayer implements Layer {
   readonly acceptsDirectional = true;
-  private firstLine: number | null = null; // null follows the streaming tail
-  private maxFirstLine = 0;
+  private scrollBack = 0;
+  private maxScrollBack = 0;
   private selectedId = "";
+  private shownMessages = 0;
   private requestRender = () => {};
-  private readonly wrappedEntries = new WeakMap<AssistantTranscriptEntry, {
-    font: UiFont; width: number; text: string; lines: string[];
-  }>();
+  private thinkingAt = 0;
   readonly draft: VoiceDraft;
+  readonly review = new ChatDraft();
 
-  constructor(private readonly conversations: AssistantConversations, options: InProcessAppOptions) {
+  constructor(private readonly conversations: AssistantConversations, private readonly options: InProcessAppOptions) {
+    this.selectedId = conversations.current().id;
     this.draft = new VoiceDraft(options.actions, () => shell.prepareChatVoiceCapture(),
-      () => this.requestRender(), (text) => this.send(text));
+      () => this.requestRender(), text => this.reviewText(text));
   }
   start(render: () => void): () => void {
     this.requestRender = render;
-    return this.conversations.onChanged(() => render());
+    const off = this.conversations.onChanged(() => {
+      if (this.conversations.current().session?.isTurnActive()) this.thinkingAt ||= Date.now();
+      else this.thinkingAt = 0;
+      render();
+    });
+    const offSettings = onSettingsStoreChanged(key => {
+      if (key === "aiChat.draft" && this.review.editing) { this.review.text = aiChatDraftSetting.get(); render(); }
+    });
+    const timer = setInterval(() => { if (this.draft.active || this.thinkingAt) render(); }, 250);
+    return () => { off(); offSettings(); clearInterval(timer); };
   }
-  send(text: string): void {
-    this.firstLine = null;
-    shell.sendToAssistant(text, false);
+  startListening(): boolean {
+    if (this.draft.active || this.review.active || this.conversations.current().session?.isTurnActive()) return false;
+    if (!shell.isAssistantAvailable()) { shell.showAlert("OpenRouter key missing"); return false; }
+    void this.draft.start();
+    return true;
   }
+  reviewText(text: string): void { this.scrollBack = 0; this.review.review(text); this.requestRender(); }
+  send(text: string): void { this.scrollBack = 0; shell.sendToAssistant(text, false); }
   paint(ctx: LayerContext): GrayImage {
     const size = ctx.stack.getBaseSize();
     const image = new GrayImage(size.width, size.height);
     const font = getDefaultSmallFont();
-    const step = font.lineHeight + 3;
-    const left = 12;
-    const width = size.width - 28;
+    let stock: Face | null = null;
+    try { const loaded = EvenHubFont.get(); if (loaded.hasGlyph(65)) stock = loaded; } catch { /* Bundled fallback font below. */ }
+    const face: Face = stock ?? { lineHeight: font.lineHeight, measureLine: text => font.measureText(text),
+      drawText: (img, x, y, text, value = 255) => img.drawText(font, x, y, text, value) };
     const record = this.conversations.current();
-    if (this.selectedId !== record.id) { this.selectedId = record.id; this.firstLine = null; }
+    if (this.selectedId !== record.id) { this.selectedId = record.id; this.scrollBack = 0; this.shownMessages = 0; this.review.discard(); }
     const transcript = record.session?.transcript ?? record.history?.transcript ?? [];
-    const title = this.conversations.title();
-    image.drawText(font, left, 6, truncateText(font, title, width), 180);
-    const label = assistantBackendSetting.get() === "external" ? "External agent" :
-      `${assistantModelLabel(record.model)} · ${record.reasoning === "default" ? "default reasoning" : record.reasoning}`;
-    const footer = wrapText(font, `${label}   ${gestureHints([
-      [GESTURE_CLICK, "menu"], [GESTURE_DOUBLE_CLICK, "back"], [GESTURE_LONG_PRESS, "hold to talk"],
-    ])}`, width);
-    const footerY = size.height - step * footer.length;
-    const footerTop = footerY - step * 3 - 12;
-    const historyTop = step + 16;
-    const visible = Math.max(1, Math.floor((footerTop - historyTop - 8) / step));
-    const lines: { text: string; color: number }[] = [];
-    for (const entry of transcript) {
-      if (!entry.text) continue;
-      let wrapped = this.wrappedEntries.get(entry);
-      if (!wrapped || wrapped.font !== font || wrapped.width !== width || wrapped.text !== entry.text) {
-        wrapped = { font, width, text: entry.text,
-          lines: wrapText(font, `${entry.role === "user" ? "You" : "AI"}: ${entry.text}`, width - 8) };
-        this.wrappedEntries.set(entry, wrapped);
-      }
-      for (const text of wrapped.lines) {
-        lines.push({ text, color: entry.role === "user" ? 175 : 245 });
-      }
-      lines.push({ text: "", color: 0 });
-    }
-    if (!lines.length) lines.push({ text: "Hold to talk to your assistant.", color: 175 },
-      { text: "Voice and chat share this conversation.", color: 150 });
-    this.maxFirstLine = Math.max(0, lines.length - visible);
-    const first = this.firstLine === null ? this.maxFirstLine : Math.min(this.firstLine, this.maxFirstLine);
-    for (let row = 0; row < visible; row++) {
-      const line = lines[first + row];
-      if (line) image.drawText(font, left, historyTop + row * step, line.text, line.color);
-    }
-    if (this.maxFirstLine > 0) {
-      const track = visible * step;
-      const thumb = Math.max(8, Math.floor(track * visible / lines.length));
-      image.fillRect(size.width - 5, historyTop + Math.floor((track - thumb) * first / this.maxFirstLine), 2, thumb, 110);
-    }
-    image.fillRect(left, footerTop, width, 1, 65);
-    const state = this.draft.active ? this.draft.status : record.session?.status || this.draft.status;
-    if (state) image.drawText(font, left, footerTop + 5, truncateText(font, state, width), 160);
-    const pending = wrapText(font, this.draft.text || (this.draft.active ? "Listening..." : "Hold to speak; release to send"), width);
-    pending.slice(-2).forEach((text, i) => image.drawText(font, left, footerTop + step * (i + 1) + 5, text, 220));
-    footer.forEach((text, i) => image.drawText(font, left + width - font.measureText(text), footerY + i * step, text, 120));
+    const lines = transcript.filter(entry => entry.text).map(entry => ({ role: entry.role, text: entry.text, action: entry.action }));
+    if (this.scrollBack > 0 && lines.length > this.shownMessages) this.scrollBack += lines.length - this.shownMessages;
+    this.shownMessages = lines.length;
+    if (this.draft.active || this.review.active) lines.push({ role: "user", text: this.draft.text || this.review.text || "…", action: false });
+    const ms = Math.max(0, Date.now() - this.draft.startedAt);
+    const elapsed = `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
+    const footer = this.draft.active ? { left: this.draft.phase === "finishing" ? "· Finishing" : "· Listening", right: elapsed } :
+      this.thinkingAt ? { left: "· Thinking", right: `${((Date.now() - this.thinkingAt) / 1000).toFixed(1)}s` } :
+      record.session?.status ? { left: `· ${record.session.status}`, right: "" } :
+      { left: "· AI Chat", right: assistantModelLabel(record.model) };
+    const view: ChatView = { lines, scrollBack: this.scrollBack, footer,
+      permission: this.review.active ? { question: this.review.editing ? "Edit on phone" : "Draft", options: DRAFT_OPTIONS, selected: this.review.selected } : null,
+      message: record.session?.status || this.draft.status || "Ready" };
+    this.maxScrollBack = chatMaxScrollBack(face, view);
+    paintChat(image, face, view);
     return image;
   }
   handleInput(event: InputEvent): void {
     switch (event.type) {
-      case "scroll-up": case "swipe-up":
-        this.firstLine = Math.max(0, (this.firstLine ?? this.maxFirstLine) - 3); return;
-      case "scroll-down": case "swipe-down": {
-        const next = (this.firstLine ?? this.maxFirstLine) + 3;
-        this.firstLine = next >= this.maxFirstLine ? null : next; return;
-      }
-      case "long-press":
-        if (!this.conversations.current().session?.isTurnActive()) {
-          if (!shell.isAssistantAvailable()) { shell.showAlert(global.isIOS ? "Set an OpenAI or Anthropic API key in Settings." : "Set an API key or download the on-phone model in Settings."); return; }
-          void this.draft.start();
-        }
+      case "scroll-up": case "swipe-up": case "scroll-down": case "swipe-down": {
+        if (this.draft.active) return;
+        const down = event.type === "scroll-down" || event.type === "swipe-down";
+        if (this.review.active) this.review.move(down ? 1 : -1);
+        else this.scrollBack = Math.max(0, Math.min(this.maxScrollBack, this.scrollBack + (down ? -1 : 1)));
         return;
-      case "long-press-release": this.draft.release(); return;
-      case "double-click": this.draft.cancel(); shell.yieldFocusToSidebar(); return;
+      }
+      case "click":
+        if (this.draft.active) { this.draft.release(); return; }
+        if (this.review.active) {
+          if (this.review.selected === 0) {
+            const text = this.review.text.trim();
+            if (!text || this.conversations.current().session?.isTurnActive()) return;
+            if (!shell.isAssistantAvailable()) { shell.showAlert("OpenRouter key missing"); return; }
+            this.review.discard(); aiChatDraftSetting.set(""); this.send(text);
+          } else if (this.review.selected === 1) {
+            aiChatDraftSetting.set(this.review.text); this.review.editing = true;
+            void this.options.actions.startTextSettingEdit(aiChatDraftSetting);
+          } else { this.review.discard(); aiChatDraftSetting.set(""); }
+          return;
+        }
+        this.startListening();
+        return;
+      case "double-click":
+        if (this.draft.active) { this.draft.cancel(); return; }
+        if (this.review.active) { this.review.discard(); aiChatDraftSetting.set(""); return; }
+        shell.showHome(); return;
       default: return;
     }
   }
   menuItems(): MenuItem[] {
     const record = this.conversations.current();
-    const busy = () => this.draft.active || Boolean(record.session?.isTurnActive());
+    const busy = () => this.review.active || this.draft.active || Boolean(record.session?.isTurnActive());
     const external = assistantBackendSetting.get() === "external";
     const submenu = (ctx: LayerContext, title: string, items: MenuItem[]) => ctx.stack.push(new WindowMenuLayer(title, items, true));
     return [
@@ -133,7 +139,7 @@ class AiChatLayer implements Layer {
           onSelect: (pickCtx) => { if (this.conversations.configure(model, record.reasoning)) pickCtx.stack.clearToBase(); },
         }))) },
       { label: `Reasoning: ${record.reasoning}`, disabled: () => {
-        const llm = resolveAssistantModel(record.model, { anthropic: anthropicApiKeySetting.get(), openai: openAiApiKeySetting.get() });
+        const llm = resolveAssistantModel(record.model, { anthropic: anthropicApiKeySetting.get(), openai: openAiApiKeySetting.get(), openrouter: openRouterApiKeySetting.get() });
         return external || busy() || !llm?.effort;
       }, onSelect: (ctx) => submenu(ctx, "Reasoning", (["default", "low", "medium", "high"] as ReasoningLevel[]).map((reasoning) => ({
         label: `${reasoning === record.reasoning ? "✓ " : ""}${reasoning === "default" ? "Model default" : reasoning}`,
@@ -148,19 +154,20 @@ class AiChatLayer implements Layer {
 
 export function createAiChatWindow(options: InProcessAppOptions): InProcessWindow {
   const layer = new AiChatLayer(shell.getAssistantConversations(), options);
+  activeChatLayer = layer;
   let unsubscribe = () => {};
   const app = createInProcessWindow({
     ...options,
     appId: "ai-chat", windowId: "ai-chat", title: "AI Chat", iconLetter: "AI", icon: "message-circle", closeable: true,
-    baseLayer: layer, holdToTalk: true,
+    baseLayer: layer,
     isVoiceCapturing: () => layer.draft.active,
     onSystemMenuOpened: () => layer.draft.cancel(),
     onAppMenuOpened: () => layer.draft.cancel(),
     setScreenOn: (on) => { if (!on) layer.draft.cancel(); },
     setSurfaceVisible: (visible) => { if (!visible) layer.draft.cancel(); options.setSurfaceVisible(visible); },
     menuItems: () => layer.menuItems(),
-    receiveTextInput: (text) => { if (!layer.draft.active) layer.send(text); },
-    onClosed: () => { unsubscribe(); layer.draft.cancel(); options.onClosed(); },
+    receiveTextInput: (text) => { if (!layer.draft.active) layer.reviewText(text); },
+    onClosed: () => { unsubscribe(); layer.draft.cancel(); layer.review.discard(); aiChatDraftSetting.set(""); if (activeChatLayer === layer) activeChatLayer = null; options.onClosed(); },
   });
   unsubscribe = layer.start(app.requestRender);
   return app;

@@ -2,9 +2,10 @@ import { voiceControlBridge } from "../../native/voice-control";
 import { voiceActivity } from "../../ui/shell/voice-activity";
 import type { LayerActions } from "../../ui/layers";
 
-/** One hold/release cycle. Async startup and trailing cloud finals belong to this cycle only. */
+/** One dictation cycle. Async startup and trailing cloud finals belong to this cycle only. */
 export class VoiceDraft {
   phase: "idle" | "preparing" | "listening" | "finishing" = "idle";
+  startedAt = 0;
   text = "";
   status = "";
   private committed = "";
@@ -29,6 +30,7 @@ export class VoiceDraft {
     if (this.active) return;
     const generation = ++this.generation;
     this.text = this.committed = this.live = "";
+    this.startedAt = Date.now();
     this.phase = "preparing";
     this.status = "Preparing microphone...";
     this.changed();
@@ -37,7 +39,7 @@ export class VoiceDraft {
       if (generation !== this.generation) return;
       if (!ready) { this.cancel("Microphone unavailable"); return; }
       this.phase = "listening";
-      this.status = "Listening... release to send";
+      this.status = "Listening";
       this.ownsVoiceActivity = true;
       voiceActivity.setActive(true);
       this.unsubscribe.push(voiceControlBridge.onTranscript((event) => {
