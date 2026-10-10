@@ -15,7 +15,7 @@ import { fetchTextWithUserAgent } from "../../util/http";
 import { HomeModel, HOME_WINDOW_ID, HOME_SURFACE_ID, HOME_SLEEP_GUARD_MS, calendarCardState } from "./home-model";
 import { paintHome } from "./home-painter";
 import { HomeWeather } from "./home-weather";
-import { terminalFace } from "../../ui/terminal-face";
+import { stockFace } from "../../ui/stock-face";
 
 function createHomeWeather(): HomeWeather {
   return new HomeWeather({
@@ -66,7 +66,7 @@ export function createHomeWindow(ctx: AppContext) {
         translateReady: sonioxApiKeySetting.get().trim().length > 0,
         battery: { ring: levels.ring, glasses: levels.headset },
         weather: weather.reading(),
-      }, terminalFace());
+      }, stockFace());
     },
     handleInput: async (event: InputEvent) => {
       if (launching) return;

@@ -15,14 +15,21 @@ export type Face = {
   drawText(image: GrayImage, x: number, y: number, text: string, value?: number): void;
 };
 
-export const PITCH = 27;
-export const FOOTER_TOP = 288 - 4 - 40;
+export let PITCH = 27;
+export let FOOTER_TOP = 288 - 4 - (PITCH + 13);
 export const CONTENT_TOP = 14;
 export const LEFT = 22;
 export const RIGHT = 554;
 export const RULE_VALUE = 119;
 export const DIM = 136;
-export const LIST_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / PITCH);
+export let LIST_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / PITCH);
+
+/** Settings > Text size: the row pitch the lean list screens lay out with (27 for Even's 20 px font). */
+export function applyTextLayout(pitch: number): void {
+  PITCH = pitch;
+  FOOTER_TOP = 288 - 4 - (pitch + 13);
+  LIST_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / pitch);
+}
 
 export function fitLine(face: Face, text: string, width: number): string {
   const clean = text.replace(/[\r\n\t]/g, " ");

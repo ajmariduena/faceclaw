@@ -7,9 +7,12 @@ import {
   screenTimeoutLabel,
   screenTimeoutSetting,
   sonioxApiKeySetting,
+  textSizeLabel,
+  textSizeSetting,
   uiDepthSetting,
   type BrightnessSetting,
   type ScreenTimeoutSetting,
+  type TextSizeSetting,
   type UiDepth,
 } from "../../ui/dashboard-settings";
 import type { InputEvent } from "../../ui/gestures";
@@ -64,16 +67,18 @@ export type StatusSnapshot = {
   brightness: BrightnessSetting;
   screenTimeout: ScreenTimeoutSetting;
   depth: UiDepth;
+  textSize: TextSizeSetting;
 };
 
 export const BRIGHTNESS_ROW = 6;
 export const SCREEN_OFF_ROW = 7;
 export const DISTANCE_ROW = 8;
-export const DISCONNECT_ROW = 9;
+export const TEXT_SIZE_ROW = 9;
+export const DISCONNECT_ROW = 10;
 
 type Adjustable = { row: number; footer: string; values: readonly string[]; get: () => string; set: (value: string) => void };
 
-/** Rows a tap puts into scroll-to-adjust; scroll-up moves to the next value (brighter, longer, farther). */
+/** Rows a tap puts into scroll-to-adjust; scroll-up moves to the next value (brighter, longer, farther, larger). */
 const ADJUSTABLE: readonly Adjustable[] = [
   { row: BRIGHTNESS_ROW, footer: "· Brightness", get values() { return BRIGHTNESS_VALUES; },
     get: () => brightnessSetting.get(), set: (value) => brightnessSetting.set(value as BrightnessSetting) },
@@ -81,6 +86,8 @@ const ADJUSTABLE: readonly Adjustable[] = [
     get: () => screenTimeoutSetting.get(), set: (value) => screenTimeoutSetting.set(value as ScreenTimeoutSetting) },
   { row: DISTANCE_ROW, footer: "· Distance", get values() { return [...uiDepthSetting.values].reverse(); },
     get: () => uiDepthSetting.get(), set: (value) => uiDepthSetting.set(value as UiDepth) },
+  { row: TEXT_SIZE_ROW, footer: "· Text size", get values() { return textSizeSetting.values; },
+    get: () => textSizeSetting.get(), set: (value) => textSizeSetting.set(value as TextSizeSetting) },
 ];
 
 /** Depth as a 1 (nearest) to 9 (farthest) level, the way the Even app shows its distance slider. */
@@ -98,6 +105,7 @@ export function statusRows(snapshot: StatusSnapshot): TerminalRow[] {
     { label: "Brightness", value: brightnessLabel(snapshot.brightness) },
     { label: "Screen off", value: snapshot.screenTimeout === "never" ? "Never" : `after ${screenTimeoutLabel(snapshot.screenTimeout)}` },
     { label: "Distance", value: distanceLabel(snapshot.depth) },
+    { label: "Text size", value: textSizeLabel(snapshot.textSize) },
     { label: "Disconnect" },
   ];
 }
@@ -123,6 +131,7 @@ function readSnapshot(): StatusSnapshot {
     brightness: brightnessSetting.get(),
     screenTimeout: screenTimeoutSetting.get(),
     depth: uiDepthSetting.get(),
+    textSize: textSizeSetting.get(),
   };
 }
 
@@ -144,8 +153,9 @@ export class StatusLayer implements Layer {
     const { width, height } = ctx.stack.getBaseSize();
     const image = new GrayImage(width, height);
     const rows = statusRows(this.snapshot());
+    const face = terminalFace();
     this.scrollTop = listScrollTop(rows.length, this.selected, this.scrollTop);
-    paintTerminalList(image, terminalFace(), {
+    paintTerminalList(image, face, {
       rows,
       selected: this.selected,
       footer: { left: this.adjusting?.footer ?? "· Settings", right: "" },

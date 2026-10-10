@@ -1,19 +1,31 @@
-import { EvenHubFont } from "../graphics/evenhub-font";
-import { getDefaultSmallFont } from "../graphics/ui-fonts";
-import type { Face } from "./terminal";
+import { installedFontPath, ensurePreinstalledFonts } from "../graphics/installed-fonts";
+import { applyTextLayout as applyPainterLayout } from "../graphics/terminal-painter";
+import { TtfFont } from "../graphics/ttf-font";
+import { stockFace } from "./stock-face";
+import { applyTextLayout, type Face } from "./terminal";
+import { textMetrics } from "./text-size";
 
-/** The stock G2 font when the firmware assets are extracted, else the bundled Roboto. */
-export function terminalFace(): Face {
-  try {
-    const stock = EvenHubFont.get();
-    if (stock.hasGlyph(65)) return stock;
-  } catch (error) {
-    console.warn("Terminal font unavailable", error);
-  }
-  const font = getDefaultSmallFont();
+function ttfFace(font: TtfFont): Face {
   return {
     lineHeight: font.lineHeight,
     measureLine: (text) => font.measureText(text),
-    drawText: (image, x, y, text, value) => font.drawText(image, x, y, text, value),
+    drawText: (image, x, y, text, value = 255) => font.drawText(image, x, y, text, value),
   };
+}
+
+/**
+ * The face for terminal-frame screens under Settings > Text size. Also moves
+ * the shared layout to the matching pitch, so callers must take the face
+ * before reading PITCH, LIST_CAPACITY or FOOTER_TOP for a paint.
+ */
+export function terminalFace(): Face {
+  const metrics = textMetrics();
+  applyTextLayout(metrics.pitch);
+  applyPainterLayout(metrics.pitch);
+  if (metrics.sizePx) {
+    ensurePreinstalledFonts();
+    const font = TtfFont.load(installedFontPath("Roboto-Regular.ttf"), metrics.sizePx);
+    if (font) return ttfFace(font);
+  }
+  return stockFace();
 }

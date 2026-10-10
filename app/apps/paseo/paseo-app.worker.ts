@@ -27,8 +27,7 @@ import { finishWorkerShutdown } from "../../ui/shell/worker-lifecycle";
 import { GrayImage } from "../../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../../graphics/plane";
 import { prepareFrameDraws } from "../../graphics/glyph-wire";
-import { getDefaultSmallFont } from "../../graphics/ui-fonts";
-import { EvenHubFont } from "../../graphics/evenhub-font";
+import { terminalFace } from "../../ui/terminal-face";
 import * as frameTimings from "../../native/frame-timings";
 import { getActiveDisplay } from "../../native/active-display";
 import { onSettingsStoreChanged } from "../../native/settings-store";
@@ -193,26 +192,13 @@ const glanceFetching = new Set<string>();
 /** Last seen bucket per agent, for attention alerts. */
 const knownStatus = new Map<string, { bucket: Bucket; permissionId: string | null }>();
 let attentionBaselined = false;
-let faceCache: Face | null = null;
 
 function post(message: WorkerAppReply): void {
   global.postMessage(message);
 }
 
 function face(): Face {
-  if (faceCache) return faceCache;
-  try {
-    const stock = EvenHubFont.get();
-    if (stock.hasGlyph(65)) return (faceCache = stock);
-  } catch (error) {
-    console.warn(`paseo: stock font unavailable: ${error}`);
-  }
-  const font = getDefaultSmallFont();
-  return (faceCache = {
-    lineHeight: font.lineHeight,
-    measureLine: (text) => font.measureText(text),
-    drawText: (image, x, y, text, value = 255) => image.drawText(font, x, y, text, value),
-  });
+  return terminalFace();
 }
 
 // ---------------------------------------------------------------------------

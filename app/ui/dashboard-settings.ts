@@ -529,6 +529,22 @@ export const screenTimeoutSetting = new ConfigSettingEnum<ScreenTimeoutSetting>(
   description: "How long the display stays on after the last input before turning itself off. \"Never\" keeps it on until turned off manually.",
 });
 
+export type TextSizeSetting = "normal" | "large" | "larger";
+
+export function textSizeLabel(value: TextSizeSetting): string {
+  return value === "large" ? "Large" : value === "larger" ? "Larger" : "Normal";
+}
+
+export const textSizeSetting = new ConfigSettingEnum<TextSizeSetting>({
+  id: "text-size",
+  label: "Text size",
+  storageKey: "display.textSize",
+  defaultValue: "normal",
+  values: ["normal", "large", "larger"],
+  formatValue: textSizeLabel,
+  description: "Terminal-frame screens (lists, Settings, Paseo, Calendar, Translate): Even's 20 px font, or Roboto at 26 or 28 px with fewer rows.",
+});
+
 export const lockScreenEnabledSetting = new ConfigSettingBoolean({
   id: "lock-screen-enabled",
   label: "Enable lock screen",

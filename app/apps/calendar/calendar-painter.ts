@@ -29,7 +29,9 @@ const PAST_TITLE = 102;
 const TIME_LEFT = 42;
 const MIN_TITLE_LEFT = 112;
 
-export const AGENDA_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / PITCH);
+function agendaCapacity(): number {
+  return Math.floor((FOOTER_TOP - CONTENT_TOP) / PITCH);
+}
 
 /**
  * The first visible row: the selected day's heading, so scrolling into a new
@@ -39,10 +41,10 @@ export const AGENDA_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / PITCH);
 export function agendaScrollTop(rows: readonly AgendaRow[], selected: number): number {
   if (selected < 0) return 0;
   const firstEvent = rows.findIndex((row) => row.kind === "event");
-  if (selected === firstEvent && selected < AGENDA_CAPACITY) return 0;
+  if (selected === firstEvent && selected < agendaCapacity()) return 0;
   let heading = selected;
   while (heading > 0 && rows[heading]!.kind !== "heading") heading--;
-  return selected - heading < AGENDA_CAPACITY ? heading : selected - AGENDA_CAPACITY + 1;
+  return selected - heading < agendaCapacity() ? heading : selected - agendaCapacity() + 1;
 }
 
 export type AgendaView = {

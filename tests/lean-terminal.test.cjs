@@ -24,6 +24,7 @@ function env({ developer = false, brightness = 'auto', soniox = '', statuses = {
   let brightnessValue = brightness;
   let timeoutValue = '15s';
   let depthValue = '48';
+  let textSizeValue = 'normal';
   const settings = {
     developerInMoreSetting: { get: () => developer },
     sonioxApiKeySetting: { get: () => soniox },
@@ -33,6 +34,8 @@ function env({ developer = false, brightness = 'auto', soniox = '', statuses = {
     screenTimeoutSetting: { values: ['15s', '30s', '1m', '3m', 'never'], get: () => timeoutValue, set: value => { timeoutValue = value; } },
     screenTimeoutLabel: value => value === 'never' ? 'Never' : value,
     uiDepthSetting: { values: ['-62', '-48', '-32', '-16', '0', '16', '32', '48', '62'], get: () => depthValue, set: value => { depthValue = value; } },
+    textSizeSetting: { values: ['normal', 'large', 'larger'], get: () => textSizeValue, set: value => { textSizeValue = value; } },
+    textSizeLabel: value => ({ normal: 'Normal', large: 'Large', larger: 'Larger' })[value],
     onAnySettingChanged: () => () => {},
   };
   const nowBox = { ms: new Date(2026, 9, 10, 9, 41).getTime() };
@@ -51,7 +54,7 @@ function env({ developer = false, brightness = 'auto', soniox = '', statuses = {
     './timer-engine': { timerEngine: {} },
   });
   const ctx = { stack: { getBaseSize: () => ({ width: 576, height: 288 }) }, actions: { disconnect: () => disconnects.push(1) } };
-  return { load, face, draws, ctx, yields, launched, disconnects, nowBox, texts: () => draws.map(d => d.text), brightness: () => brightnessValue, timeout: () => timeoutValue, depth: () => depthValue };
+  return { load, face, draws, ctx, yields, launched, disconnects, nowBox, texts: () => draws.map(d => d.text), brightness: () => brightnessValue, timeout: () => timeoutValue, depth: () => depthValue, textSize: () => textSizeValue };
 }
 
 test('terminal list helpers: fit, scroll window, selectable stepping and row painting', () => {
@@ -59,6 +62,12 @@ test('terminal list helpers: fit, scroll window, selectable stepping and row pai
   const t = e.load('app/ui/terminal.ts');
   assert.equal(t.PITCH, 27);
   assert.equal(t.LIST_CAPACITY, 8);
+  t.applyTextLayout(34);
+  assert.deepEqual([t.PITCH, t.FOOTER_TOP, t.LIST_CAPACITY], [34, 237, 6], 'Large keeps the footer one row tall');
+  t.applyTextLayout(37);
+  assert.equal(t.LIST_CAPACITY, 5);
+  t.applyTextLayout(27);
+  assert.deepEqual([t.FOOTER_TOP, t.LIST_CAPACITY], [244, 8]);
   assert.equal(t.fitLine(e.face, 'short', 100), 'short');
   assert.ok(t.fitLine(e.face, 'a very long line that cannot fit', 60).endsWith('…'));
   assert.equal(t.listScrollTop(10, 0, 0), 0);
@@ -187,6 +196,13 @@ test('Settings: status rows read batteries, the Paseo link and the phone\'s key 
   e.draws.length = 0; layer.paint(e.ctx);
   assert.equal(row('Distance'), '1');
   await layer.handleInput({ type: 'double-click' }, e.ctx);
+  await layer.handleInput({ type: 'scroll-down' }, e.ctx);
+  e.draws.length = 0; layer.paint(e.ctx);
+  assert.equal(row('Text size'), 'Normal');
+  await layer.handleInput({ type: 'click' }, e.ctx);
+  await layer.handleInput({ type: 'scroll-up' }, e.ctx);
+  assert.equal(e.textSize(), 'large', 'scroll-up makes the text larger');
+  await layer.handleInput({ type: 'click' }, e.ctx);
   await layer.handleInput({ type: 'scroll-down' }, e.ctx);
   await layer.handleInput({ type: 'click' }, e.ctx);
   assert.equal(e.disconnects.length, 1);

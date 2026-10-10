@@ -21,10 +21,10 @@ export type Face = {
 
 export const BAND_WIDTH = 576;
 export const BAND_HEIGHT = 288;
-export const PITCH = 27;
-export const FOOTER_TOP = BAND_HEIGHT - 4 - 40;
+export let PITCH = 27;
+export let FOOTER_TOP = BAND_HEIGHT - 4 - (PITCH + 13);
 export const CONTENT_TOP = 14;
-export const CONTENT_BOTTOM = FOOTER_TOP - 8;
+export let CONTENT_BOTTOM = FOOTER_TOP - 8;
 export const LEFT = 22;
 export const RIGHT = 554;
 const RULE_VALUE = 119;
@@ -94,7 +94,15 @@ export type ListView = {
   message?: string;
 };
 
-export const LIST_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / PITCH);
+export let LIST_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / PITCH);
+
+/** Settings > Text size: the row pitch every terminal-frame painter lays out with (27 for Even's 20 px font). */
+export function applyTextLayout(pitch: number): void {
+  PITCH = pitch;
+  FOOTER_TOP = BAND_HEIGHT - 4 - (pitch + 13);
+  CONTENT_BOTTOM = FOOTER_TOP - 8;
+  LIST_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / pitch);
+}
 
 /** The first visible row so the selection is on screen, with its section heading when it fits. */
 export function listScrollTop(rows: readonly ListRow[], selected: number, previousTop: number): number {
@@ -323,12 +331,11 @@ export type PlanStepsView = {
 };
 
 const STEP_PITCH = 36;
-const STEP_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / STEP_PITCH);
 
 export function paintPlanSteps(image: GrayImage, face: Face, view: PlanStepsView): void {
   paintFrame(image);
   const selected = Math.min(Math.max(0, view.selected), Math.max(0, view.steps.length - 1));
-  const window = windowRows(view.steps.length, selected, STEP_CAPACITY);
+  const window = windowRows(view.steps.length, selected, Math.floor((FOOTER_TOP - CONTENT_TOP) / STEP_PITCH));
   for (let index = window.first; index < window.end; index++) {
     const y = CONTENT_TOP + (index - window.first) * STEP_PITCH;
     face.drawText(image, LEFT, y, fitLine(face, `${index + 1}. ${view.steps[index]}`, RIGHT - LEFT), index === selected ? 255 : 170);
