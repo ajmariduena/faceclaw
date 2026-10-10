@@ -398,7 +398,10 @@ class Shell {
   /** Window ids in most-recently-visible-first order; closing the visible window returns to the next entry. */
   private mruWindowIds: string[] = [];
   /** Apps opened from More return there on their root double tap, not to the home. */
-  private readonly returnToWindowId = new Map<string, string>();
+  private returnTargets?: Map<string, string>;
+  private get returnToWindowId(): Map<string, string> {
+    return (this.returnTargets ??= new Map());
+  }
   private focus: FocusKind = "sidebar";
   /** The window last told it holds input focus (see syncInputFocus). */
   private inputFocusedWindowId: string | null = null;
