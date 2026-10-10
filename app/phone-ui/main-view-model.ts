@@ -32,6 +32,7 @@ const LENS_ASPECT_RATIO = G2_LENS_WIDTH / G2_LENS_HEIGHT;
 type LayoutOrientation = "portrait" | "landscape";
 
 export class MainViewModel extends RemoteControlsViewModel {
+  onApiKeysTap(): void { Frame.topmost()?.navigate({ moduleName: "phone-ui/api-keys-page" }); }
   private _status = "Disconnected.";
   private _displayPreview: ImageSource | null = null;
   private _displayPreviewMessage = "";

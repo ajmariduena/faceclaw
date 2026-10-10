@@ -1,0 +1,20 @@
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo">
+  <ActionBar title="API keys" />
+  <GridLayout rows="auto,*,auto" class="p-16">
+    <Button row="0" text="Test all" tap="{{ testAll }}" isEnabled="{{ testAllEnabled }}" />
+    <ListView row="1" items="{{ rows }}" separatorColor="transparent">
+      <ListView.itemTemplate>
+        <StackLayout class="m-b-16">
+          <Label text="{{ group }}" class="body-text" />
+          <Label text="{{ label }}" class="h3" />
+          <GridLayout columns="*,auto">
+            <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="true" autocorrect="false" autocapitalizationType="none" hint="Not set" />
+            <Button col="1" text="{{ testLabel }}" tap="{{ onTest }}" isEnabled="{{ enabled }}" />
+          </GridLayout>
+          <Label text="{{ status }}" textWrap="true" />
+        </StackLayout>
+      </ListView.itemTemplate>
+    </ListView>
+    <Button row="2" text="{{ advancedLabel }}" tap="{{ toggleAdvanced }}" />
+  </GridLayout>
+</Page>

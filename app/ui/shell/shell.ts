@@ -41,6 +41,7 @@ import {
   brightnessSetting,
   onAnySettingChanged,
   openAiApiKeySetting,
+  openRouterApiKeySetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
   timeFormatSetting,
@@ -1562,6 +1563,7 @@ class Shell {
     const llm = resolveAssistantModel(model, {
       anthropic: anthropicApiKeySetting.get(),
       openai: openAiApiKeySetting.get(),
+      openrouter: openRouterApiKeySetting.get(),
     });
     if (llm && reasoning !== "default" && llm.effort) llm.effort = reasoning;
     return llm ? { kind: "direct", llm } : null;
