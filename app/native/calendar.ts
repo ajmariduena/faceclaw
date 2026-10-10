@@ -74,9 +74,54 @@ export async function readUpcomingEventsAsync(maxEvents = DEFAULT_MAX_EVENTS, wi
   return readUpcomingEvents(maxEvents, windowMs);
 }
 
+let agendaCache: { events: CalendarEvent[]; atMs: number; fromMs: number; toMs: number; maxEvents: number } | null = null;
+
+/**
+ * Events overlapping [fromMs, toMs), ended ones included, ordered by start
+ * time: the Calendar app's agenda, which shows the earlier part of today too.
+ * Cached like readUpcomingEvents.
+ */
+export function readAgendaEvents(fromMs: number, toMs: number, maxEvents = DEFAULT_MAX_EVENTS): CalendarEvent[] {
+  if (!global.isAndroid || !hasCalendarPermission()) return [];
+  const now = Date.now();
+  if (agendaCache && agendaCache.fromMs === fromMs && agendaCache.toMs === toMs &&
+      agendaCache.maxEvents === maxEvents && now - agendaCache.atMs < CACHE_MS) {
+    return agendaCache.events;
+  }
+  const context = Utils.android.getApplicationContext();
+  if (!context) return [];
+  try {
+    const json = spanCurrent("fetch-calendar-agenda", () =>
+      String(com.faceclaw.app.FaceclawCalendarProvider.getEventsJson(context, fromMs, toMs, Math.max(0, Math.round(maxEvents)))),
+    );
+    const parsed = JSON.parse(json);
+    const events = Array.isArray(parsed)
+      ? parsed.map(normalizeEvent).filter((event): event is CalendarEvent => Boolean(event))
+      : [];
+    agendaCache = { events, atMs: now, fromMs, toMs, maxEvents };
+    return events;
+  } catch {
+    return [];
+  }
+}
+
+/** Attendee names of one event, without the calendar owner. */
+export function readEventAttendees(eventId: CalendarEvent["id"]): string[] {
+  if (!global.isAndroid || !hasCalendarPermission()) return [];
+  const context = Utils.android.getApplicationContext();
+  if (!context) return [];
+  try {
+    const parsed = JSON.parse(String(com.faceclaw.app.FaceclawCalendarProvider.getAttendeesJson(context, Number(eventId) || 0)));
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Drop the cached events so the next read re-queries the provider. */
 export function invalidateCalendarCache(): void {
   cache = null;
+  agendaCache = null;
 }
 
 function normalizeEvent(value: any): CalendarEvent | null {
@@ -91,5 +136,6 @@ function normalizeEvent(value: any): CalendarEvent | null {
     allDay: Boolean(value.allDay),
     location: String(value.location ?? ""),
     calendarName: String(value.calendarName ?? ""),
+    notes: String(value.notes ?? ""),
   };
 }

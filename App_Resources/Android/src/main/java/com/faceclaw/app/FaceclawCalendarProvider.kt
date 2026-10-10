@@ -33,6 +33,7 @@ class FaceclawCalendarProvider private constructor() {
             CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.EVENT_LOCATION,
             CalendarContract.Instances.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Instances.DESCRIPTION,
         )
 
         private class Event(
@@ -43,30 +44,37 @@ class FaceclawCalendarProvider private constructor() {
             val allDay: Boolean,
             val location: String,
             val calendarName: String,
+            val notes: String,
         )
 
         /**
          * JSON array of events that haven't ended yet and start before
          * now+windowMs, ordered by start time, capped at maxEvents. Each
-         * element carries id, title, startMs, endMs, allDay, location, and
-         * calendarName. All-day events are reported as local-midnight
+         * element carries id, title, startMs, endMs, allDay, location,
+         * calendarName and notes. All-day events are reported as local-midnight
          * boundaries (matching EventKit on iOS), not the UTC-midnight
          * boundaries the provider stores them as.
          */
         @JvmStatic
         fun getUpcomingEventsJson(context: Context?, maxEvents: Int, windowMs: Long): String {
+            val now = System.currentTimeMillis()
+            return getEventsJson(context, now, now + Math.max(0L, windowMs), maxEvents)
+        }
+
+        /** Like getUpcomingEventsJson, for events that end after fromMs and start before toMs. */
+        @JvmStatic
+        fun getEventsJson(context: Context?, fromMs: Long, toMs: Long, maxEvents: Int): String {
             if (context == null || maxEvents <= 0) {
                 return "[]"
             }
-            val now = System.currentTimeMillis()
-            val end = now + Math.max(0L, windowMs)
+            val end = Math.max(fromMs, toMs)
             val limit = Math.min(200, maxEvents)
 
             // The provider matches all-day instances by their UTC-midnight
             // bounds, which can be up to a day away from the local day they
             // represent; widen the query and filter after converting.
             val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            ContentUris.appendId(builder, now - DAY_MS)
+            ContentUris.appendId(builder, fromMs - DAY_MS)
             ContentUris.appendId(builder, end + DAY_MS)
             val uri = builder.build()
 
@@ -91,7 +99,7 @@ class FaceclawCalendarProvider private constructor() {
                     while (cursor.moveToNext()) {
                         if (cutoff != Long.MAX_VALUE && cursor.getLong(2) - DAY_MS > cutoff) break
                         val event = readEvent(cursor, utc, local)
-                        if (event.endMs <= now || event.startMs > end || event.startMs > cutoff) continue
+                        if (event.endMs <= fromMs || event.startMs > end || event.startMs > cutoff) continue
                         events.add(event)
                         if (events.size == limit) cutoff = events.maxOf { it.startMs }
                     }
@@ -134,6 +142,7 @@ class FaceclawCalendarProvider private constructor() {
                 allDay = allDay,
                 location = if (cursor.isNull(5)) "" else cursor.getString(5),
                 calendarName = if (cursor.isNull(6)) "" else cursor.getString(6),
+                notes = if (cursor.isNull(7)) "" else cursor.getString(7),
             )
         }
 
@@ -160,7 +169,47 @@ class FaceclawCalendarProvider private constructor() {
             json.put("allDay", event.allDay)
             json.put("location", event.location)
             json.put("calendarName", event.calendarName)
+            json.put("notes", event.notes)
             return json
+        }
+
+        /**
+         * JSON array of the event's attendee names (email when unnamed),
+         * without the calendar's own account.
+         */
+        @JvmStatic
+        fun getAttendeesJson(context: Context?, eventId: Long): String {
+            val out = JSONArray()
+            if (context == null) return out.toString()
+            var owner = ""
+            var cursor: Cursor? = null
+            try {
+                cursor = context.contentResolver.query(
+                    ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+                    arrayOf(CalendarContract.Events.OWNER_ACCOUNT),
+                    null,
+                    null,
+                    null)
+                if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) owner = cursor.getString(0)
+                cursor?.close()
+                cursor = CalendarContract.Attendees.query(
+                    context.contentResolver,
+                    eventId,
+                    arrayOf(CalendarContract.Attendees.ATTENDEE_NAME, CalendarContract.Attendees.ATTENDEE_EMAIL))
+                val seen = HashSet<String>()
+                while (cursor != null && cursor.moveToNext()) {
+                    val name = if (cursor.isNull(0)) "" else cursor.getString(0).trim()
+                    val email = if (cursor.isNull(1)) "" else cursor.getString(1).trim()
+                    if (email.isNotEmpty() && email.equals(owner, ignoreCase = true)) continue
+                    val label = if (name.isNotEmpty()) name else email
+                    if (label.isNotEmpty() && seen.add(label.lowercase())) out.put(label)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "failed to read calendar attendees", t)
+            } finally {
+                cursor?.close()
+            }
+            return out.toString()
         }
     }
 }

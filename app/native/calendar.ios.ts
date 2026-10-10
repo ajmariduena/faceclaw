@@ -85,6 +85,15 @@ export function readUpcomingEvents(maxEvents = 50, windowMs = DEFAULT_WINDOW_MS,
   return (cache?.events ?? []).filter(event => event.endMs > now);
 }
 
+/** The agenda's earlier-today events need a provider query iOS does not have; it shows upcoming ones. */
+export function readAgendaEvents(_fromMs: number, toMs: number, maxEvents = 50): CalendarEvent[] {
+  return readUpcomingEvents(maxEvents).filter(event => event.startMs < toMs);
+}
+
+export function readEventAttendees(_eventId: CalendarEvent["id"]): string[] {
+  return [];
+}
+
 /** Assistant queries await their own result without replacing the display cache. */
 export async function readUpcomingEventsAsync(maxEvents = 50, windowMs = DEFAULT_WINDOW_MS): Promise<CalendarEvent[]> {
   if (!hasCalendarPermission()) throw new Error("Calendar permission is required.");

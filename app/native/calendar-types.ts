@@ -7,6 +7,8 @@ export type CalendarEvent = {
   allDay: boolean;
   location: string;
   calendarName: string;
+  /** Event description; absent where the platform reader does not supply it. */
+  notes?: string;
 };
 
 export type CalendarReadState = "ready" | "loading" | "error";
