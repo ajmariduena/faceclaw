@@ -18,7 +18,7 @@ const { stockFont } = require('./stock-font.cjs');
 const { loader } = require('../../tests/helpers/load-typescript.cjs');
 
 const context = createRenderContext();
-const { graphics, TtfFont, adapter, load } = context;
+const { graphics, adapter, load } = context;
 const { paintHome } = load('app/apps/home/home-painter.ts');
 const { calendarCardState } = load('app/apps/home/home-model.ts');
 const outDir = path.join(__dirname, 'out');
@@ -54,8 +54,9 @@ const { paintTimersList } = leanLoad('app/apps/timer/timers-list.ts');
 
 const facePromise = stockFont(graphics);
 const leanFacePromise = stockFont(leanGraphics);
-const clockFont = TtfFont.load(adapter.fontPath, 80);
-const clockFace = { lineHeight: clockFont.lineHeight, measureLine: text => clockFont.measureText(text), drawText: (...args) => clockFont.drawText(...args) };
+const { ICON_SVGS } = load('app/graphics/icons.ts');
+const { COLUMN_ICONS, CARD_ICONS } = require('./home-column.cjs');
+const iconsReady = adapter.prepareIcons([...new Set([...COLUMN_ICONS, ...CARD_ICONS])].map(name => ICON_SVGS[name]));
 
 const SPANISH = /Sábado|Toca|Sin |Más|Traducir|Calendario|Conectando|Ahora|Todo el día|Mañana/;
 const HINTS = /Tap |Hold |tap to|hold to|Listening\.\.\.|scroll to/i;
@@ -115,13 +116,14 @@ const PASEO = { configured: true, status: '', needs: 1, working: 1, updates: [
 
 test('home: the five cards and their states, Paseo first with five dots', async () => {
   const stock = await facePromise;
+  await iconsReady;
   const scenes = [
     ['home-paseo', 0, { paseo: PASEO }],
     ['home-paseo-unreachable', 0, { paseo: { configured: true, status: 'Mac unreachable', updates: [], needs: 0, working: 0 } }],
     ['home-paseo-unpaired', 0, { paseo: null }],
     ['home-calendar', 1, { calendar: calendarCardState(true, [daily, lunch, review], NOW.getTime()) }],
-    ['home-calendar-tomorrow', 1, { calendar: calendarCardState(true, [daily, dentist], NOW.getTime()) }],
-    ['home-calendar-empty', 1, { calendar: calendarCardState(true, [daily], NOW.getTime()) }],
+    ['home-calendar-tomorrow', 1, { calendar: calendarCardState(true, [dentist], NOW.getTime()) }],
+    ['home-calendar-empty', 1, { calendar: calendarCardState(true, [], NOW.getTime()) }],
     ['home-translate-ready', 2, { translateReady: true }],
     ['home-translate-setup', 2, { translateReady: false }],
     ['home-converse', 3, {}],
@@ -129,14 +131,15 @@ test('home: the five cards and their states, Paseo first with five dots', async 
   ];
   for (const [name, selected, extra] of scenes) {
     const { face, texts } = tracing(stock);
-    const data = { now: NOW, calendar: calendarCardState(true, [daily], NOW.getTime()), paseo: null, ...extra };
-    const image = paintHome(selected, data, face, clockFace);
+    const data = { now: NOW, calendar: calendarCardState(true, [daily], NOW.getTime()), paseo: null, battery: { ring: 60, glasses: 82 },
+      weather: { temperatureC: 27.4, code: 2, isDay: true, atMs: NOW.getTime() }, ...extra };
+    const image = paintHome(selected, data, face);
     for (let i = 0; i < 5; i++) assert.equal(image.getPixel(218, 120 + i * 11), i === selected ? 255 : 85, `${name} dot ${i}`);
     assert.equal(image.getPixel(218, 120 + 5 * 11), 0, `${name}: no sixth dot`);
     assert.equal(image.getPixel(250, 14), 255, `${name}: card border`);
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(image.getPixel(x, y), 0);
-    assert.ok(texts().includes('Saturday, Oct 10'), name);
-    assert.ok(texts().includes('10:30 · in 49 min'), name);
+    assert.ok(texts().includes('Sat 10'), name);
+    assert.ok(texts().includes('27°'), name);
     save(graphics, image, `lean-core-${name}`);
   }
 });

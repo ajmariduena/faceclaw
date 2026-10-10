@@ -119,6 +119,15 @@ Catorce escenas finales de 640×480, banda en (32,96), cinco puntos siempre pres
 
 Modelo completo, límites de caché y estimación vigente: [v3: sin menú](../../research/even-ui/plan.md#v3-sin-menú).
 
+## Columna del home (producción)
+
+`home-column.cjs` pinta con `paintHome` de producción el home lean con su columna izquierda: reloj de matriz de puntos HH/MM, día, medidores de anillo y gafas, clima y agentes de Paseo que esperan, junto a las tarjetas Paseo, Calendar y Translate a las 09:41 y 22:07. Deja `out/home-column-*.png`. `home-column.test.cjs` genera los mismos seis PNG más `home-column-full/unknown/extremes` y comprueba que filas y reloj no se toquen, que haya hueco entre día/medidores y clima/agentes, que las complicaciones ocultas no dejen tinta, que el texto sea inglés sin pistas de gestos y que tarjeta y puntos sigan intactos.
+
+```sh
+node home-column.cjs
+node --test home-column.test.cjs
+```
+
 ## Lean CORE
 
 `lean-core.test.cjs` pinta con los painters de producción las pantallas del CORE lean (`research/lean-spec.md`): las cinco tarjetas del home con sus estados, More, el placeholder de Converse, los estados de Settings y Timers. Deja `out/lean-core-*.png` y comprueba marco, paso de 27 px, chrome en inglés y que no haya instrucciones de gestos.
