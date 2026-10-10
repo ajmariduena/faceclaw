@@ -66,7 +66,7 @@ test('hello goes out on open, server_info makes the client connected, and reques
   transport.open();
   assert.equal(transport.sent[0].type, 'hello');
   assert.equal(transport.sent[0].protocolVersion, 1);
-  assert.deepEqual(transport.sent[0].capabilities, { hello_rejection: true, selective_agent_timeline: true });
+  assert.deepEqual(transport.sent[0].capabilities, { hello_rejection: true, selective_agent_timeline: true, glance_summary: true });
   assert.equal(client.connected, false);
   transport.serverInfo();
   assert.equal(client.connected, true);

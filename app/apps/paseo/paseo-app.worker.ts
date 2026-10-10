@@ -363,6 +363,7 @@ function syncClient(): void {
       created.onChange(() => onClientChanged(created)),
       created.on("agent_update", (message) => onAgentUpdate(message.payload)),
       created.on("agent_stream", (message) => onAgentStream(message.payload)),
+      created.on("glance.summary", (message) => onGlanceSummary(message.payload)),
       created.on("dictation_stream_partial", (message) => {
         if (dictation && message.payload?.dictationId === dictation.id) {
           dictation.partial = String(message.payload.text ?? "");
@@ -546,7 +547,10 @@ function connectionStatus(current: PaseoDaemonClient): string {
 
 function agentGlanceLine(agent: AgentSnapshot): string {
   const request = agent.pendingPermissions?.[0];
-  if (request) return permissionQuestion(agent, request);
+  if (request) {
+    const summary = requestKind(request) === "question" ? summaries.get(`permission:${request.id}`) : undefined;
+    return summary ?? permissionQuestion(agent, request);
+  }
   const known = glanceLines.get(agent.id);
   if (known) return known.line;
   if (chat?.agentId === agent.id) {
@@ -601,6 +605,22 @@ function requestSummaries(agentId: string, entries: readonly ChatEntry[]): void 
     if (chat?.agentId === agentId) scheduleRender();
     schedulePublish();
   });
+}
+
+/** Lines the daemon precomputed when a turn finished or the agent asked something. */
+function onGlanceSummary(payload: any): void {
+  const agentId = typeof payload?.agentId === "string" ? payload.agentId : "";
+  if (!agentId || !Array.isArray(payload.items)) return;
+  for (const item of payload.items) {
+    const line = typeof item?.line === "string" ? item.line.trim() : "";
+    if (typeof item?.id !== "string" || !line) continue;
+    summaries.set(item.id, line);
+    if (item.role === "assistant" && !item.id.startsWith("permission:")) {
+      glanceLines.set(agentId, { updatedAt: agents.get(agentId)?.updatedAt ?? "", line });
+    }
+  }
+  if (chat?.agentId === agentId) scheduleRender();
+  schedulePublish();
 }
 
 async function summarize(agentId: string, entries: readonly ChatEntry[]): Promise<void> {

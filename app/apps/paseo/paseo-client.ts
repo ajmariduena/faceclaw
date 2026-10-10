@@ -67,6 +67,9 @@ const CLIENT_CAPABILITIES = {
   // agent_stream only for agents with a timeline subscription; attention
   // comes as the dedicated agent_attention_required message instead.
   selective_agent_timeline: true,
+  // Pairs the host with glasses: from then on it summarizes every finished
+  // turn in the background and pushes glance.summary lines.
+  glance_summary: true,
 };
 
 export class PaseoRequestError extends Error {
