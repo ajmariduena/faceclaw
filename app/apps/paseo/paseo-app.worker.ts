@@ -57,6 +57,7 @@ import {
   sectionAgents,
   sectionCounts,
   upsertEntry,
+  LOCAL_ENTRY_PREFIX,
   type AgentSnapshot,
   type Bucket,
   type ChatEntry,
@@ -845,7 +846,7 @@ function handleChatInput(event: InputEvent, frameId: number): void {
               sendingDraft = false;
               if (sent && chat === current && draft.text.trim() === text) {
                 draft.discard(); paseoChatDraftSetting.set("");
-                upsertEntry(current.entries, { id: `local:${Date.now()}`, role: "user", text });
+                upsertEntry(current.entries, { id: `${LOCAL_ENTRY_PREFIX}${Date.now()}`, role: "user", text });
               }
               render();
             });

@@ -84,6 +84,20 @@ test('chat entries keep only user and assistant messages, keyed by message id', 
   assert.equal(list.length, 2);
 });
 
+test('a sent message and its daemon echo show once, whichever lands first', () => {
+  const echoLast = [{ id: 'a1', role: 'assistant', text: '¿Corro los tests?' }];
+  assert.equal(upsertEntry(echoLast, { id: 'local:1', role: 'user', text: 'Sí, córrelos' }), true);
+  assert.equal(upsertEntry(echoLast, { id: 'msg-9', role: 'user', text: 'Sí, córrelos' }), true);
+  assert.deepEqual(echoLast.map((e) => e.id), ['a1', 'msg-9']);
+
+  const echoFirst = [{ id: 'msg-9', role: 'user', text: 'Sí, córrelos' }];
+  assert.equal(upsertEntry(echoFirst, { id: 'local:1', role: 'user', text: 'Sí, córrelos' }), false);
+  assert.equal(echoFirst.length, 1);
+
+  const repeated = [{ id: 'msg-1', role: 'user', text: 'ok' }, { id: 'a1', role: 'assistant', text: 'x' }, { id: 'a2', role: 'assistant', text: 'y' }, { id: 'a3', role: 'assistant', text: 'z' }];
+  assert.equal(upsertEntry(repeated, { id: 'local:2', role: 'user', text: 'ok' }), true);
+});
+
 test('fallback lines take the first sentence, without markdown, until the daemon summarizes', () => {
   assert.equal(fallbackLine('**Listo.** Agregué reintentos de 1 a 30 s.\n\n- item'), 'Listo. Agregué reintentos de 1 a 30 s.');
   assert.equal(fallbackLine('La causa: se reusaba la conexión muerta. Lo arreglé.'), 'La causa: se reusaba la conexión muerta.');

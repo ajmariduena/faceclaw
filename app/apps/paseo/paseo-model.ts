@@ -166,8 +166,22 @@ export function chatEntries(entries: readonly TimelineEntryLike[]): ChatEntry[] 
   return result;
 }
 
+/** Id prefix for a sent message shown before the daemon echoes it. */
+export const LOCAL_ENTRY_PREFIX = "local:";
+
 /** Replace the entry with the same id (a re-emitted message) or append. */
 export function upsertEntry(entries: ChatEntry[], entry: ChatEntry): boolean {
+  // The daemon echoes a sent message under its own id, before or after the local copy lands.
+  if (entry.role === "user") {
+    const isLocal = entry.id.startsWith(LOCAL_ENTRY_PREFIX);
+    const twin = entries.findIndex((candidate, index) => index >= entries.length - 3 && candidate.role === "user"
+      && candidate.text === entry.text && candidate.id.startsWith(LOCAL_ENTRY_PREFIX) !== isLocal);
+    if (twin >= 0) {
+      if (isLocal) return false;
+      entries[twin] = entry;
+      return true;
+    }
+  }
   const index = entries.findIndex((candidate) => candidate.id === entry.id);
   if (index < 0) {
     entries.push(entry);
