@@ -1,5 +1,5 @@
 /**
- * The Paseo app's screens in Even's terminal-mode look: one rounded 1 px
+ * Shared chat and choice screens in Even's terminal-mode look: one rounded 1 px
  * box filling the 576×288 band, the stock font at a 27 px pitch, dim context
  * lines, white content, a thin rule above the status footer, and no gesture
  * instructions. Pure painters over a `Face` (the stock font, or Roboto when

@@ -21,13 +21,14 @@ const definitions: { service: ApiService; label: string; group: string; setting:
 class ApiKeyRow extends Observable {
   testing = false;
   private revision = 0;
+  private detail = "";
   constructor(readonly definition: typeof definitions[number]) { super(); }
   get label(): string { return this.definition.label; }
   get group(): string { return this.definition.group; }
   get value(): string { return this.definition.setting.get(); }
   set value(value: string) {
     if (value === this.value) return;
-    ++this.revision; this.definition.setting.set(value); this.notifyPropertyChange("status", this.status);
+    ++this.revision; this.detail = ""; this.definition.setting.set(value); this.notifyPropertyChange("status", this.status);
   }
   get testLabel(): string { return this.definition.service === "paseo" ? "Test connection" : "Test"; }
   get placeholder(): string { return this.definition.service === "paseo" && loadPairing() ? "Paired" : "Not set"; }
@@ -36,7 +37,7 @@ class ApiKeyRow extends Observable {
     let status: ApiKeyStatus;
     try { status = JSON.parse(getStringSetting(apiStatusKey(this.definition.service), "")); } catch { status = resetApiStatus(this.present()); }
     if (!status || !["ok", "failed", "missing", "untested"].includes(status.state)) status = resetApiStatus(this.present());
-    return statusText(status);
+    return [this.detail, statusText(status)].filter(Boolean).join(" · ");
   }
   private present(): boolean { return this.definition.service === "paseo" ? Boolean(loadPairing()) : Boolean(this.value.trim()); }
   onEdit(args: { object: { text: string } }): void {
@@ -47,7 +48,11 @@ class ApiKeyRow extends Observable {
     const revision = this.revision;
     if (this.definition.service === "paseo" && this.value.trim()) {
       const parsed = parsePairingInput(this.value);
-      if (!parsed.ok) { this.notifyPropertyChange("status", "Invalid pairing link"); return; }
+      if (!parsed.ok) {
+        this.detail = "";
+        setStringSetting(apiStatusKey("paseo"), JSON.stringify({ state: "failed", at: Date.now(), ms: 0, error: "Invalid pairing link" }));
+        this.notifyPropertyChange("status", this.status); return;
+      }
       savePairing(parsed.pairing); this.definition.setting.set(""); this.notifyPropertyChange("value", "");
     }
     const value = this.value;
@@ -57,7 +62,9 @@ class ApiKeyRow extends Observable {
       const result = await testApiKey(this.definition.service, value);
       if (revision !== this.revision || value !== this.value || pairing !== getStringSetting(PASEO_PAIRING_KEY, "")) return;
       setStringSetting(apiStatusKey(this.definition.service), JSON.stringify(result.status));
-      this.notifyPropertyChange("status", [result.detail, statusText(result.status)].filter(Boolean).join(" · "));
+      this.detail = result.detail ?? "";
+      this.notifyPropertyChange("status", this.status);
+      this.notifyPropertyChange("placeholder", this.placeholder);
     } finally { this.testing = false; this.notifyPropertyChange("enabled", true); }
   }
 }
