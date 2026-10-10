@@ -21,7 +21,22 @@ declare const com: any;
 const WS_URL = "wss://stt-rt.soniox.com/transcribe-websocket";
 const MODEL_ID = "stt-rt-v5";
 
-export type SonioxSttOptions = CloudSttOptions;
+/** One token of a Soniox response; translation sessions add the translation fields. */
+export type SonioxToken = {
+  text: string;
+  is_final?: boolean;
+  translation_status?: "none" | "original" | "translation";
+  language?: string;
+  source_language?: string;
+  speaker?: string;
+};
+
+export type SonioxSttOptions = CloudSttOptions & {
+  /** Real-time translation: https://soniox.com/docs/translation/stt-translation/rt-translation */
+  translation?: { type: "two_way"; language_a: string; language_b: string };
+  /** Every response's tokens as received, for callers that need translation_status. */
+  onTokens?: (tokens: SonioxToken[]) => void;
+};
 
 export class SonioxSttClient implements CloudSttClient {
   private ws: any = null;
@@ -44,6 +59,7 @@ export class SonioxSttClient implements CloudSttClient {
       onOpen: () => {
         if (this.closed) return;
         // The API key rides in the config message; there is no auth header.
+        const translation = this.options.translation;
         this.trySendText(
           JSON.stringify({
             api_key: this.options.apiKey,
@@ -52,6 +68,12 @@ export class SonioxSttClient implements CloudSttClient {
             sample_rate: CLOUD_STT_SAMPLE_RATE,
             num_channels: 1,
             enable_speaker_diarization: true,
+            ...(translation ? {
+              translation,
+              language_hints: [translation.language_a, translation.language_b],
+              enable_language_identification: true,
+              enable_endpoint_detection: true,
+            } : {}),
           }),
         );
         if (this.closed) return;
@@ -160,6 +182,7 @@ export class SonioxSttClient implements CloudSttClient {
       return;
     }
     const tokens = Array.isArray(message?.tokens) ? message.tokens : [];
+    if (tokens.length) this.options.onTokens?.(tokens);
     let nonFinal = "";
     let preview: TimedTranscript | null = null;
     for (const token of tokens) {

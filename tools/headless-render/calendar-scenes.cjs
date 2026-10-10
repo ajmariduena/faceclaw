@@ -17,13 +17,16 @@ const events = [
 function renderCalendar(context, mode) {
   const { graphics, load, rect, TtfFont, adapter, truncateText } = context;
   const { CalendarLayer, formatEventTime } = load('app/apps/calendar/calendar.ts');
-  const layerContext = { stack: { getBaseSize: () => rect, isFocused: () => true } };
+  const pushed = [];
+  const layerContext = { stack: { getBaseSize: () => rect, isFocused: () => true, push: (layer) => pushed.push(layer) } };
   let band;
   if (mode === 'calendar') {
-    const layer = new CalendarLayer(() => { throw new Error('Fixture already has permission'); });
+    const small = context.uiFonts.getDefaultSmallFont();
+    const face = { lineHeight: small.lineHeight, measureLine: (text) => small.measureText(text), drawText: (image, x, y, text, value) => image.drawText(small, x, y, text, value) };
+    const layer = new CalendarLayer(() => { throw new Error('Fixture already has permission'); }, () => face);
     band = layer.paint(layerContext).withDrawsBaked();
-    layer.handleInput({ type: 'click', source: 'ring' });
-    assert.deepEqual(layer.paint(layerContext).withDrawsBaked().pixels, band.pixels, 'Calendar tap must not open an invented detail');
+    layer.handleInput({ type: 'click', source: 'ring' }, layerContext);
+    assert.equal(pushed.length, 1, 'Calendar tap opens the event detail');
     layer.handleInput({ type: 'scroll-down', source: 'ring' });
     assert.notDeepEqual(layer.paint(layerContext).withDrawsBaked().pixels, band.pixels, 'Calendar scroll changes selection');
     layer.handleInput({ type: 'scroll-up', source: 'ring' });

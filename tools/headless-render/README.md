@@ -45,6 +45,14 @@ Medidas, integración, estimación y validación en [propuesta-home.md](../../re
 
 La propuesta usa el encoder, decoder y painter de display lists de producción: home horneado como base raster desde `SCREEN`, Calendar en dos recursos 576×144, tres `RECT_COPY` con destinos animados y clip de banda. `SCREEN` debe contener también los glyphs/iconos del home, no solo sus píxeles previos a los draws diferidos. Cada recurso cabe bajo 64 KiB empaquetados; el renderer verifica endpoints iguales a los stills. Esto demuestra autoría/replay software, no instalación ni rendimiento del firmware. Falta integrar preparación, caché, interrupciones y el cambio definitivo de ventana.
 
+## Apps lean (painters de producción)
+
+```sh
+node --test calendar-app.test.cjs translate-app.test.cjs paseo-app.test.cjs
+```
+
+`calendar-app.test.cjs` pinta el `CalendarLayer` y el detalle reales con la fuente stock: agenda de hoy, días siguientes, día vacío, detalle con asistentes y notas, 12 h y permiso. `translate-app.test.cjs` carga la app Translate entera (ventana, capas, sesión y el reintento de Soniox) con solo el socket, el micrófono y el reloj simulados: en vivo, pausa, «Stop and leave?», conectando, monólogo largo, historial, idioma fuera del par, sin clave y clave rechazada. Los PNG quedan en `out/calendar-app-*.png` y `out/translate-app-*.png`.
+
 ## Límites
 
 Es una prueba de componentes, no el shell completo: no arranca `Shell` ni `dashboard-controller`, ni valida oclusión compleja, profundidad por ojo, rendimiento BLE o paridad con el compositor Kotlin. Para animaciones deterministas, inyectar un reloj fijo y capturar varios instantes con `paintDisplayList`; para fuentes e iconos nativos, aportar adaptadores.

@@ -1,183 +1,133 @@
-import { getDefaultSmallFont } from "../../graphics/ui-fonts";
-import { GrayImage, type UiFont } from "../../graphics/image";
-import { wrapText, truncateText } from "../../graphics/textwrap";
-import { clamp } from "../../util/numeric-util";
-import { getCalendarReadState, readUpcomingEvents, type CalendarEvent } from "../../native/calendar";
+import { GrayImage } from "../../graphics/image";
+import { getCalendarReadState, readAgendaEvents, readEventAttendees, type CalendarEvent } from "../../native/calendar";
 import { timeFormatSetting } from "../../ui/dashboard-settings";
-import { GESTURE_CLICK, type InputEvent } from "../../ui/gestures";
+import { type InputEvent } from "../../ui/gestures";
 import { hasCalendarPermission } from "../../native/calendar-permissions";
 import { type Layer, type LayerContext } from "../../ui/layers";
-import { lineStep } from "../../ui/metrics";
+import type { Face } from "../paseo/paseo-painter";
+import {
+  agendaFooter,
+  attendeesLine,
+  buildAgenda,
+  moveSelection,
+  relativeWhen,
+  reselect,
+  startOfDay,
+  timeRange,
+  type AgendaRow,
+} from "./calendar-agenda";
+import { agendaScrollTop, paintAgenda, paintCalendarMessage, paintEventDetail } from "./calendar-painter";
 
-// Title position, shared with the other list apps (terminal, notifications).
-const TITLE_X = 18;
-const TITLE_Y = 10;
-const LIST_TOP = 38;
-const ROW_X = 16;
-const ROW_GAP = 4;
 const MAX_EVENTS = 50;
-
-/** Height of the day header band above a row that starts a new day. */
-function dayHeaderHeight(font: UiFont): number {
-  return font.lineHeight + 4;
-}
+const WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-type EventRow = {
-  event: CalendarEvent;
-  /** Day header text drawn above this row, or null when it shares the prior day. */
-  dayHeader: string | null;
-  lines: string[];
-  height: number;
-};
-
 /**
- * The Calendar app's single screen. Without calendar permission it shows a
- * prompt telling the user to grant access on the phone (the launch path also
- * fires the system permission dialog); with permission it lists upcoming
- * events grouped by day, scrollable when they overflow the viewport.
+ * The Calendar app's agenda: today from midnight (ended events dimmer) and
+ * the following days, ">" on one event; tap opens its detail. Without
+ * calendar permission it says so (the launch path also fires the system
+ * permission dialog, and a tap fires it again).
  */
 export class CalendarLayer implements Layer {
-  private selectedIndex = 0;
+  private selectedEvent: CalendarEvent | null = null;
 
-  constructor(private readonly requestPermission: () => void) {}
+  constructor(
+    private readonly requestPermission: () => void,
+    private readonly face: () => Face,
+  ) {}
+
+  private rows(nowMs: number): AgendaRow[] {
+    const from = startOfDay(nowMs);
+    return buildAgenda(readAgendaEvents(from, from + WINDOW_MS, MAX_EVENTS), nowMs, formatEventTime);
+  }
 
   paint(ctx: LayerContext): GrayImage {
-    const font = getDefaultSmallFont();
     const { width, height } = ctx.stack.getBaseSize();
     const image = new GrayImage(width, height, 0);
-
+    const face = this.face();
     if (!hasCalendarPermission()) {
-      image.drawText(font, TITLE_X, TITLE_Y, "Calendar", 220);
-      this.paintPermissionPrompt(image, font, width, height);
+      paintCalendarMessage(image, face, "Calendar access needed", "Allow calendar access for Faceclaw on the phone.");
       return image;
     }
-
-    const events = readUpcomingEvents(MAX_EVENTS);
-    if (!events.length) {
-      image.drawText(font, TITLE_X, TITLE_Y, "Calendar", 220);
+    const nowMs = Date.now();
+    const rows = this.rows(nowMs);
+    if (!rows.some((row) => row.kind === "event")) {
       const state = getCalendarReadState();
-      image.drawText(font, 24, 72, state === "loading" ? "Loading calendar..."
-        : state === "error" ? "Calendar unavailable. Try again shortly." : "No upcoming events.", 190);
-      return image;
-    }
-
-    const rows = buildEventRows(font, events);
-    this.selectedIndex = clamp(this.selectedIndex, 0, rows.length - 1);
-
-    const listBottom = height;
-    const scrollY = scrollForSelected(rows, this.selectedIndex, listBottom - LIST_TOP);
-    // The title scrolls away with the list; row text is deferred glyphs
-    // (composited above raster fills), so a fixed title would show through
-    // rows scrolled over it.
-    if (TITLE_Y - scrollY + font.lineHeight > 0) {
-      image.drawText(font, TITLE_X, TITLE_Y - scrollY, "Calendar", 220);
-    }
-    let cursorY = LIST_TOP - scrollY;
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index]!;
-      if (cursorY + row.height >= LIST_TOP && cursorY <= listBottom) {
-        drawEventRow(image, font, row, ROW_X, cursorY, width, index === this.selectedIndex);
+      if (state === "loading") {
+        paintCalendarMessage(image, face, "Loading calendar…", "");
+        return image;
       }
-      cursorY += row.height + ROW_GAP;
-      if (cursorY > listBottom + 80) break;
+      if (state === "error") {
+        paintCalendarMessage(image, face, "Calendar unavailable", "Try again shortly.");
+        return image;
+      }
     }
+    const selected = reselect(rows, this.selectedEvent);
+    const row = rows[selected];
+    this.selectedEvent = row?.kind === "event" ? row.event : null;
+    paintAgenda(image, face, { rows, selected, footerRight: agendaFooter(rows, selected, nowMs) }, agendaScrollTop(rows, selected));
     return image;
   }
 
-  handleInput(event: InputEvent): void {
+  handleInput(event: InputEvent, ctx: LayerContext): void {
     if (!hasCalendarPermission()) {
-      // Any tap on the prompt re-triggers the phone-side permission request.
       if (event.type === "click") this.requestPermission();
       return;
     }
-    const rows = buildEventRows(getDefaultSmallFont(), readUpcomingEvents(MAX_EVENTS));
-    if (!rows.length) return;
-    if (event.type === "scroll-up") {
-      this.selectedIndex = Math.max(0, this.selectedIndex - 1);
-    } else if (event.type === "scroll-down") {
-      this.selectedIndex = Math.min(rows.length - 1, this.selectedIndex + 1);
+    const rows = this.rows(Date.now());
+    const selected = reselect(rows, this.selectedEvent);
+    if (selected < 0) return;
+    if (event.type === "scroll-up" || event.type === "scroll-down") {
+      const row = rows[moveSelection(rows, selected, event.type === "scroll-down" ? 1 : -1)];
+      if (row?.kind === "event") this.selectedEvent = row.event;
+    } else if (event.type === "click") {
+      const row = rows[selected];
+      if (row?.kind === "event") ctx.stack.push(new CalendarEventLayer(row.event, this.face));
     }
-  }
-
-  private paintPermissionPrompt(image: GrayImage, font: UiFont, width: number, height: number): void {
-    const message = "Grant calendar permission on your phone to see your events on the glasses.";
-    const lines = wrapText(font, message, width - 48);
-    for (let index = 0; index < lines.length; index++) {
-      image.drawText(font, 24, 72 + index * lineStep(font), lines[index]!, 190);
-    }
-    image.drawText(font, 24, height - 36, `${GESTURE_CLICK} request`, 110);
   }
 }
 
-function buildEventRows(font: UiFont, events: CalendarEvent[]): EventRow[] {
-  const rows: EventRow[] = [];
-  let previousDayKey = "";
-  for (const event of events) {
-    const dayKey = dayKeyOf(event.startMs);
-    const dayHeader = dayKey === previousDayKey ? null : dayHeaderLabel(event.startMs);
-    previousDayKey = dayKey;
+/** One event: title, time range and place, attendees, notes. Double tap goes back to the agenda. */
+export class CalendarEventLayer implements Layer {
+  private readonly attendees: string;
 
-    const lines: string[] = [];
-    const timeLabel = event.allDay ? "All day" : formatEventTime(event.startMs);
-    lines.push(`${timeLabel}  ${event.title || "(untitled)"}`);
-    if (event.location) {
-      lines.push(event.location);
-    }
+  constructor(
+    private readonly event: CalendarEvent,
+    private readonly face: () => Face,
+  ) {
+    this.attendees = attendeesLine(readEventAttendees(event.id));
+  }
 
-    rows.push({
-      event,
-      dayHeader,
-      lines,
-      height: (dayHeader ? dayHeaderHeight(font) : 0) + 6 + lines.length * lineStep(font),
+  paint(ctx: LayerContext): GrayImage {
+    const { width, height } = ctx.stack.getBaseSize();
+    const image = new GrayImage(width, height, 0);
+    paintEventDetail(image, this.face(), {
+      title: this.event.title,
+      when: timeRange(this.event, formatEventTime),
+      location: this.event.location,
+      attendees: this.attendees,
+      notes: plainNotes(this.event.notes ?? ""),
+      footerRight: relativeWhen(this.event, Date.now()),
     });
+    return image;
   }
-  return rows;
-}
 
-function drawEventRow(
-  image: GrayImage,
-  font: UiFont,
-  row: EventRow,
-  x: number,
-  y: number,
-  width: number,
-  selected: boolean,
-): void {
-  let cursorY = y;
-  if (row.dayHeader) {
-    image.drawText(font, x, cursorY + 2, row.dayHeader, 150);
-    cursorY += dayHeaderHeight(font);
-  }
-  const bodyHeight = row.lines.length * lineStep(font) + 4;
-  if (selected) {
-    image.fillRoundedRect(x - 6, cursorY, width - 2 * (x - 6), bodyHeight, 15, 6);
-    image.drawRoundedRect(x - 6, cursorY, width - 2 * (x - 6), bodyHeight, 90, 6);
-  }
-  const maxTextWidth = width - 2 * x;
-  for (let index = 0; index < row.lines.length; index++) {
-    const value = index === 0 ? (selected ? 235 : 205) : 160;
-    image.drawText(font, x, cursorY + 3 + index * lineStep(font), truncateText(font, row.lines[index]!, maxTextWidth), value);
+  handleInput(event: InputEvent, ctx: LayerContext): void {
+    if (event.type === "double-click") ctx.stack.pop();
   }
 }
 
-function scrollForSelected(rows: EventRow[], selectedIndex: number, viewportHeight: number): number {
-  let selectedTop = 0;
-  for (let index = 0; index < selectedIndex; index++) {
-    selectedTop += rows[index]!.height + ROW_GAP;
-  }
-  const selectedBottom = selectedTop + rows[selectedIndex]!.height;
-  const contentHeight = rows.reduce((sum, row) => sum + row.height + ROW_GAP, 0);
-  const maxScroll = Math.max(0, contentHeight - viewportHeight);
-  const centered = selectedTop - Math.max(0, (viewportHeight - (selectedBottom - selectedTop)) / 2);
-  return clamp(centered | 0, 0, maxScroll);
-}
-
-function dayKeyOf(timestampMs: number): string {
-  const date = new Date(timestampMs);
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+/** Calendar descriptions are often HTML (Google Calendar) with long separator rules. */
+export function plainNotes(notes: string): string {
+  return notes
+    .replace(/<br\s*\/?>|<\/p>|<\/li>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/[-_=~:*]{6,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function dayHeaderLabel(timestampMs: number): string {
