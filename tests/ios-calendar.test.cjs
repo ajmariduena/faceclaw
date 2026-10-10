@@ -162,7 +162,15 @@ function screenFixture() {
     'util/numeric-util': { clamp: (n, min, max) => Math.max(min, Math.min(max, n)) },
   };
   const modules = depth => Object.fromEntries(Object.entries(common).map(([key, value]) => [depth + key, value]));
-  const calendar = load('app/apps/calendar/calendar.ts', modules('../../'));
+  const painter = {
+    agendaScrollTop: () => 0,
+    paintAgenda: (image, _face, view) => view.rows.forEach(row => row.kind === 'event' && image.text.push(row.event.title)),
+    paintCalendarMessage: (image, _face, title, detail) => image.text.push(title, detail),
+    paintEventDetail() {},
+  };
+  const calendar = load('app/apps/calendar/calendar.ts', {
+    ...modules('../../'), './calendar-agenda': load('app/apps/calendar/calendar-agenda.ts'), './calendar-painter': painter,
+  }, f.clock);
   const widget = load('app/apps/glanceboard/widgets/calendar-widget.ts', {
     ...modules('../../../'), '../../calendar/calendar': calendar,
     '../glance-font': { glanceFont: { small: () => font, medium: () => font } },
@@ -172,11 +180,11 @@ function screenFixture() {
 
 test('Calendar and Glanceboard show permission, loading, error and event states with widget cleanup', () => {
   const f = screenFixture(); let renders = 0, requests = 0;
-  const widget = new f.CalendarWidget(), layer = new f.CalendarLayer(() => requests++);
+  const widget = new f.CalendarWidget(), layer = new f.CalendarLayer(() => requests++, () => ({}));
   const ctx = { stack: { getBaseSize: () => ({ width: 300, height: 288 }) } };
   const paintWidget = () => { const image = new f.Image(); widget.paint(image); return image.text.join(' '); };
   widget.start(() => renders++); widget.start(() => renders++); assert.equal(f.timers.size, 1);
-  f.permission(false); assert.match(layer.paint(ctx).text.join(' '), /Grant calendar permission/);
+  f.permission(false); assert.match(layer.paint(ctx).text.join(' '), /Calendar access needed/);
   assert.match(paintWidget(), /permission needed/);
   layer.handleInput({ type: 'click' }); assert.equal(requests, 1); assert.equal(f.reads.length, 0);
   f.permission(true); assert.match(layer.paint(ctx).text.join(' '), /Loading/);
@@ -198,7 +206,7 @@ test('Calendar window subscribes, refreshes periodically, and cleans up on close
     '../../native/calendar-permissions': { hasCalendarPermission: () => true },
     '../../native/calendar': { onCalendarChanged: fn => { listener = fn; return () => unsubscribed++; } },
     '../../ui/shell/chrome-layer': { makeImageWindowIcon() {}, windowIcon() {} },
-    './calendar': { CalendarLayer: class {} }, './calendar-icon': {},
+    './calendar': { CalendarLayer: class {} }, './calendar-icon': {}, '../terminal-face': { terminalFace() {} },
     '../../ui/shell/in-process-window': { YieldAtRootLayer: class {}, createInProcessWindow: value => { options = value; return app; } },
   }, { setInterval: fn => { tick = fn; return 1; }, clearInterval: () => cleared++ });
   createCalendarAppWindow({ onClosed: () => closed++ });

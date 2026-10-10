@@ -70,7 +70,7 @@ function createRenderContext() {
     '../native/svg-rasterizer': { rasterizeSvg: (svg, size, stroke) => adapter.rasterizeSvg(svg, size, stroke, homeGraphics.GrayImage) },
     '../native/frame-timings': { spanCurrent: (_name, fn) => fn() },
     '../native/texture-atlas': { textureAtlasAvailable: () => false },
-    '../../native/calendar': { readUpcomingEvents: () => calendarScenes.events, getCalendarReadState: () => 'ready' },
+    '../../native/calendar': { readUpcomingEvents: () => calendarScenes.events, readAgendaEvents: () => calendarScenes.events, readEventAttendees: () => [], getCalendarReadState: () => 'ready' },
     '../../native/calendar-permissions': { hasCalendarPermission: () => true },
     '../../ui/dashboard-settings': { timeFormatSetting: { get: () => '24h' } },
   });

@@ -1,6 +1,7 @@
 import { ensureCalendarPermission, hasCalendarPermission } from "../../native/calendar-permissions";
 import { invalidateCalendarCache, onCalendarChanged } from "../../native/calendar";
 import { makeImageWindowIcon, windowIcon } from "../../ui/shell/chrome-layer";
+import { terminalFace } from "../terminal-face";
 import { CalendarLayer } from "./calendar";
 import { renderCalendarDateIcon } from "./calendar-icon";
 import {
@@ -14,10 +15,10 @@ export const CALENDAR_WINDOW_ID = "calendar";
 export const CALENDAR_SURFACE_ID = "window:calendar";
 
 /**
- * The Calendar app: a single screen listing upcoming events from the phone's
- * calendars. If calendar permission is missing it shows a prompt and
- * fires the system permission dialog (on launch and on any tap); once granted
- * it re-renders with the event list.
+ * The Calendar app: the agenda from the phone's calendars and one event's
+ * detail. If calendar permission is missing it says so and fires the system
+ * permission dialog (on launch and on any tap); once granted it re-renders
+ * with the agenda.
  */
 export function createCalendarAppWindow(options: InProcessAppOptions): InProcessWindow {
   let requesting = false;
@@ -45,7 +46,7 @@ export function createCalendarAppWindow(options: InProcessAppOptions): InProcess
     drawIcon: makeImageWindowIcon(renderCalendarDateIcon, windowIcon("calendar", "Ca")),
     closeable: true,
     actions: options.actions,
-    baseLayer: new YieldAtRootLayer(new CalendarLayer(requestPermission)),
+    baseLayer: new YieldAtRootLayer(new CalendarLayer(requestPermission, terminalFace)),
     submitFrame: options.submitFrame,
     setSurfaceVisible: options.setSurfaceVisible,
     removeSurface: options.removeSurface,
