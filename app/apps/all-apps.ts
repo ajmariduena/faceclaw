@@ -15,6 +15,7 @@ import teleprompterApp from "./teleprompter";
 import microphonesApp from "./microphones";
 import notificationsApp from "./notifications";
 import calendarApp from "./calendar";
+import translateApp from "./translate";
 import weatherApp from "./weather";
 import navigateApp from "./navigate";
 import compassApp from "./compass";
@@ -51,6 +52,7 @@ export const ALL_APPS: readonly AppDefinition[] = [
   microphonesApp,
   notificationsApp,
   calendarApp,
+  translateApp,
   weatherApp,
   navigateApp,
   compassApp,

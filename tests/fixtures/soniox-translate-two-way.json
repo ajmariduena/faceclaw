@@ -1,0 +1,51 @@
+[
+  {"tokens": [
+    {"text": "Ho", "start_ms": 420, "end_ms": 480, "confidence": 0.91, "is_final": false, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "la,", "start_ms": 480, "end_ms": 600, "confidence": 0.93, "is_final": false, "speaker": "1", "language": "es", "translation_status": "original"}
+  ], "final_audio_proc_ms": 0, "total_audio_proc_ms": 720},
+  {"tokens": [
+    {"text": "Ho", "start_ms": 420, "end_ms": 480, "confidence": 0.97, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "la,", "start_ms": 480, "end_ms": 600, "confidence": 0.98, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": " ¿có", "start_ms": 660, "end_ms": 720, "confidence": 0.88, "is_final": false, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "mo", "start_ms": 720, "end_ms": 780, "confidence": 0.9, "is_final": false, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "Hel", "confidence": 0.9, "is_final": false, "language": "en", "source_language": "es", "translation_status": "translation"},
+    {"text": "lo,", "confidence": 0.9, "is_final": false, "language": "en", "source_language": "es", "translation_status": "translation"}
+  ], "final_audio_proc_ms": 600, "total_audio_proc_ms": 840},
+  {"tokens": [
+    {"text": " ¿có", "start_ms": 660, "end_ms": 720, "confidence": 0.96, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "mo", "start_ms": 720, "end_ms": 780, "confidence": 0.97, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": " es", "start_ms": 780, "end_ms": 840, "confidence": 0.97, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "tás?", "start_ms": 840, "end_ms": 960, "confidence": 0.98, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "Hel", "is_final": true, "language": "en", "source_language": "es", "translation_status": "translation"},
+    {"text": "lo,", "is_final": true, "language": "en", "source_language": "es", "translation_status": "translation"},
+    {"text": " how", "is_final": true, "language": "en", "source_language": "es", "translation_status": "translation"},
+    {"text": " are", "is_final": true, "language": "en", "source_language": "es", "translation_status": "translation"},
+    {"text": " you?", "is_final": true, "language": "en", "source_language": "es", "translation_status": "translation"},
+    {"text": "<end>", "start_ms": 960, "end_ms": 960, "confidence": 1, "is_final": true}
+  ], "final_audio_proc_ms": 2100, "total_audio_proc_ms": 2100},
+  {"tokens": [
+    {"text": "I'm", "start_ms": 2400, "end_ms": 2520, "confidence": 0.95, "is_final": true, "speaker": "2", "language": "en", "translation_status": "original"},
+    {"text": " fine,", "start_ms": 2520, "end_ms": 2700, "confidence": 0.96, "is_final": true, "speaker": "2", "language": "en", "translation_status": "original"},
+    {"text": " thanks.", "start_ms": 2700, "end_ms": 3000, "confidence": 0.97, "is_final": true, "speaker": "2", "language": "en", "translation_status": "original"}
+  ], "final_audio_proc_ms": 3000, "total_audio_proc_ms": 3060},
+  {"tokens": [
+    {"text": "Qué", "start_ms": 3120, "end_ms": 3240, "confidence": 0.94, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": " bue", "start_ms": 3240, "end_ms": 3360, "confidence": 0.95, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "no.", "start_ms": 3360, "end_ms": 3480, "confidence": 0.96, "is_final": true, "speaker": "1", "language": "es", "translation_status": "original"},
+    {"text": "Es", "is_final": true, "language": "es", "source_language": "en", "translation_status": "translation"},
+    {"text": "toy", "is_final": true, "language": "es", "source_language": "en", "translation_status": "translation"},
+    {"text": " bien,", "is_final": true, "language": "es", "source_language": "en", "translation_status": "translation"},
+    {"text": " gracias.", "is_final": true, "language": "es", "source_language": "en", "translation_status": "translation"},
+    {"text": "That's", "is_final": false, "language": "en", "source_language": "es", "translation_status": "translation"}
+  ], "final_audio_proc_ms": 3480, "total_audio_proc_ms": 3600},
+  {"tokens": [
+    {"text": "That's", "is_final": true, "language": "en", "source_language": "es", "translation_status": "translation"},
+    {"text": " great.", "is_final": true, "language": "en", "source_language": "es", "translation_status": "translation"},
+    {"text": "<end>", "start_ms": 3480, "end_ms": 3480, "confidence": 1, "is_final": true},
+    {"text": "Bon", "start_ms": 4200, "end_ms": 4320, "confidence": 0.9, "is_final": true, "speaker": "3", "language": "fr", "translation_status": "none"},
+    {"text": "jour", "start_ms": 4320, "end_ms": 4440, "confidence": 0.9, "is_final": true, "speaker": "3", "language": "fr", "translation_status": "none"},
+    {"text": " à", "start_ms": 4440, "end_ms": 4500, "confidence": 0.9, "is_final": true, "speaker": "3", "language": "fr", "translation_status": "none"},
+    {"text": " tous", "start_ms": 4500, "end_ms": 4680, "confidence": 0.9, "is_final": true, "speaker": "3", "language": "fr", "translation_status": "none"}
+  ], "final_audio_proc_ms": 4680, "total_audio_proc_ms": 4680},
+  {"tokens": [], "final_audio_proc_ms": 4680, "total_audio_proc_ms": 4680, "finished": true}
+]
