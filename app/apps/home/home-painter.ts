@@ -1,8 +1,9 @@
 import * as graphics from "../../graphics/image";
 import type { GrayImage } from "../../graphics/image";
-import { HOME_CARDS, horizonteClockState, emptyCardStatus, clockTime, type HomeCalendar } from "./home-model";
+import { HOME_CARDS, homeColumnState, emptyCardStatus, clockTime, type HomeBattery, type HomeCalendar } from "./home-model";
 import { renderIcon, type IconName } from "../../graphics/icons";
-import { paintHorizonte } from "./horizonte-painter";
+import { paintHomeColumn } from "./column-painter";
+import type { HomeWeatherReading } from "./home-weather";
 import { glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import { formatAge } from "../paseo/paseo-model";
 
@@ -18,6 +19,10 @@ export type HomeSnapshot = {
   paseo?: PaseoGlanceSnapshot | null;
   /** A Soniox key is stored, so Translate can start. */
   translateReady?: boolean;
+  /** Ring and glasses levels from the shell; null (or absent) while unknown. */
+  battery?: HomeBattery;
+  /** The last Open-Meteo reading; null (or absent) hides the complication. */
+  weather?: HomeWeatherReading | null;
 };
 
 export const HOME_DOTS_TOP = 120;
@@ -59,7 +64,7 @@ function paintSwapArrow(panel: GrayImage, x: number, y: number, value: number) {
   }
 }
 
-export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace, clockFace: HomeFace): GrayImage {
+export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace): GrayImage {
   const image = new graphics.GrayImage(576, 288);
   const card = HOME_CARDS[selected];
   const panel = new graphics.GrayImage(318, 260);
@@ -126,7 +131,7 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace, 
   } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id)
     : card.id === "paseo" ? glanceEmptyStatus(data.paseo) : emptyCardStatus(card.id));
 
-  image.bitBlt(paintHorizonte(horizonteClockState(data.calendar, data.now), face, clockFace), 0, 0);
+  image.bitBlt(paintHomeColumn(homeColumnState(data.now, data.battery, data.weather, data.paseo), face), 0, 0);
   image.bitBlt(panel.withDrawsBaked(), 230, 14);
   for (let i = 0; i < HOME_CARDS.length; i++) image.fillRect(218, HOME_DOTS_TOP + i * 11, i === selected ? 4 : 2, 3, i === selected ? 255 : 85);
   return image.withDrawsBaked();

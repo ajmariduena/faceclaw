@@ -6,9 +6,8 @@ const load = loader({ Uint32Array, Int32Array, DataView, ArrayBuffer }, {
   '@nativescript/core': { knownFolders: {} },
 });
 const { BdfFont } = load('app/graphics/bdffont.ts');
-const { paintHome: paintHomeWithClock, HOME_DOTS_TOP } = load('app/apps/home/home-painter.ts');
+const { paintHome, HOME_DOTS_TOP } = load('app/apps/home/home-painter.ts');
 const { calendarCardState } = load('app/apps/home/home-model.ts');
-const paintHome = (index, data, textFace) => paintHomeWithClock(index, data, textFace, face);
 const font = BdfFont.parse(fs.readFileSync('app/fonts/terminus/ter-u20n.bdf', 'utf8'));
 let textDraws = [];
 const face = {
@@ -17,7 +16,7 @@ const face = {
   drawText(image, x, y, text, value) {
     assert.ok(x >= 0 && x + font.measureText(text) <= image.width, text);
     assert.ok(y >= 0 && y + font.lineHeight <= image.height, text);
-    textDraws.push({ text, value, x, y });
+    textDraws.push({ text, value, x, y, width: image.width });
     font.drawText(image, x, y, text, value);
   },
 };
@@ -25,7 +24,7 @@ const texts = () => textDraws.map(draw => draw.text);
 const NOW = new Date(2026, 9, 10, 9, 41);
 const snapshot = extra => ({ now: NOW, calendar: calendarCardState(true, [], NOW.getTime()), paseo: null, ...extra });
 
-test('app paints one bordered card with five stable dots and Horizonte clock, in English', () => {
+test('app paints one bordered card with five stable dots and the clock column, in English', () => {
   textDraws = [];
   const data = snapshot();
   for (let card = 0; card < 5; card++) {
@@ -39,7 +38,7 @@ test('app paints one bordered card with five stable dots and Horizonte clock, in
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(image.pixels[y * 576 + x], 0);
   }
   const drawn = texts();
-  for (const expected of ['Saturday, Oct 10', 'Nothing today', 'Not paired', 'Setup required', 'Live facts · ES/EN', 'Coming soon', 'More', 'ES ', ' EN'])
+  for (const expected of ['Sat 10', 'Nothing today', 'Not paired', 'Setup required', 'Live facts · ES/EN', 'Coming soon', 'More', 'ES ', ' EN'])
     assert.ok(drawn.includes(expected), expected);
   for (const spanish of ['Sábado', 'Toca para', 'Sin ', 'Más', 'Traducir', 'Calendario', 'Nada sonando', 'Sin notificaciones'])
     assert.ok(!drawn.some(text => text.includes(spanish)), spanish);
@@ -79,7 +78,7 @@ test('the Paseo card shows two updates, needs-you first with a dim agent line an
   assert.equal(textDraws.find(draw => draw.text === 'Paseo').y, 16, 'header keeps the name');
 });
 
-test('the Calendar card lists the events after Horizonte\'s, with a day line for another day', () => {
+test('the Calendar card lists today\'s next events, with a day line for another day', () => {
   const at = (day, hour, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
   const event = (title, startMs, endMs, extra = {}) => ({ title, startMs, endMs, allDay: false, ...extra });
   const daily = event('Daily con el equipo', at(10, 10, 30), at(10, 11));
@@ -88,32 +87,55 @@ test('the Calendar card lists the events after Horizonte\'s, with a day line for
   textDraws = [];
   paintHome(1, snapshot({ calendar: calendarCardState(true, [daily, lunch, review], NOW.getTime()) }), face);
   let drawn = texts();
-  assert.ok(drawn.includes('10:30 · in 49 min'));
   assert.ok(drawn.includes('Daily con el equipo'));
+  assert.ok(drawn.includes('10:30 - 11:00'));
   assert.ok(drawn.includes('Almuerzo con Lucía'));
-  assert.ok(drawn.includes('Café Jardín'));
   assert.ok(drawn.includes('13:00 - 14:00'));
+  assert.ok(!drawn.includes('Review'), 'two events per card');
+  textDraws = [];
+  paintHome(1, snapshot({ calendar: calendarCardState(true, [lunch, review], NOW.getTime()) }), face);
+  drawn = texts();
+  assert.ok(drawn.includes('Café Jardín'), 'the first event keeps its location line');
   assert.ok(drawn.includes('Review'));
   assert.ok(drawn.includes('15:00 - 16:00'));
   const dentist = event('Dentist', at(11, 9), at(11, 10));
   const whole = event('Feriado', at(12, 0), at(13, 0), { allDay: true });
   textDraws = [];
-  paintHome(1, snapshot({ calendar: calendarCardState(true, [daily, dentist], NOW.getTime()) }), face);
+  paintHome(1, snapshot({ calendar: calendarCardState(true, [dentist], NOW.getTime()) }), face);
   drawn = texts();
   assert.ok(drawn.includes('Tomorrow'));
   assert.ok(drawn.includes('Dentist'));
   assert.ok(drawn.includes('09:00 - 10:00'));
   textDraws = [];
-  paintHome(1, snapshot({ calendar: calendarCardState(true, [daily, whole], NOW.getTime()) }), face);
+  paintHome(1, snapshot({ calendar: calendarCardState(true, [whole], NOW.getTime()) }), face);
   drawn = texts();
   assert.ok(drawn.includes('Mon, Oct 12'));
   assert.ok(drawn.includes('All day'));
   textDraws = [];
-  paintHome(1, snapshot({ calendar: calendarCardState(true, [daily], NOW.getTime()) }), face);
-  assert.ok(texts().includes('Nothing else today'));
+  paintHome(1, snapshot({ calendar: calendarCardState(true, [], NOW.getTime()) }), face);
+  assert.ok(texts().includes('Nothing today'));
   textDraws = [];
   paintHome(1, snapshot({ calendar: calendarCardState(false, [daily], NOW.getTime()) }), face);
   assert.ok(texts().includes('No calendar access'));
+});
+
+test('the column shows weather and Paseo needs only when there is a value, inside the 212 px column', () => {
+  const paseo = { configured: true, status: '', updates: [], needs: 2, working: 0 };
+  textDraws = [];
+  paintHome(0, snapshot({ paseo, battery: { ring: 72, glasses: 88 }, weather: { temperatureC: 27.4, code: 2, isDay: true, atMs: NOW.getTime() } }), face);
+  const column = textDraws.filter(draw => draw.width === 212);
+  assert.deepEqual(column.map(draw => draw.text), ['Sat 10', '27°', '2']);
+  assert.ok(column.every(draw => draw.value === 255));
+  assert.equal(column[0].y, 12);
+  assert.equal(column[1].y, 248);
+  assert.equal(column[2].y, 248);
+  assert.ok(column[1].x + font.measureText('27°') < column[2].x - 20, 'weather and needs keep a gap');
+  textDraws = [];
+  paintHome(0, snapshot({ paseo: { ...paseo, needs: 0 } }), face);
+  assert.deepEqual(textDraws.filter(draw => draw.width === 212).map(draw => draw.text), ['Sat 10']);
+  textDraws = [];
+  paintHome(0, snapshot({ paseo: { ...paseo, configured: false }, weather: { temperatureC: 27.4, code: 2, isDay: true, atMs: NOW.getTime() } }), face);
+  assert.deepEqual(textDraws.filter(draw => draw.width === 212).map(draw => draw.text), ['Sat 10', '27°']);
 });
 
 test('long titles are clipped to the card and never overflow', () => {

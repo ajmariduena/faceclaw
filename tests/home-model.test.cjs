@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
-const { HomeModel, HOME_CARDS, HOME_SLEEP_GUARD_MS, calendarCardState, emptyCardStatus, horizonteClockState, dayLabel } =
+const { HomeModel, HOME_CARDS, HOME_SLEEP_GUARD_MS, calendarCardState, emptyCardStatus, homeColumnState, dayLabel } =
   loader()('app/apps/home/home-model.ts');
 
 test('five fixed cards wrap in both directions, Paseo first, with English names', () => {
@@ -52,77 +52,79 @@ test('calendar separates absent permission, loading, errors and an empty day, in
   const events = [event('Tomorrow', now + 86400000, now + 86460000), event('Next', now + 60000, now + 120000),
     event('Ended', now - 60000, now), event('Ongoing', now - 60000, now + 1000), event('Third', now + 180000, now + 240000)];
   const state = calendarCardState(true, events, now);
-  assert.equal(state.next.title, 'Ongoing');
-  assert.deepEqual(Array.from(state.events, e => e.title), ['Next', 'Third']);
+  assert.deepEqual(Array.from(state.events, e => e.title), ['Ongoing', 'Next']);
   assert.equal(state.day, null);
   assert.equal(calendarCardState(false, events, now).events.length, 0);
-  assert.equal(calendarCardState(false, events, now).next, null);
 });
 
-test('the card shows the events after Horizonte\'s, then the next day when today has none left', () => {
+test('the card shows today\'s next two events, then the next day that has any', () => {
   const now = new Date(2026, 9, 10, 9, 41).getTime();
   const at = (day, hour, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
   const event = (title, startMs, endMs) => ({ title, startMs, endMs, allDay: false });
   const daily = event('Daily', at(10, 10, 30), at(10, 11));
   const lunch = event('Lunch', at(10, 13), at(10, 14));
+  const review = event('Review', at(10, 15), at(10, 16));
   const dentist = event('Dentist', at(11, 9), at(11, 10));
-  const review = event('Review', at(11, 15), at(11, 16));
-  const monday = event('Planning', at(12, 9), at(12, 10));
+  const planning = event('Planning', at(11, 15), at(11, 16));
+  const monday = event('Retro', at(12, 9), at(12, 10));
   let state = calendarCardState(true, [monday, review, daily, lunch, dentist], now);
-  assert.equal(state.next, daily);
-  assert.deepEqual(state.events, [lunch]);
+  assert.deepEqual(state.events, [daily, lunch]);
   assert.equal(state.day, null);
-  state = calendarCardState(true, [daily, dentist, review, monday], now);
-  assert.equal(state.next, daily);
-  assert.deepEqual(state.events, [dentist, review]);
+  assert.equal(state.status, null);
+  state = calendarCardState(true, [dentist, planning, monday], now);
+  assert.deepEqual(state.events, [dentist, planning]);
   assert.equal(state.day, 'Tomorrow');
-  state = calendarCardState(true, [daily, monday], now);
+  state = calendarCardState(true, [monday], now);
   assert.deepEqual(state.events, [monday]);
   assert.equal(state.day, 'Mon, Oct 12');
   state = calendarCardState(true, [daily], now);
-  assert.equal(state.next, daily);
-  assert.equal(state.events.length, 0);
-  assert.equal(state.status, 'Nothing else today');
-  state = calendarCardState(true, [dentist], now);
-  assert.equal(state.next, dentist);
-  assert.equal(state.status, 'Nothing else');
+  assert.deepEqual(state.events, [daily]);
+  assert.equal(state.status, null);
+  // A multi-day event that started yesterday belongs to today's card.
+  const offsite = event('Offsite', at(9, 9), at(11, 18));
+  state = calendarCardState(true, [offsite, dentist], now);
+  assert.deepEqual(state.events, [offsite]);
+  assert.equal(state.day, null);
+  assert.equal(calendarCardState(true, [], now).status, 'Nothing today');
   assert.equal(dayLabel(at(11, 0), now), 'Tomorrow');
   assert.equal(dayLabel(at(12, 0), now), 'Mon, Oct 12');
 });
 
-test('Horizonte counts real minutes, enters Now at the start, and drops expired events', () => {
-  const startMs = new Date(2026, 9, 10, 10, 30).getTime();
-  const event = { title: 'Daily con el equipo', startMs, endMs: startMs + 30 * 60_000, allDay: false };
-  const stateAt = ms => horizonteClockState(calendarCardState(true, [event], ms), new Date(ms));
-  assert.equal(stateAt(startMs - 25 * 60_000).eventLine, '10:30 · in 25 min');
-  assert.equal(stateAt(startMs - 24 * 60_000).eventLine, '10:30 · in 24 min');
-  assert.equal(stateAt(startMs - 1).eventLine, '10:30 · in 1 min');
-  assert.equal(stateAt(startMs - 150 * 60_000).eventLine, '10:30 · in 3 h');
-  assert.equal(stateAt(startMs).eventLine, '10:30 · Now');
-  assert.equal(stateAt(event.endMs - 1).title, event.title);
-  assert.equal(stateAt(event.endMs).eventLine, 'Nothing today');
-  assert.equal(stateAt(event.endMs).title, null);
-  assert.equal(stateAt(startMs).date, 'Saturday, Oct 10');
-  assert.equal(stateAt(startMs).time, '10:30');
+test('the column state pads the clock, abbreviates the day in English and defaults to unknown batteries', () => {
+  const paseo = { configured: true, status: '', updates: [], needs: 2, working: 1 };
+  const state = homeColumnState(new Date(2026, 9, 10, 9, 41), undefined, undefined, paseo);
+  assert.equal(state.hours, '09');
+  assert.equal(state.minutes, '41');
+  assert.equal(state.day, 'Sat 10');
+  assert.deepEqual({ ...state.battery }, { ring: null, glasses: null });
+  assert.equal(state.weather, null);
+  assert.equal(state.needs, 2);
+  const late = homeColumnState(new Date(2026, 11, 31, 22, 7), { ring: 72, glasses: 88 }, null, null);
+  assert.equal(late.hours, '22');
+  assert.equal(late.minutes, '07');
+  assert.equal(late.day, 'Thu 31');
+  assert.deepEqual({ ...late.battery }, { ring: 72, glasses: 88 });
+  assert.equal(homeColumnState(new Date(2026, 0, 1, 0, 0), undefined, null, null).day, 'Thu 1');
 });
 
-test('Horizonte distinguishes tomorrow, later dates, all-day events and denied calendars', () => {
-  const now = new Date(2026, 11, 31, 22, 27);
-  const event = { title: 'Plan del año', allDay: false,
-    startMs: new Date(2027, 0, 1, 9, 30).getTime(), endMs: new Date(2027, 0, 1, 10, 30).getTime() };
-  const stateAt = (events, date = now) => horizonteClockState(calendarCardState(true, events, date.getTime()), date);
-  assert.equal(stateAt([event]).time, '22:27');
-  assert.equal(stateAt([event]).date, 'Thursday, Dec 31');
-  assert.equal(stateAt([event]).eventLine, 'Nothing today');
-  assert.equal(stateAt([event]).nextLine, 'Tomorrow 09:30');
-  const later = { ...event, startMs: new Date(2027, 0, 2, 9, 30).getTime(), endMs: new Date(2027, 0, 2, 10, 30).getTime() };
-  assert.equal(stateAt([later]).nextLine, 'Sat, Jan 2 09:30');
-  const allDay = { ...event, allDay: true, startMs: new Date(2027, 0, 1).getTime(), endMs: new Date(2027, 0, 2).getTime() };
-  assert.equal(stateAt([allDay]).nextLine, 'Tomorrow · All day');
-  assert.equal(stateAt([allDay], new Date(2027, 0, 1, 12)).eventLine, 'All day · Now');
-  assert.equal(stateAt([]).title, null);
-  assert.equal(stateAt([]).eventLine, 'Nothing today');
-  const denied = horizonteClockState(calendarCardState(false, [event], now.getTime()), now);
-  assert.equal(denied.title, null);
-  assert.equal(denied.eventLine, null);
+test('the column hides Paseo needs without a pairing and maps weather codes onto a few Lucide icons', () => {
+  const now = new Date(2026, 9, 10, 9, 41);
+  assert.equal(homeColumnState(now, undefined, null, { configured: false, status: '', updates: [], needs: 3, working: 0 }).needs, 0);
+  assert.equal(homeColumnState(now, undefined, null, { configured: true, status: 'Mac unreachable', updates: [], needs: 0, working: 0 }).needs, 0);
+  const reading = (code, isDay = true, temperatureC = 27.4) => ({ temperatureC, code, isDay, atMs: now.getTime() });
+  const icon = (code, isDay) => homeColumnState(now, undefined, reading(code, isDay), null).weather.icon;
+  assert.deepEqual({ ...homeColumnState(now, undefined, reading(2), null).weather }, { icon: 'cloud-sun', label: '27°' });
+  assert.equal(homeColumnState(now, undefined, reading(0, false, 22.6), null).weather.label, '23°');
+  assert.equal(icon(0, true), 'sun');
+  assert.equal(icon(0, false), 'moon');
+  assert.equal(icon(1, true), 'cloud-sun');
+  assert.equal(icon(2, false), 'cloud-moon');
+  assert.equal(icon(3, true), 'cloud');
+  assert.equal(icon(45, true), 'cloud');
+  assert.equal(icon(51, true), 'cloud-rain');
+  assert.equal(icon(65, false), 'cloud-rain');
+  assert.equal(icon(71, true), 'cloud-rain');
+  assert.equal(icon(82, true), 'cloud-rain');
+  assert.equal(icon(95, true), 'cloud-lightning');
+  assert.equal(icon(99, false), 'cloud-lightning');
 });

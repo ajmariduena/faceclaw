@@ -1,8 +1,8 @@
-import { knownFolders } from "@nativescript/core";
-import { TtfFont } from "../../graphics/ttf-font";
-import { getDefaultLargeFont } from "../../graphics/ui-fonts";
 import { readUpcomingEvents, getCalendarReadState, onCalendarChanged } from "../../native/calendar";
 import { hasCalendarPermission } from "../../native/calendar-permissions";
+import { getCurrentLocation } from "../../native/location";
+import { hasLocationPermission } from "../../native/location-permissions";
+import { getStringSetting, setStringSetting } from "../../native/settings-store";
 import { onAnySettingChanged, sonioxApiKeySetting } from "../../ui/dashboard-settings";
 import type { InputEvent } from "../../ui/gestures";
 import type { Layer } from "../../ui/layers";
@@ -11,22 +11,30 @@ import { shell } from "../../ui/shell/shell";
 import { onWorkerStateChanged, readWorkerState } from "../../ui/shell/worker-state";
 import { PASEO_GLANCE_STATE_KEY, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import type { AppContext } from "../app-definition";
+import { fetchTextWithUserAgent } from "../../util/http";
 import { HomeModel, HOME_WINDOW_ID, HOME_SURFACE_ID, HOME_SLEEP_GUARD_MS, calendarCardState } from "./home-model";
-import { paintHome, type HomeFace } from "./home-painter";
+import { paintHome } from "./home-painter";
+import { HomeWeather } from "./home-weather";
 import { terminalFace } from "../../ui/terminal-face";
 
-function homeClockFace(): HomeFace {
-  const path = knownFolders.currentApp().getFile("fonts/ttf/Roboto-Light.ttf").path;
-  const font = TtfFont.load(path, 80) ?? getDefaultLargeFont();
-  return {
-    lineHeight: font.lineHeight,
-    measureLine: text => font.measureText(text),
-    drawText: (image, x, y, text, value = 255) => font.drawText(image, x, y, text, value),
-  };
+function createHomeWeather(): HomeWeather {
+  return new HomeWeather({
+    permitted: hasLocationPermission,
+    locate: getCurrentLocation,
+    fetchJson: async url => {
+      const response = await fetchTextWithUserAgent(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    },
+    read: getStringSetting,
+    write: setStringSetting,
+    now: Date.now,
+  });
 }
 
 export function createHomeWindow(ctx: AppContext) {
   const model = new HomeModel();
+  const weather = createHomeWeather();
   let foreground = false;
   let screenOn = shell.isScreenOn();
   let tick: ReturnType<typeof setInterval> | null = null;
@@ -50,12 +58,15 @@ export function createHomeWindow(ctx: AppContext) {
     paint: () => {
       const now = new Date();
       const permitted = hasCalendarPermission();
+      const levels = shell.getBatteryLevels();
       return paintHome(model.selectedIndex, {
         now,
         calendar: calendarCardState(permitted, permitted ? readUpcomingEvents() : [], now.getTime(), getCalendarReadState()),
         paseo: (readWorkerState(PASEO_GLANCE_STATE_KEY) as PaseoGlanceSnapshot | undefined) ?? null,
         translateReady: sonioxApiKeySetting.get().trim().length > 0,
-      }, terminalFace(), homeClockFace());
+        battery: { ring: levels.ring, glasses: levels.headset },
+        weather: weather.reading(),
+      }, terminalFace());
     },
     handleInput: async (event: InputEvent) => {
       if (launching) return;
@@ -72,11 +83,14 @@ export function createHomeWindow(ctx: AppContext) {
   function updateSubscriptions() {
     if (foreground && screenOn) {
       if (tick !== null) return;
-      tick = setInterval(requestRender, 30_000);
+      weather.refresh();
+      tick = setInterval(() => { weather.refresh(); requestRender(); }, 30_000);
       unsubscribers = [
         onCalendarChanged(requestRender),
         onWorkerStateChanged(PASEO_GLANCE_STATE_KEY, requestRender),
         onAnySettingChanged(requestRender),
+        shell.onBatteryLevelsChanged(requestRender),
+        weather.onChange(requestRender),
       ];
     } else {
       if (tick !== null) clearInterval(tick);

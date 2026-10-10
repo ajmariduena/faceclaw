@@ -2,10 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
 
-function harness(stockAvailable = false, clockAvailable = true) {
+function harness(stockAvailable = false) {
   let options, painted, permitted = false, subscriptions = 0, reads = 0, renders = 0, paseoState, sonioxKey = '', sleeps = 0;
-  let nowMs = new Date(2026, 9, 10, 10, 5).getTime(), events = [], foreground = 'home';
-  const timers = new Set(), launched = [], frames = [], clockLoads = [], periods = [];
+  let nowMs = new Date(2026, 9, 10, 10, 5).getTime(), events = [], foreground = 'home', locationPermitted = false;
+  let battery = { headset: null, headsetCharging: null, ring: null, ringCharging: null, watch: null, watchCharging: null };
+  const timers = new Set(), launched = [], frames = [], periods = [], fetched = [], stored = new Map();
+  const weatherBody = { current: { time: '2026-10-10T10:00', interval: 900, temperature_2m: 30.3, weather_code: 3, is_day: 1 } };
   class ClockDate extends Date {
     constructor(...args) { if (args.length) super(...args); else super(nowMs); }
     static now() { return nowMs; }
@@ -13,27 +15,31 @@ function harness(stockAvailable = false, clockAvailable = true) {
   const subscribe = () => { subscriptions++; return () => subscriptions--; };
   const face = { lineHeight: 27, measureLine: s => s.length * 8, drawText() {}, hasGlyph: () => stockAvailable };
   const fallback = { lineHeight: 20, measureText: s => s.length * 10, drawText() {} };
-  const load = loader({ Date: ClockDate,
+  const load = loader({ Date: ClockDate, setTimeout, clearTimeout,
     setInterval: (fn, ms) => { periods.push(ms); timers.add(fn); return fn; }, clearInterval: fn => timers.delete(fn),
   }, {
-    '@nativescript/core': { knownFolders: { currentApp: () => ({ getFile: path => ({ path }) }) } },
-    '../../graphics/ttf-font': { TtfFont: { load: (path, size) => { clockLoads.push({ path, size }); return clockAvailable ? { ...fallback, lineHeight: 94 } : null; } } },
+    '@nativescript/core': { knownFolders: {} },
     '../graphics/evenhub-font': { EvenHubFont: { get: () => face } },
     '../graphics/ui-fonts': { getDefaultSmallFont: () => fallback },
-    '../../graphics/ui-fonts': { getDefaultLargeFont: () => fallback },
     '../../native/calendar': { readUpcomingEvents: () => { reads++; return events; }, getCalendarReadState: () => 'ready', onCalendarChanged: subscribe },
     '../../native/calendar-permissions': { hasCalendarPermission: () => permitted },
+    '../../native/location': { getCurrentLocation: async () => ({ latitude: -2.17, longitude: -79.92, accuracyMeters: null, timestampMs: nowMs }) },
+    '../../native/location-permissions': { hasLocationPermission: () => locationPermitted },
+    '../../native/settings-store': { getStringSetting: (key, fallback) => stored.get(key) ?? fallback, setStringSetting: (key, value) => stored.set(key, value) },
+    '../../util/http': { fetchTextWithUserAgent: async url => { fetched.push(url); return { ok: true, status: 200, json: async () => weatherBody }; } },
     '../../ui/dashboard-settings': { onAnySettingChanged: subscribe, sonioxApiKeySetting: { get: () => sonioxKey } },
     '../../ui/shell/in-process-window': { createInProcessWindow: opts => { options = opts; return { window: { windowId: 'home' }, requestRender: () => renders++ }; } },
-    '../../ui/shell/shell': { shell: { isScreenOn: () => true, sleep: () => sleeps++, foregroundWindow: () => ({ windowId: foreground }) } },
+    '../../ui/shell/shell': { shell: { isScreenOn: () => true, sleep: () => sleeps++, foregroundWindow: () => ({ windowId: foreground }),
+      getBatteryLevels: () => battery, onBatteryLevelsChanged: subscribe } },
     '../../ui/shell/worker-state': { readWorkerState: () => paseoState, onWorkerStateChanged: subscribe },
-    './home-painter': { paintHome: (index, data, font, clockFont) => { painted = { index, data, font, clockFont }; return painted; } },
+    './home-painter': { paintHome: (index, data, font) => { painted = { index, data, font }; return painted; } },
   });
   const { createHomeWindow } = load('app/apps/home/home-app.ts');
   const home = createHomeWindow({ actions: {}, launchApp: async id => { launched.push(id); if (id !== 'translate') foreground = id; },
     submitWindowFrame: (...args) => frames.push(args), setWindowSurfaceVisible() {} });
-  return { home, options, launched, timers, frames, clockLoads, periods, setEvents: value => events = value, setPaseo: value => paseoState = value,
-    setSonioxKey: value => sonioxKey = value, setForeground: id => foreground = id,
+  return { home, options, launched, timers, frames, periods, fetched, stored, setEvents: value => events = value, setPaseo: value => paseoState = value,
+    setSonioxKey: value => sonioxKey = value, setForeground: id => foreground = id, allowLocation: () => locationPermitted = true,
+    setBattery: value => battery = { ...battery, ...value },
     advance: ms => { nowMs += ms; for (const fn of timers) fn(); }, paint: () => options.baseLayer.paint(),
     input: type => options.baseLayer.handleInput({ type }), allowCalendar: () => permitted = true,
     counts: () => ({ subscriptions, reads, renders, sleeps }) };
@@ -48,8 +54,8 @@ test('home adapter uses real snapshots, English chrome, and avoids unauthorized 
   assert.equal('music' in painted.data, false);
   assert.equal('notifications' in painted.data, false);
   assert.equal(painted.data.translateReady, false);
-  assert.equal(painted.clockFont.lineHeight, 94);
-  assert.deepEqual(h.clockLoads[0], { path: 'fonts/ttf/Roboto-Light.ttf', size: 80 });
+  assert.deepEqual({ ...painted.data.battery }, { ring: null, glasses: null });
+  assert.equal(painted.data.weather, null);
   assert.equal(h.options.title, 'Home');
   h.allowCalendar();
   h.setSonioxKey(' sk-soniox ');
@@ -120,7 +126,7 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
   const h = harness();
   assert.equal(h.counts().subscriptions, 0);
   h.options.onForegroundChanged(true);
-  assert.equal(h.counts().subscriptions, 3);
+  assert.equal(h.counts().subscriptions, 4);
   assert.equal(h.timers.size, 1);
   h.options.onForegroundChanged(true);
   assert.equal(h.timers.size, 1);
@@ -128,7 +134,7 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
   assert.equal(h.counts().subscriptions, 0);
   assert.equal(h.timers.size, 0);
   h.options.setScreenOn(true);
-  assert.equal(h.counts().subscriptions, 3);
+  assert.equal(h.counts().subscriptions, 4);
   h.options.onForegroundChanged(false);
   assert.equal(h.counts().subscriptions, 0);
   h.options.onForegroundChanged(true);
@@ -158,25 +164,49 @@ test('Watch horizontal swipes paginate circularly without changing Ring or verti
   assert.equal(h.launched.at(-1), 'paseo');
 });
 
-test('the existing visible timer updates Horizonte from the same calendar read as the card', () => {
-  const { horizonteClockState } = loader()('app/apps/home/home-model.ts');
+test('the visible timer re-reads the calendar and the column mirrors the shell batteries', () => {
   const h = harness();
   h.allowCalendar();
   h.setEvents([{ title: 'Daily', startMs: new Date(2026, 9, 10, 10, 30).getTime(), endMs: new Date(2026, 9, 10, 11).getTime() }]);
+  h.setBattery({ headset: 88, ring: 72 });
   h.options.onForegroundChanged(true);
   let painted = h.paint();
   assert.equal(h.counts().reads, 1);
-  assert.equal(horizonteClockState(painted.data.calendar, painted.data.now).eventLine, '10:30 · in 25 min');
+  assert.equal(painted.data.calendar.events[0].title, 'Daily');
+  assert.deepEqual({ ...painted.data.battery }, { ring: 72, glasses: 88 });
   h.advance(60_000);
   assert.equal(h.counts().renders, 1);
   painted = h.paint();
   assert.equal(h.counts().reads, 2);
-  assert.equal(horizonteClockState(painted.data.calendar, painted.data.now).eventLine, '10:30 · in 24 min');
+  assert.equal(painted.data.now.getTime(), new Date(2026, 9, 10, 10, 6).getTime());
   assert.deepEqual(h.periods, [30_000]);
   h.options.setScreenOn(false);
   h.advance(60_000);
   assert.equal(h.counts().renders, 1);
-  assert.equal(harness(false, false).paint().clockFont.lineHeight, 20);
+});
+
+test('weather is fetched from Open-Meteo only with location permission, at most every 30 minutes, and cached', async () => {
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  const h = harness();
+  h.options.onForegroundChanged(true);
+  h.advance(30_000);
+  await flush();
+  assert.deepEqual(h.fetched, []);
+  assert.equal(h.paint().data.weather, null);
+  h.allowLocation();
+  h.advance(30_000);
+  await flush(); await flush();
+  assert.equal(h.fetched.length, 1);
+  assert.match(h.fetched[0], /^https:\/\/api\.open-meteo\.com\/v1\/forecast\?latitude=-2\.1700&longitude=-79\.9200&current=temperature_2m,weather_code,is_day$/);
+  assert.equal(h.counts().renders, 3, 'the reading repaints the home');
+  assert.deepEqual({ ...h.paint().data.weather }, { temperatureC: 30.3, code: 3, isDay: true, atMs: new Date(2026, 9, 10, 10, 6).getTime() });
+  h.advance(29 * 60_000);
+  await flush();
+  assert.equal(h.fetched.length, 1);
+  h.advance(60_000);
+  await flush(); await flush();
+  assert.equal(h.fetched.length, 2);
+  assert.ok(h.stored.has('home.weather'));
 });
 
 test('the Paseo card paints what the worker last published and repaints on its updates', () => {
@@ -185,5 +215,5 @@ test('the Paseo card paints what the worker last published and repaints on its u
   h.setPaseo({ configured: true, status: '', updates: [{ agentId: 'a', title: 'Fix', bucket: 'done', activityMs: 1, line: 'Listo.' }], needs: 0, working: 0 });
   assert.equal(h.paint().data.paseo.updates[0].line, 'Listo.');
   h.options.onForegroundChanged(true);
-  assert.equal(h.counts().subscriptions, 3);
+  assert.equal(h.counts().subscriptions, 4);
 });

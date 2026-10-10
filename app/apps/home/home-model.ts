@@ -1,4 +1,7 @@
 import type { CalendarEvent, CalendarReadState } from "../../native/calendar-types";
+import type { IconName } from "../../graphics/icons";
+import type { PaseoGlanceSnapshot } from "../paseo/paseo-glance";
+import { weatherIcon, weatherLabel, type HomeWeatherReading } from "./home-weather";
 
 export const HOME_WINDOW_ID = "home";
 export const HOME_SURFACE_ID = "window:home";
@@ -30,7 +33,6 @@ export class HomeModel {
   wake(): void { this.index = 0; this.returnHome(); }
 }
 
-const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export const clockTime = (date: Date | number) => {
@@ -50,9 +52,7 @@ export function dayLabel(dayMs: number, nowMs: number): string {
 }
 
 export type HomeCalendar = {
-  /** What Horizonte shows: the next event, today or later. */
-  next: CalendarEvent | null;
-  /** What the card shows: the events after `next` on the soonest day that has any. */
+  /** What the card shows: the next events, on the soonest day that has any. */
   events: CalendarEvent[];
   /** The card events' day when it is not today. */
   day: string | null;
@@ -62,19 +62,17 @@ export type HomeCalendar = {
 export function calendarCardState(
   permitted: boolean, events: readonly CalendarEvent[], nowMs: number, readState: CalendarReadState = "ready",
 ): HomeCalendar {
-  if (!permitted) return { next: null, events: [], day: null, status: "No calendar access" };
+  if (!permitted) return { events: [], day: null, status: "No calendar access" };
   const upcoming = events.filter(event => event.endMs > nowMs).sort((a, b) => a.startMs - b.startMs);
-  const next = upcoming[0] ?? null;
-  const rest = upcoming.slice(1);
-  if (rest.length) {
-    const day = startOfDay(rest[0].startMs);
-    const dayEnd = startOfDay(rest[0].startMs, 1);
-    return { next, events: rest.filter(event => event.startMs < dayEnd).slice(0, 2),
+  if (upcoming.length) {
+    // An event that started before today (multi-day, ongoing) counts as today's.
+    const day = Math.max(startOfDay(upcoming[0].startMs), startOfDay(nowMs));
+    const dayEnd = startOfDay(day, 1);
+    return { events: upcoming.filter(event => event.startMs < dayEnd).slice(0, 2),
       day: day === startOfDay(nowMs) ? null : dayLabel(day, nowMs), status: null };
   }
-  const status = readState === "loading" ? "Loading calendar…" : readState === "error" ? "Calendar unavailable"
-    : !next ? "Nothing today" : next.startMs < startOfDay(nowMs, 1) ? "Nothing else today" : "Nothing else";
-  return { next, events: [], day: null, status };
+  const status = readState === "loading" ? "Loading calendar…" : readState === "error" ? "Calendar unavailable" : "Nothing today";
+  return { events: [], day: null, status };
 }
 
 export function emptyCardStatus(card: HomeCardId): string {
@@ -87,32 +85,31 @@ export function emptyCardStatus(card: HomeCardId): string {
   }
 }
 
-export type HorizonteClock = {
-  time: string;
-  date: string;
-  eventLine: string | null;
-  nextLine: string | null;
-  title: string | null;
+export type HomeBattery = { ring: number | null; glasses: number | null };
+
+/** The left column: a big dot-matrix clock between two rows of complications. */
+export type HomeColumn = {
+  hours: string;
+  minutes: string;
+  /** "Sat 10" */
+  day: string;
+  battery: HomeBattery;
+  /** null hides the complication (no reading yet, or a stale one). */
+  weather: { icon: IconName; label: string } | null;
+  /** Paseo agents waiting on the user; 0 (or no pairing) hides the complication. */
+  needs: number;
 };
 
-export function horizonteClockState(calendar: HomeCalendar, now: Date): HorizonteClock {
-  const state: HorizonteClock = {
-    time: clockTime(now),
-    date: `${WEEKDAY_NAMES[now.getDay()]}, ${MONTH_NAMES[now.getMonth()]} ${now.getDate()}`,
-    eventLine: calendar.status === "Nothing today" ? "Nothing today" : null,
-    nextLine: null,
-    title: null,
+export function homeColumnState(
+  now: Date, battery: HomeBattery | undefined, weather: HomeWeatherReading | null | undefined,
+  paseo: PaseoGlanceSnapshot | null | undefined,
+): HomeColumn {
+  return {
+    hours: String(now.getHours()).padStart(2, "0"),
+    minutes: String(now.getMinutes()).padStart(2, "0"),
+    day: `${WEEKDAY_SHORT[now.getDay()]} ${now.getDate()}`,
+    battery: battery ?? { ring: null, glasses: null },
+    weather: weather ? { icon: weatherIcon(weather.code, weather.isDay), label: weatherLabel(weather) } : null,
+    needs: paseo?.configured ? paseo.needs : 0,
   };
-  const event = calendar.next;
-  if (!event || event.endMs <= now.getTime()) return state;
-  state.title = (event.title || "Untitled").replace(/[\r\n\t]/g, " ");
-  if (event.startMs < startOfDay(now.getTime(), 1)) {
-    const minutes = Math.ceil((event.startMs - now.getTime()) / 60_000);
-    const status = minutes <= 0 ? "Now" : minutes < 60 ? `in ${minutes} min` : `in ${Math.round(minutes / 60)} h`;
-    state.eventLine = `${event.allDay ? "All day" : clockTime(event.startMs)} · ${status}`;
-  } else {
-    state.eventLine = "Nothing today";
-    state.nextLine = `${dayLabel(startOfDay(event.startMs), now.getTime())} ${event.allDay ? "· All day" : clockTime(event.startMs)}`;
-  }
-  return state;
 }
