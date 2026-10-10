@@ -22,7 +22,7 @@ function chatEnv() {
     '../../ui/shell/shell': { shell: {
       getAssistantConversations: () => ({ current: () => record, onChanged: () => () => {} }),
       prepareChatVoiceCapture: async () => true, isAssistantAvailable: () => available,
-      sendToAssistant: text => sent.push(text), showHome() { home++; }, showAlert: text => errors.push(text),
+      sendToAssistant: text => sent.push(text), showHome() { home++; }, yieldFocusToSidebar() { home++; }, showAlert: text => errors.push(text),
     } },
   });
   const api = load('app/apps/ai-chat/ai-chat-app.ts');

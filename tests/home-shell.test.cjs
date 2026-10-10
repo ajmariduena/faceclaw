@@ -12,7 +12,7 @@ function harness({ wakeAction = 'voice-input', startAiChatListening = null } = {
   const names = ['registerWindow', 'registerHomeWindow', 'showHome', 'focusWindow', 'wake', 'sleep', 'routeInput',
     'receiveInput', 'isFocusTarget', 'inputTargetWindow', 'syncInputFocus', 'setSelectedIndex', 'noteWindowVisible',
     'foregroundWindow', 'isScreenOn', 'getFocus', 'yieldFocusToSidebar', 'overlayClosed', 'openLeanSystemMenu',
-    'openAiChatListening', 'removeWindow', 'mostRecentWindowIndex', 'closeWindow', 'openNotificationModal'];
+    'openAiChatListening', 'removeWindow', 'mostRecentWindowIndex', 'closeWindow', 'openNotificationModal', 'returnToWindowId'];
   const methods = names.map(name => klass.members.find(node => node.name?.getText(source) === name).getText(source));
   const pushed = [];
   class OverlayMenu { constructor(items, footer, onClosed) { this.items = items; this.footer = footer; this.onClosed = onClosed; } }
