@@ -127,7 +127,7 @@ export function createDeveloperAppWindow(appContext: AppContext, options: InProc
         label: "App grid",
         onSelect: (ctx) => {
           const grid = new LauncherGridLayer({
-            apps: () => launcherEntries(appContext.apps),
+            apps: () => launcherEntries(appContext.apps, true),
             launchApp: (appId) => appContext.launchApp(appId),
             uninstallApp: (appId) => appContext.uninstallApp(appId),
             onBack: () => ctx.stack.pop(),
