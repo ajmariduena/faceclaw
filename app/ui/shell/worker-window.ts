@@ -528,6 +528,8 @@ export class WorkerAppHost {
         : undefined,
       hasAppMenu: () => this.windowGestures.get(spec.windowId)?.hasAppMenu ?? false,
       claimsLongPress: () => this.windowGestures.get(spec.windowId)?.claimsLongPress ?? false,
+      // The idle timeout would otherwise sleep mid-dictation, and sleeping cancels it.
+      isVoiceCapturing: () => this.rawMic?.windowId === spec.windowId,
       close: () => {
         if (closed) return;
         closed = true;
