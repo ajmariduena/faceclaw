@@ -37,6 +37,7 @@ import {
   type MenuItem,
 } from "../../ui/menu";
 import { Menu, type MenuDrawArgs } from "../../ui/menu-core";
+import { TimersListLayer } from "./timers-list";
 import { LIST_ROW_TEXT_INSET, lineStep, listRowHeight } from "../../ui/metrics";
 import { createInProcessWindow, type InProcessAppOptions, type InProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
@@ -1292,7 +1293,8 @@ function pad2(value: number): string {
 // Window
 
 export function createTimerAppWindow(options: InProcessAppOptions): InProcessWindow {
-  const layer = new TimersLayer();
+  // The full editor (TimersLayer: dials, stopwatch, alarms) stays in this file; the lean build lists and cancels.
+  const layer = new TimersListLayer();
   let tick: ReturnType<typeof setInterval> | null = null;
   let unsubscribe: (() => void) | null = null;
   const stopTick = () => {
@@ -1311,11 +1313,6 @@ export function createTimerAppWindow(options: InProcessAppOptions): InProcessWin
     closeable: true,
     actions: options.actions,
     baseLayer: layer,
-    menuItems: () => layer.menuItems(),
-    receiveTextInput: (text) => {
-      layer.receiveTextInput(text);
-      app.requestRender();
-    },
     submitFrame: options.submitFrame,
     setSurfaceVisible: options.setSurfaceVisible,
     removeSurface: options.removeSurface,
