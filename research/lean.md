@@ -27,3 +27,8 @@ Regla (9 oct): toda la interfaz va en inglés en todas las apps, incluidas las t
 6. Conversar: del prototipo a la app.
 7. Navegar, después.
 8. Prueba final con las gafas (firmware 37).
+
+## Pendientes anotados (10 oct)
+- Servicios: usar el mejor proveedor aunque sea de pago, no el gratuito. Clima: investigar y elegir una API de pago completa (hoy está Open-Meteo como provisional).
+- Calendario: integrar los calendarios directamente (Google / iCloud) en vez de leer el calendario del Android. Para después.
+- Prueba con las gafas: flashear el firmware de Faceclaw desde la app (la app descarga el firmware de Even, lo parchea con g2flash y lo instala; también lo desinstala). Mientras esté instalado, las gafas solo funcionan con Faceclaw en el Android y no con la app de Even del iPhone.
