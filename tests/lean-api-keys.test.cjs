@@ -49,3 +49,25 @@ test('editing a real ConfigSettingString clears prior test results without delet
   key.set(''); assert.equal(JSON.parse(store.get(api.apiStatusKey('openrouter'))).state, 'missing');
   assert.equal(store.get('llm.anthropicApiKey'), 'old-secret');
 });
+
+test('phone key row ignores results from a credential edited while a test is running', async () => {
+  const storage = new Map(); let finish;
+  class Observable { constructor() { this.events = []; } notifyPropertyChange(key, value) { this.events.push([key, value]); } }
+  class ObservableArray extends Array { static get [Symbol.species]() { return Array; } constructor(rows) { super(...rows); } }
+  const names = ['paseoPairingLinkSetting', 'sonioxApiKeySetting', 'openRouterApiKeySetting', 'parallelApiKeySetting', 'cerebrasApiKeySetting', 'anthropicApiKeySetting', 'openAiApiKeySetting', 'braveApiKeySetting', 'mapboxApiKeySetting', 'elevenLabsApiKeySetting'];
+  const settings = Object.fromEntries(names.map(name => { let value = 'old'; return [name, { get: () => value, set: v => { value = v; } }]; }));
+  const load = loader({}, {
+    '@nativescript/core': { Observable, ObservableArray }, '../ui/dashboard-settings': settings,
+    '../native/settings-store': { getStringSetting: (key, fallback) => storage.get(key) ?? fallback, setStringSetting: (key, value) => storage.set(key, value) },
+    '../apps/paseo/paseo-store': { loadPairing: () => null, PASEO_PAIRING_KEY: 'paseo.pairing' },
+    './api-key-tests': { testApiKey: () => new Promise(resolve => { finish = resolve; }) },
+  });
+  const page = {}; load('app/phone-ui/api-keys-page.ts').navigatingTo({ object: page });
+  assert.equal(page.bindingContext.rows.length, 4);
+  const row = page.bindingContext.rows[2];
+  const pending = row.onTest(); row.value = 'new';
+  finish({ status: { state: 'ok', at: 1, ms: 10, error: null } }); await pending;
+  assert.equal(storage.has('apiKeys.status.openrouter'), false);
+  assert.equal(row.testing, false);
+  page.bindingContext.toggleAdvanced(); assert.equal(page.bindingContext.rows.length, 10);
+});

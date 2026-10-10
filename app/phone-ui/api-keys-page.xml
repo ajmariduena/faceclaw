@@ -8,7 +8,7 @@
           <Label text="{{ group }}" class="body-text" />
           <Label text="{{ label }}" class="h3" />
           <GridLayout columns="*,auto">
-            <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="true" autocorrect="false" autocapitalizationType="none" hint="Not set" />
+            <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="true" autocorrect="false" autocapitalizationType="none" hint="{{ placeholder }}" />
             <Button col="1" text="{{ testLabel }}" tap="{{ onTest }}" isEnabled="{{ enabled }}" />
           </GridLayout>
           <Label text="{{ status }}" textWrap="true" />

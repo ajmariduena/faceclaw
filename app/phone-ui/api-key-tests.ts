@@ -33,15 +33,17 @@ function testSoniox(key: string): Promise<string> {
     const finish = (code?: number) => {
       if (settled) return;
       settled = true; clearTimeout(deadline); if (finishTimer) clearTimeout(finishTimer);
-      socket?.close(1000, "test complete");
+      try { socket?.close(1000, "test complete"); } catch { /* The transport may already be closed. */ }
       if (code === 0) resolve("Session accepted"); else reject(Object.assign(new Error("Service test failed"), { code }));
     };
     const deadline = setTimeout(() => finish(), 15000);
     try {
       socket = openSocket("wss://stt-rt.soniox.com/transcribe-websocket", {
         onOpen() {
-          socket?.sendText(JSON.stringify({ api_key: key, model: "stt-rt-v5", audio_format: "pcm_s16le", sample_rate: 16000, num_channels: 1 }));
-          finishTimer = setTimeout(() => socket?.sendText(""), 1000);
+          try {
+            socket?.sendText(JSON.stringify({ api_key: key, model: "stt-rt-v5", audio_format: "pcm_s16le", sample_rate: 16000, num_channels: 1 }));
+            finishTimer = setTimeout(() => { try { socket?.sendText(""); } catch { finish(); } }, 1000);
+          } catch { finish(); }
         },
         onTextMessage(text) {
           let data: any;
@@ -69,8 +71,8 @@ function testPaseo(): Promise<string> {
     const unsubscribe = client.onChange(() => {
       if (!client.connected || fetching) return;
       fetching = true;
-      void client.fetchAgents({ limit: 1000 }).then(page => finish(`Connected · ${page.entries.length}${page.pageInfo?.hasMore ? "+" : ""} agents · ${client.pairing.kind}`), () => finish());
+      void client.fetchAgents({ limit: 200 }).then(page => finish(`Connected · ${page.entries.length}${page.pageInfo?.hasMore ? "+" : ""} agents · ${client.pairing.kind}`), () => finish());
     });
-    client.start();
+    try { client.start(); } catch { finish(); }
   });
 }

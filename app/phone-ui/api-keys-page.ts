@@ -30,10 +30,12 @@ class ApiKeyRow extends Observable {
     ++this.revision; this.definition.setting.set(value); this.notifyPropertyChange("status", this.status);
   }
   get testLabel(): string { return this.definition.service === "paseo" ? "Test connection" : "Test"; }
+  get placeholder(): string { return this.definition.service === "paseo" && loadPairing() ? "Paired" : "Not set"; }
   get enabled(): boolean { return !this.testing; }
   get status(): string {
     let status: ApiKeyStatus;
     try { status = JSON.parse(getStringSetting(apiStatusKey(this.definition.service), "")); } catch { status = resetApiStatus(this.present()); }
+    if (!status || !["ok", "failed", "missing", "untested"].includes(status.state)) status = resetApiStatus(this.present());
     return statusText(status);
   }
   private present(): boolean { return this.definition.service === "paseo" ? Boolean(loadPairing()) : Boolean(this.value.trim()); }
