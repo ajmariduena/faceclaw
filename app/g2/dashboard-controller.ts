@@ -23,6 +23,7 @@ import { firmwareIncompatibilityMessage, hasCompatibleFirmware } from "./firmwar
 import { hasExtractedEvenHubFonts } from "./firmware-builder";
 import { isHaltedSessionPhase, resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
 import { WearRemote, type WearRemoteInputKind } from "./wear-remote";
+import { startAiChatDictation } from "../apps/ai-chat/ai-chat-app";
 
 /** Who a synthetic (non-firmware) input stands for. */
 type SyntheticInputOrigin = "ring" | "watch";
@@ -427,6 +428,7 @@ class DashboardController {
       openNotificationsWindow: () =>
         this.openInProcessAppInBackground(NOTIFICATIONS_WINDOW_ID, NOTIFICATIONS_SURFACE_ID, createNotificationsAppWindow),
       launchApp: (appId) => this.launchApp(appId),
+      startAiChatListening: () => startAiChatDictation(),
       disconnect: () => this.disconnect(),
       onScreenStateChanged: (on) => {
         // Any wake of the regular UI replaces a showing Glanceboard.
