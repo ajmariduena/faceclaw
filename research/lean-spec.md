@@ -4,7 +4,7 @@ Fuente de verdad para la corrida de implementación. Junta `lean.md`, `lean-ux-f
 
 ## Reglas globales
 - Marco terminal de Even en todas las pantallas: una caja redondeada de 1 px, fuente stock con paso de 27 px, contenido en blanco, lo secundario en tenue, elecciones en una caja anidada con «>», una línea fina y un pie de estado («· Working  1m»). Renders de referencia en `tools/headless-render/` (paseo-simple.cjs, paseo-chat-fable.cjs, paseo-questions.cjs, calendar-terminal.cjs, aichat-terminal.cjs, lean-ux-fable.cjs, lean-ux-astra.cjs).
-- **Toda la interfaz en inglés**, incluidas las tarjetas del home y las líneas de Horizonte (fecha, «in 25 min», «Now», «All day»). El contenido (títulos de eventos, mensajes, resúmenes) queda en su idioma.
+- **Toda la interfaz en inglés**, incluidas las tarjetas del home y la columna del reloj («Sat 10», «All day»). El contenido (títulos de eventos, mensajes, resúmenes) queda en su idioma.
 - Sin instrucciones de gestos en pantalla («Tap to…», «Hold to speak», etc.).
 - El teléfono principal es un iPhone; el Android solo corre Faceclaw. Las G2 no tienen parlante.
 
@@ -24,7 +24,8 @@ Arreglos obligatorios: el shell intercepta el doble tap (`shell.ts` ~1038) y man
 - Cinco tarjetas fijas y circulares: **Paseo → Calendar → Translate → Converse → More**. Cinco puntos.
 - **Al despertar** (cuando la pantalla de las gafas se enciende) se muestra la tarjeta Paseo.
 - Paseo: las dos últimas novedades (agente y edad en tenue, línea en blanco); primero las que necesitan algo; «Mac unreachable» en tenue si no hay conexión.
-- Calendar: los eventos que vienen después del que ya muestra Horizonte; mañana si hoy no queda nada.
+- Calendar: los dos próximos eventos de hoy; mañana (o el siguiente día con algo) si hoy no queda nada.
+- Columna izquierda (212 px): reloj grande de matriz de puntos HH sobre MM; arriba el día («Sat 10») y las baterías del anillo y las gafas como ícono Lucide + medidor relleno (tenue y vacío si no se conocen); abajo el clima de Open-Meteo (ícono Lucide + «27°», oculto hasta tener valor) y, a la derecha, los agentes de Paseo que esperan algo (oculto en 0 o sin pairing). Sin línea de próximo evento: la tarjeta Calendar lo cubre.
 - Translate: «ES ⇄ EN» y «Ready» o «Setup required» en tenue.
 - Converse: «Live facts · ES/EN» y «Coming soon» en tenue (la app todavía no se construye; al abrirla, una pantalla de marco con «Not built yet»).
 - More: ícono y «More».
