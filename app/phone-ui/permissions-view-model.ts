@@ -15,6 +15,7 @@ import { ensureCalendarPermission, hasCalendarPermission } from "../native/calen
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import { hasAllFilesAccess, requestAllFilesAccess } from "../native/file-access";
 import { isNotificationListenerEnabled, requestNotificationListenerAccess } from "../native/notification-access";
+import { LEAN_READ_NOTIFICATIONS_PERMISSION } from "../lean";
 
 type PermissionDefinition = {
   id: string;
@@ -101,7 +102,7 @@ const ANDROID_PERMISSIONS: PermissionDefinition[] = [
   },
 ];
 
-const PERMISSIONS: PermissionDefinition[] = global.isIOS ? [{
+const PERMISSIONS: PermissionDefinition[] = (global.isIOS ? [{
   id: "nearby-devices", title: "Nearby Devices",
   description: "Needed to communicate with your smart glasses over Bluetooth.", optional: false,
   isGranted: () => iosBluetooth().state === 5,
@@ -112,7 +113,7 @@ const PERMISSIONS: PermissionDefinition[] = global.isIOS ? [{
   optional: true,
   isGranted: hasCalendarPermission,
   request: ensureCalendarPermission,
-}] : ANDROID_PERMISSIONS;
+}] : ANDROID_PERMISSIONS).filter((permission) => LEAN_READ_NOTIFICATIONS_PERMISSION || permission.id !== "read-notifications");
 
 /** One Repeater card: the permission's copy plus the display-only fields the XML binds. */
 export type PermissionCardItem = {

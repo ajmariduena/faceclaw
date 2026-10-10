@@ -425,6 +425,8 @@ class DashboardController {
       },
       openNotificationsWindow: () =>
         this.openInProcessAppInBackground(NOTIFICATIONS_WINDOW_ID, NOTIFICATIONS_SURFACE_ID, createNotificationsAppWindow),
+      launchApp: (appId) => this.launchApp(appId),
+      disconnect: () => this.disconnect(),
       onScreenStateChanged: (on) => {
         // Any wake of the regular UI replaces a showing Glanceboard.
         if (on) this.glance.dismiss();
