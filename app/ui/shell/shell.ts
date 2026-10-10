@@ -397,6 +397,8 @@ class Shell {
   private selectedIndex = 0;
   /** Window ids in most-recently-visible-first order; closing the visible window returns to the next entry. */
   private mruWindowIds: string[] = [];
+  /** Apps opened from More return there on their root double tap, not to the home. */
+  private readonly returnToWindowId = new Map<string, string>();
   private focus: FocusKind = "sidebar";
   /** The window last told it holds input focus (see syncInputFocus). */
   private inputFocusedWindowId: string | null = null;
@@ -783,6 +785,9 @@ class Shell {
     if (index < 0) return;
     const target = this.windows[index];
     const alreadyFocused = this.isFocusTarget(target);
+    const from = this.foregroundWindow();
+    if (from?.appId === "launcher" && target.appId !== "launcher") this.returnToWindowId.set(target.windowId, from.windowId);
+    else if (target.windowId === this.home?.windowId) this.returnToWindowId.clear();
     this.setSelectedIndex(index);
     // Asked for by id, the Notifications window stays, whether or not it
     // was opened for a selected notification.
@@ -856,7 +861,16 @@ class Shell {
    */
   yieldFocusToSidebar(): void {
     if (this.home) {
-      if (this.foregroundWindow()?.windowId !== this.home.windowId) this.showHome();
+      const current = this.foregroundWindow();
+      const parentId = current ? this.returnToWindowId.get(current.windowId) : undefined;
+      if (current && parentId && this.windows.some((w) => w.windowId === parentId)) {
+        this.returnToWindowId.delete(current.windowId);
+        this.focusWindow(parentId);
+        this.foregroundWindow()?.requestRender();
+        this.config.requestShellRender();
+        return;
+      }
+      if (current?.windowId !== this.home.windowId) this.showHome();
       return;
     }
     if (this.focus === "sidebar") return;

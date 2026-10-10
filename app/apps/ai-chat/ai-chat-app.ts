@@ -113,7 +113,7 @@ class AiChatLayer implements Layer {
       case "double-click":
         if (this.draft.active) { this.draft.cancel(); return; }
         if (this.review.active) { this.review.discard(); aiChatDraftSetting.set(""); return; }
-        shell.showHome(); return;
+        shell.yieldFocusToSidebar(); return;
       default: return;
     }
   }
