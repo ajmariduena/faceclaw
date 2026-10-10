@@ -36,6 +36,14 @@ class FaceclawCalendarProvider private constructor() {
             CalendarContract.Instances.DESCRIPTION,
         )
 
+        // Calendars unchecked in Google Calendar have VISIBLE = 0 but keep syncing.
+        private val SHOWN_SELECTION =
+            "${CalendarContract.Instances.VISIBLE} = 1" +
+            " AND (${CalendarContract.Instances.SELF_ATTENDEE_STATUS} IS NULL" +
+            " OR ${CalendarContract.Instances.SELF_ATTENDEE_STATUS} != ${CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED})" +
+            " AND (${CalendarContract.Instances.STATUS} IS NULL" +
+            " OR ${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED})"
+
         private class Event(
             val id: Long,
             val title: String,
@@ -84,7 +92,7 @@ class FaceclawCalendarProvider private constructor() {
                 cursor = context.contentResolver.query(
                     uri,
                     PROJECTION,
-                    null,
+                    SHOWN_SELECTION,
                     null,
                     CalendarContract.Instances.BEGIN + " ASC")
                 if (cursor != null) {
