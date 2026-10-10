@@ -22,12 +22,17 @@ function env({ developer = false, brightness = 'auto', soniox = '', statuses = {
   };
   const yields = [], launched = [], disconnects = [];
   let brightnessValue = brightness;
+  let timeoutValue = '15s';
+  let depthValue = '48';
   const settings = {
     developerInMoreSetting: { get: () => developer },
     sonioxApiKeySetting: { get: () => soniox },
     brightnessSetting: { get: () => brightnessValue, set: value => { brightnessValue = value; } },
     BRIGHTNESS_VALUES: ['auto', '2', '10', '20', '30', '40', '50', '60', '70', '80', '90', '100'],
     brightnessLabel: value => value === 'auto' ? 'Auto' : `${value}%`,
+    screenTimeoutSetting: { values: ['15s', '30s', '1m', '3m', 'never'], get: () => timeoutValue, set: value => { timeoutValue = value; } },
+    screenTimeoutLabel: value => value === 'never' ? 'Never' : value,
+    uiDepthSetting: { values: ['-62', '-48', '-32', '-16', '0', '16', '32', '48', '62'], get: () => depthValue, set: value => { depthValue = value; } },
     onAnySettingChanged: () => () => {},
   };
   const nowBox = { ms: new Date(2026, 9, 10, 9, 41).getTime() };
@@ -46,7 +51,7 @@ function env({ developer = false, brightness = 'auto', soniox = '', statuses = {
     './timer-engine': { timerEngine: {} },
   });
   const ctx = { stack: { getBaseSize: () => ({ width: 576, height: 288 }) }, actions: { disconnect: () => disconnects.push(1) } };
-  return { load, face, draws, ctx, yields, launched, disconnects, nowBox, texts: () => draws.map(d => d.text), brightness: () => brightnessValue };
+  return { load, face, draws, ctx, yields, launched, disconnects, nowBox, texts: () => draws.map(d => d.text), brightness: () => brightnessValue, timeout: () => timeoutValue, depth: () => depthValue };
 }
 
 test('terminal list helpers: fit, scroll window, selectable stepping and row painting', () => {
@@ -159,6 +164,29 @@ test('Settings: status rows read batteries, the Paseo link and the phone\'s key 
   await layer.handleInput({ type: 'double-click' }, e.ctx);
   assert.equal(layer.isAdjusting, false);
   assert.equal(e.yields.length, 0);
+  await layer.handleInput({ type: 'scroll-down' }, e.ctx);
+  await layer.handleInput({ type: 'scroll-down' }, e.ctx);
+  e.draws.length = 0; layer.paint(e.ctx);
+  assert.equal(row('Screen off'), 'after 15s');
+  assert.equal(row('Distance'), '2');
+  await layer.handleInput({ type: 'scroll-up' }, e.ctx);
+  await layer.handleInput({ type: 'click' }, e.ctx);
+  await layer.handleInput({ type: 'scroll-up' }, e.ctx);
+  await layer.handleInput({ type: 'scroll-up' }, e.ctx);
+  assert.equal(e.timeout(), '1m');
+  e.draws.length = 0; layer.paint(e.ctx);
+  assert.ok(e.texts().includes('· Screen off'));
+  await layer.handleInput({ type: 'click' }, e.ctx);
+  assert.equal(layer.isAdjusting, false, 'a second tap confirms');
+  await layer.handleInput({ type: 'scroll-down' }, e.ctx);
+  await layer.handleInput({ type: 'click' }, e.ctx);
+  await layer.handleInput({ type: 'scroll-up' }, e.ctx);
+  assert.equal(e.depth(), '32', 'scroll-up moves the display farther');
+  for (let i = 0; i < 12; i++) await layer.handleInput({ type: 'scroll-down' }, e.ctx);
+  assert.equal(e.depth(), '62', 'clamps at the nearest');
+  e.draws.length = 0; layer.paint(e.ctx);
+  assert.equal(row('Distance'), '1');
+  await layer.handleInput({ type: 'double-click' }, e.ctx);
   await layer.handleInput({ type: 'scroll-down' }, e.ctx);
   await layer.handleInput({ type: 'click' }, e.ctx);
   assert.equal(e.disconnects.length, 1);

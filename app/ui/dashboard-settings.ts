@@ -523,7 +523,7 @@ export const screenTimeoutSetting = new ConfigSettingEnum<ScreenTimeoutSetting>(
   id: "screen-timeout",
   label: "Screen timeout",
   storageKey: "display.screenTimeout",
-  defaultValue: "30s",
+  defaultValue: "15s",
   values: ["15s", "30s", "1m", "3m", "never"],
   formatValue: screenTimeoutLabel,
   description: "How long the display stays on after the last input before turning itself off. \"Never\" keeps it on until turned off manually.",
