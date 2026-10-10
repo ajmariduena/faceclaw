@@ -1,6 +1,6 @@
 import * as graphics from "../../graphics/image";
 import type { GrayImage } from "../../graphics/image";
-import { HOME_CARDS, HOME_WEEKDAYS, horizonteClockState, emptyCardStatus, type HomeCalendar } from "./home-model";
+import { HOME_CARDS, horizonteClockState, emptyCardStatus, clockTime, type HomeCalendar } from "./home-model";
 import * as art from "./stock-art";
 import { paintHorizonte } from "./horizonte-painter";
 import { glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
@@ -14,14 +14,15 @@ export type HomeFace = {
 export type HomeSnapshot = {
   now: Date;
   calendar: HomeCalendar;
-  music: { title: string; artist: string; playing: boolean } | null;
-  notifications: readonly { title: string; text: string; appName: string }[];
   /** What the Paseo worker last published; null before it publishes (or when the app never ran). */
   paseo?: PaseoGlanceSnapshot | null;
+  /** A Soniox key is stored, so Translate can start. */
+  translateReady?: boolean;
 };
 
-/** Six dots centred where the five sat (120 + i * 11). */
-export const HOME_DOTS_TOP = 115;
+export const HOME_DOTS_TOP = 120;
+const DIM = 153;
+const CARD_TEXT_WIDTH = 278;
 
 const icons = new Map<string, GrayImage>();
 function icon(image: GrayImage, name: keyof typeof art.patterns, x: number, y: number, size = 24) {
@@ -36,16 +37,39 @@ function fitted(face: HomeFace, label: string, width: number): string {
   while (chars.length && face.measureLine(chars.join("") + "…") > width) chars.pop();
   return chars.join("") + "…";
 }
+function wrapped(face: HomeFace, text: string, width: number, max: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of (text || "…").trim().split(/\s+/)) {
+    const next = line ? `${line} ${word}` : word;
+    if (face.measureLine(next) <= width) line = next;
+    else { if (line) lines.push(line); line = word; }
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, max);
+}
+
+/** "ES ⇄ EN" with the arrows as pixel art: the stock font has no ⇄ glyph. */
+function paintSwapArrow(panel: GrayImage, x: number, y: number, value: number) {
+  panel.fillRect(x, y + 7, 18, 2, value);
+  panel.fillRect(x + 2, y + 15, 18, 2, value);
+  for (let step = 0; step < 3; step++) {
+    panel.fillRect(x + 12 + step * 2, y + 3 + step * 2, 2, 2, value);
+    panel.fillRect(x + 12 + step * 2, y + 11 - step * 2, 2, 2, value);
+    panel.fillRect(x + 2 + step * 2, y + 15 + step * 2, 2, 2, value);
+    panel.fillRect(x + 2 + step * 2, y + 15 - step * 2, 2, 2, value);
+  }
+}
 
 export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace, clockFace: HomeFace): GrayImage {
   const image = new graphics.GrayImage(576, 288);
   const card = HOME_CARDS[selected];
   const panel = new graphics.GrayImage(318, 260);
   panel.drawRoundedRect(0, 0, 318, 260, 255, 6);
-  const text = (x: number, y: number, label: string, value = 255, width = 278) =>
+  const text = (x: number, y: number, label: string, value = 255, width = CARD_TEXT_WIDTH) =>
     face.drawText(panel, x, y, fitted(face, label, width), value);
   const centered = (y: number, label: string, value = 255) => {
-    const line = fitted(face, label, 278);
+    const line = fitted(face, label, CARD_TEXT_WIDTH);
     face.drawText(panel, Math.round((318 - face.measureLine(line)) / 2), y, line, value);
   };
   const header = () => {
@@ -55,92 +79,52 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace, 
   const generic = (status: string) => {
     icon(panel, card.icon, 135, 54, 48);
     centered(120, card.name);
-    centered(169, status, 153);
+    if (status) centered(169, status, DIM);
+  };
+  // Translate and Converse: a big icon over two centred lines, no name (the lines say it).
+  const glance = (white: () => void, dim: string) => {
+    icon(panel, card.icon, 135, 70, 48);
+    white();
+    centered(185, dim, DIM);
   };
   if (card.id === "calendar" && data.calendar.events.length) {
     header();
+    if (data.calendar.day) text(20, 62, data.calendar.day, DIM);
     data.calendar.events.forEach((event, i) => {
-      const y = i === 0 ? 69 : 183;
-      text(20, y, event.title || "Sin título");
-      const hhmm = (ms: number) => {
-        const date = new Date(ms);
-        return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-      };
-      const time = event.allDay ? "Todo el día" : `Hoy ${hhmm(event.startMs)} - ${hhmm(event.endMs)}`;
+      const y = i === 0 ? (data.calendar.day ? 96 : 69) : 183;
+      text(20, y, event.title || "Untitled");
+      const time = event.allDay ? "All day" : `${clockTime(event.startMs)} - ${clockTime(event.endMs)}`;
       if (i === 0 && event.location) {
-        text(20, y + 27, event.location, 153);
-        text(20, y + 54, time, 153);
-      } else text(20, y + 27, time, 153);
+        text(20, y + 27, event.location, DIM);
+        text(20, y + 54, time, DIM);
+      } else text(20, y + 27, time, DIM);
     });
-  } else if (card.id === "calendar" && data.calendar.nextEvent) {
-    const next = data.calendar.nextEvent;
-    const date = new Date(next.startMs);
-    header();
-    text(20, 65, "Sin eventos hoy", 153);
-    text(20, 106, `Próximo: ${HOME_WEEKDAYS[date.getDay()]} ${date.getDate()}/${date.getMonth() + 1}`, 153);
-    const words = (next.title || "Sin título").trim().split(/\s+/);
-    let first = words.shift()!;
-    while (words.length && face.measureLine(`${first} ${words[0]}`) <= 278) first += ` ${words.shift()}`;
-    text(20, 139, first);
-    if (words.length) text(20, 166, words.join(" "));
-    text(20, 210, next.allDay ? "Todo el día"
-      : `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`, 153);
   } else if (card.id === "paseo" && data.paseo?.updates.length) {
     header();
     const nowMs = data.now.getTime();
     let y = 62;
     for (const update of data.paseo.updates) {
       if (y + 27 > 240) break;
-      const age = ` · ${formatAge(update.activityMs, nowMs)}`;
-      text(20, y, `${fitted(face, update.title, 278 - face.measureLine(age))}${age}`, 153);
+      const tail = ` · ${update.bucket === "needs" ? "needs you" : formatAge(update.activityMs, nowMs)}`;
+      text(20, y, `${fitted(face, update.title, CARD_TEXT_WIDTH - face.measureLine(tail))}${tail}`, DIM);
       y += 27;
-      const words = (update.line || "…").trim().split(/\s+/);
-      let line = "";
-      const lines: string[] = [];
-      for (const word of words) {
-        const next = line ? `${line} ${word}` : word;
-        if (face.measureLine(next) <= 278) line = next;
-        else { if (line) lines.push(line); line = word; }
-      }
-      if (line) lines.push(line);
-      for (const wrapped of lines.slice(0, 2)) {
+      for (const line of wrapped(face, update.line, CARD_TEXT_WIDTH, 2)) {
         if (y + 27 > 254) break;
-        text(20, y, wrapped);
+        text(20, y, line);
         y += 27;
       }
       y += 14;
     }
-  } else if (card.id === "music" && data.music) {
-    header();
-    text(20, 69, data.music.title || "Sin título");
-    text(20, 96, data.music.artist, 153);
-    text(20, 139, data.music.playing ? "Sonando" : "En pausa", 153);
-  } else if (card.id === "notifications" && data.notifications.length) {
-    header();
-    data.notifications.slice(0, 2).forEach((item, i) => {
-      const y = i === 0 ? 69 : 183;
-      text(20, y, item.title || item.appName);
-      text(20, y + 27, item.text || item.appName, 153);
-    });
   } else if (card.id === "translate") {
-    generic("");
-    const left = "ES ", right = " EN · Toca para empezar";
-    const width = face.measureLine(left) + 20 + face.measureLine(right);
-    const y = width <= 278 ? 169 : 157;
-    const suffix = width <= 278 ? right : " EN";
-    const x = Math.round((318 - face.measureLine(left) - 20 - face.measureLine(suffix)) / 2);
-    face.drawText(panel, x, y, left, 153);
-    const arrowX = x + face.measureLine(left);
-    panel.fillRect(arrowX, y + 7, 18, 2, 153);
-    panel.fillRect(arrowX + 2, y + 15, 18, 2, 153);
-    for (let step = 0; step < 3; step++) {
-      panel.fillRect(arrowX + 12 + step * 2, y + 3 + step * 2, 2, 2, 153);
-      panel.fillRect(arrowX + 12 + step * 2, y + 11 - step * 2, 2, 2, 153);
-      panel.fillRect(arrowX + 2 + step * 2, y + 15 + step * 2, 2, 2, 153);
-      panel.fillRect(arrowX + 2 + step * 2, y + 15 - step * 2, 2, 2, 153);
-    }
-    face.drawText(panel, arrowX + 20, y, suffix, 153);
-    if (width > 278) centered(196, emptyCardStatus(card.id), 153);
+    glance(() => {
+      const left = "ES ", right = " EN";
+      const x = Math.round((318 - face.measureLine(left) - 20 - face.measureLine(right)) / 2);
+      face.drawText(panel, x, 136, left, 255);
+      paintSwapArrow(panel, x + face.measureLine(left), 136, 255);
+      face.drawText(panel, x + face.measureLine(left) + 20, 136, right, 255);
+    }, data.translateReady ? "Ready" : "Setup required");
+  } else if (card.id === "converse") {
+    glance(() => centered(136, "Live facts · ES/EN"), emptyCardStatus(card.id));
   } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id)
     : card.id === "paseo" ? glanceEmptyStatus(data.paseo) : emptyCardStatus(card.id));
 

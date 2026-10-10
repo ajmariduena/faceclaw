@@ -41,10 +41,12 @@ export function buildGlanceSnapshot(
   lineFor: (agent: AgentSnapshot) => string,
 ): PaseoGlanceSnapshot {
   if (!state.configured) return { configured: false, status: "", updates: [], needs: 0, working: 0 };
-  if (!state.connected) return { configured: true, status: state.status || "Sin conexión", updates: [], needs: 0, working: 0 };
+  if (!state.connected) return { configured: true, status: state.status || "Mac unreachable", updates: [], needs: 0, working: 0 };
   const sections = sectionAgents(agents);
   const listed = sections.flatMap((section) => section.agents.map((agent) => ({ agent, bucket: section.bucket })));
-  listed.sort((a, b) => agentActivityMs(b.agent) - agentActivityMs(a.agent));
+  // Agents waiting on the user come first, then the most recent activity.
+  listed.sort((a, b) => Number(b.bucket === "needs") - Number(a.bucket === "needs")
+    || agentActivityMs(b.agent) - agentActivityMs(a.agent));
   return {
     configured: true,
     status: "",
@@ -67,7 +69,7 @@ export function glanceWhoLine(update: PaseoGlanceUpdate, nowMs: number): string 
 
 /** The card's centred status when it has no updates to show. */
 export function glanceEmptyStatus(snapshot: PaseoGlanceSnapshot | null | undefined): string {
-  if (!snapshot || !snapshot.configured) return "Toca para emparejar";
+  if (!snapshot || !snapshot.configured) return "Not paired";
   if (snapshot.status) return snapshot.status;
-  return "Sin novedades";
+  return "No updates";
 }
