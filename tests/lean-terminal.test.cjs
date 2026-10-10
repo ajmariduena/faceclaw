@@ -240,7 +240,8 @@ test('the registry hides the spec\'s apps from the lean UI without dropping them
   const ids = [];
   const load = loader({}, new Proxy({}, { get: (_, name) => (name.startsWith('./') && name !== './app-definition'
     ? { default: { appId: name.slice(2) } } : {}), has: (_, name) => name !== './app-definition' }));
-  const { ALL_APPS, LEAN_HIDDEN_APP_IDS } = load('app/apps/all-apps.ts');
+  const { ALL_APPS } = load('app/apps/all-apps.ts');
+  const { LEAN_HIDDEN_APP_IDS } = loader()('app/lean.ts');
   for (const app of ALL_APPS) ids.push(app.appId);
   assert.ok(ids.includes('converse'));
   for (const id of ['paseo', 'calendar', 'ai-chat', 'timer', 'navigate', 'settings', 'launcher', 'home']) assert.ok(!LEAN_HIDDEN_APP_IDS.has(id), id);

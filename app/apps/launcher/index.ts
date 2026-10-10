@@ -1,6 +1,6 @@
 import { shell } from "../../ui/shell/shell";
 import { type AppDefinition } from "../app-definition";
-import { LEAN_HIDDEN_APP_IDS } from "../all-apps";
+import { LEAN_HIDDEN_APP_IDS } from "../../lean";
 import { createLauncherWindow, LAUNCHER_SURFACE_ID, LAUNCHER_WINDOW_ID } from "./launcher-app";
 import {
   getInstalledEvenHubApps,

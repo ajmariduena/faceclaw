@@ -31,17 +31,6 @@ import glanceboardApp from "./glanceboard";
 import settingsApp from "./settings";
 
 /**
- * Apps the lean UI never lists (research/lean-spec.md, More): still
- * registered and launchable by id, and shown in the app grid the Developer
- * app keeps.
- */
-export const LEAN_HIDDEN_APP_IDS: ReadonlySet<string> = new Set([
-  "music", "notifications", "calculator", "terminal", "t3code", "files", "nightscout", "transcribe", "weather",
-  "compass", "roam", "blocks", "minesweeper", "freecell", "pinball", "flappy", "evenhub", "glanceboard",
-  "teleprompter", "microphones", "developer",
-]);
-
-/**
  * Every app, in launcher-grid order (the launcher itself is first but hidden
  * from the grid). The sole registry: the controller, launcher, and assistant
  * tools all discover apps here.
