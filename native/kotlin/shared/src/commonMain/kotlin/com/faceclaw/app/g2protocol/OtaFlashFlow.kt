@@ -42,6 +42,7 @@ class OtaFlashFlow(
         const val BLOCK_SIZE = 4096
         const val BLOCK_NAK_RETRIES = 3
         const val COMPONENT_RETRIES = 3
+        const val RECONNECT_SETTLE_MS = 10_000
 
         // END ack statuses that mean "component accepted": SUCCESS, UPDATING, SYS_RESTART.
         private val END_OK = intArrayOf(0, 8, 9)
@@ -153,14 +154,17 @@ class OtaFlashFlow(
                 emitLog(seg.name + ": re-flash attempt " + (attempt + 1) + "/" + COMPONENT_RETRIES)
             }
             var endStatus: Int
+            var linkLost = false
             try {
                 endStatus = flashComponent(lens, address, index, count, seg, img, bytesBefore, totalBytes)
             } catch (e: StockTimeoutException) {
                 emitLog(seg.name + ": block phase failed: " + e.message)
                 endStatus = -1
+                linkLost = true
             } catch (e: RuntimeException) {
                 emitLog(seg.name + ": block phase failed: " + e.message)
                 endStatus = -1
+                linkLost = (e.message ?: "").contains("Not connected")
             }
             if (isEndOk(endStatus)) {
                 emitLog(seg.name + ": END verify OK (status " + endStatus + ")")
@@ -170,7 +174,13 @@ class OtaFlashFlow(
                 emitLog(seg.name + ": END verify FAILED (status " + endStatus + ")")
             }
             session.otaAcks.clear()
-            sleeper.sleep(timings.componentRetryDelayMs.toLong())
+            if (linkLost && attempt + 1 < COMPONENT_RETRIES) {
+                // As in g2flash's recover_session: a dropped link resets the lens's OTA session, so
+                // reconnect, re-authenticate and send a fresh BEGIN before the component restarts.
+                recoverSession(lens, address)
+            } else {
+                sleeper.sleep(timings.componentRetryDelayMs.toLong())
+            }
         }
         throw IllegalStateException("component " + seg.name + " failed after " + COMPONENT_RETRIES + " attempts")
     }
@@ -263,6 +273,21 @@ class OtaFlashFlow(
     }
 
     // ---- connection ----------------------------------------------------------
+
+    private fun recoverSession(lens: String, address: String) {
+        emitLog("$lens lens: link lost; reconnecting after ${RECONNECT_SETTLE_MS / 1000}s settle")
+        session.disconnectQuietly(address)
+        sleeper.sleep(RECONNECT_SETTLE_MS.toLong())
+        connectLensResilient(lens, address, timings.secondLensConnectWindowMs)
+        sleeper.sleep(timings.notifySettleMs.toLong())
+        session.otaAcks.clear()
+        session.resetSeq(1)
+        val beginStatus = sendCtrlAndWait(address, OP_BEGIN, EMPTY, timings.ctrlAckTimeoutMs)
+        if (!isEndOk(beginStatus)) {
+            throw IllegalStateException("BEGIN rejected after reconnect (status $beginStatus)")
+        }
+        emitLog("$lens lens: reconnected; begin ack $beginStatus")
+    }
 
     private fun connectLensResilient(lens: String, address: String, windowMs: Int) {
         val deadline = session.now() + windowMs
