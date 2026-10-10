@@ -6,18 +6,18 @@ import { shell } from "../../ui/shell/shell";
 import { developerInMoreSetting } from "../../ui/dashboard-settings";
 import { DIM, paintFooter, paintFrame, type Face } from "../../ui/terminal";
 import { terminalFace } from "../../ui/terminal-face";
-import * as art from "../home/stock-art";
+import { renderIcon, type IconName } from "../../graphics/icons";
 
-export type MoreRow = { appId: string; label: string; icon: keyof typeof art.patterns };
+export type MoreRow = { appId: string; label: string; icon: IconName };
 
 /** The fixed More list: the apps without a home card, in this order. */
 export const MORE_ROWS: readonly MoreRow[] = [
-  { appId: "ai-chat", label: "AI Chat", icon: "ai" },
+  { appId: "ai-chat", label: "AI Chat", icon: "sparkles" },
   { appId: "timer", label: "Timers", icon: "timer" },
-  { appId: "navigate", label: "Navigate", icon: "navigate" },
+  { appId: "navigate", label: "Navigate", icon: "navigation" },
   { appId: "settings", label: "Settings", icon: "settings" },
 ];
-const DEVELOPER_ROW: MoreRow = { appId: "developer", label: "Developer", icon: "prompt" };
+const DEVELOPER_ROW: MoreRow = { appId: "developer", label: "Developer", icon: "wrench" };
 
 /** The rows to show: the fixed four, plus Developer when the phone's Developer setting asks for it. */
 export function moreRows(developer = developerInMoreSetting.get()): readonly MoreRow[] {
@@ -34,7 +34,8 @@ export function paintMoreList(image: GrayImage, face: Face, selected: number, ro
     const active = index === selected;
     const value = active ? 255 : DIM;
     if (active) face.drawText(image, 22, y + 3, ">", 255);
-    image.drawImage(art.icon(graphics, row.icon, 24).dimmed(value / 255), 48, y + 3);
+    const glyph = renderIcon(row.icon, 24);
+    if (glyph) image.drawImage(glyph.dimmed(value / 255), 48, y + 3);
     face.drawText(image, 86, y, row.label, value);
   });
   paintFooter(image, face, "· More", `${selected + 1}/${rows.length}`);

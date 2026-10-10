@@ -1,7 +1,7 @@
 import * as graphics from "../../graphics/image";
 import type { GrayImage } from "../../graphics/image";
 import { HOME_CARDS, horizonteClockState, emptyCardStatus, clockTime, type HomeCalendar } from "./home-model";
-import * as art from "./stock-art";
+import { renderIcon, type IconName } from "../../graphics/icons";
 import { paintHorizonte } from "./horizonte-painter";
 import { glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import { formatAge } from "../paseo/paseo-model";
@@ -24,11 +24,9 @@ export const HOME_DOTS_TOP = 120;
 const DIM = 153;
 const CARD_TEXT_WIDTH = 278;
 
-const icons = new Map<string, GrayImage>();
-function icon(image: GrayImage, name: keyof typeof art.patterns, x: number, y: number, size = 24) {
-  const key = `${name}:${size}`;
-  if (!icons.has(key)) icons.set(key, art.icon(graphics, name, size));
-  image.drawImage(icons.get(key)!, x, y);
+function icon(image: GrayImage, name: IconName, x: number, y: number, size = 24) {
+  const rendered = renderIcon(name, size);
+  if (rendered) image.drawImage(rendered, x, y);
 }
 function fitted(face: HomeFace, label: string, width: number): string {
   label = label.replace(/[\r\n\t]/g, " ");

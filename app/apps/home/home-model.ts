@@ -3,11 +3,11 @@ import type { CalendarEvent, CalendarReadState } from "../../native/calendar-typ
 export const HOME_WINDOW_ID = "home";
 export const HOME_SURFACE_ID = "window:home";
 export const HOME_CARDS = [
-  { id: "paseo", name: "Paseo", icon: "ai", appId: "paseo" },
-  { id: "calendar", name: "Calendar", icon: "calendar", appId: "calendar" },
-  { id: "translate", name: "Translate", icon: "translate", appId: "translate" },
-  { id: "converse", name: "Converse", icon: "people", appId: "converse" },
-  { id: "more", name: "More", icon: "more", appId: "launcher" },
+  { id: "paseo", name: "Paseo", icon: "square-terminal", appId: "paseo" },
+  { id: "calendar", name: "Calendar", icon: "calendar-days", appId: "calendar" },
+  { id: "translate", name: "Translate", icon: "languages", appId: "translate" },
+  { id: "converse", name: "Converse", icon: "messages-square", appId: "converse" },
+  { id: "more", name: "More", icon: "layout-grid", appId: "launcher" },
 ] as const;
 export type HomeCardId = typeof HOME_CARDS[number]["id"];
 
