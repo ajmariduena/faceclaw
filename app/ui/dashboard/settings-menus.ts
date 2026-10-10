@@ -1,5 +1,4 @@
-import { remoteInputMenuItem } from "./remote-input-menu";
-import { knownFolders } from "@nativescript/core";
+import { Frame, knownFolders } from "@nativescript/core";
 import { getDefaultSmallFont } from "../../graphics/ui-fonts";
 import type { GrayImage } from "../../graphics/image";
 import { getDashboardLogo } from "../../graphics/logo";
@@ -27,7 +26,6 @@ import type { LayerContext } from "../layers";
 import { drawRightValueMenuItem, openModalMenu, submenuItem, type MenuItem } from "../menu";
 import { shell } from "../shell/shell";
 import {
-  anthropicApiKeySetting,
   appSwitcherPositionSetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
@@ -50,14 +48,10 @@ import {
   ringBatteryVisibilitySetting,
   watchBatteryVisibilitySetting,
   displayModeSetting,
-  elevenLabsApiKeySetting,
-  mapboxApiKeySetting,
   mirrorTouchSetting,
-  openAiApiKeySetting,
   previewColorSetting,
   phoneRotationSetting,
   ringConnectionModeSetting,
-  sonioxApiKeySetting,
   screenFadeSetting,
   enumSettingMenuItem,
   firmwareDebugFlagsSetting,
@@ -146,15 +140,8 @@ function settingsSections(): SettingsSection[] {
       ],
     },
     {
-      label: "API Keys",
-      items: [
-        remoteInputMenuItem(),
-        textSettingMenuItem(elevenLabsApiKeySetting),
-        textSettingMenuItem(openAiApiKeySetting),
-        textSettingMenuItem(sonioxApiKeySetting),
-        textSettingMenuItem(anthropicApiKeySetting),
-        textSettingMenuItem(mapboxApiKeySetting),
-      ],
+      label: "API keys",
+      items: [{ label: "Open API keys", onSelect: () => { Frame.topmost()?.navigate({ moduleName: "phone-ui/api-keys-page" }); } }],
     },
     {
       label: "Phone display",
@@ -217,9 +204,14 @@ function settingsSections(): SettingsSection[] {
       ],
     },
   ];
-  if (!global.isIOS) return sections;
+  const hidden = new Set(["Customization", "Voice", "Assistant", "Watch"]);
+  const developer = sections.find(section => section.label === "Developer")!;
+  developer.items.push(...sections.filter(section => hidden.has(section.label)).map(section =>
+    submenuItem(section.label, ctx => { openSettingsSubMenu(ctx, section.label, section.items); })));
+  const leanSections = sections.filter(section => !hidden.has(section.label));
+  if (!global.isIOS) return leanSections;
   const deferred = new Set(["Watch"]);
-  return sections.map(section => {
+  return leanSections.map(section => {
     if (section.label === "Developer") return { ...section, items: [toggleSettingMenuItem(showBleBandwidthSetting)] };
     if (section.label === "Voice") return { label: "Voice", items: [enumSettingMenuItem(wakeWordActionSetting), {
       label: "On-device dictation (Apple)", disabled: true, onSelect: () => {},

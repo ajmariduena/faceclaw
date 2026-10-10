@@ -1,3 +1,4 @@
+import { apiStatusKey, resetApiStatus, type ApiService } from "./api-key-status";
 import { normalizeNightscoutThreshold, type NightscoutThresholds } from "../apps/nightscout/nightscout-alerts";
 import { GESTURE_DOUBLE_CLICK, InputEvent } from "./gestures";
 import { DEFAULT_BRIGHTNESS_CURVE, normalizeBrightnessCurve, brightnessCurveError } from "../g2/brightness-curve";
@@ -188,6 +189,11 @@ export function getStringSettingById(id: string): ConfigSettingString | null {
   return stringSettingsById.get(id) ?? null;
 }
 
+const API_SETTING_SERVICES: Record<string, ApiService> = {
+  "openrouter-api-key": "openrouter", "parallel-api-key": "parallel", "cerebras-api-key": "cerebras", "brave-api-key": "brave",
+  "soniox-api-key": "soniox", "openai-api-key": "openai", "anthropic-api-key": "anthropic", "mapbox-api-key": "mapbox", "elevenlabs-api-key": "elevenlabs", "paseo-pairing-link": "paseo",
+};
+
 export class ConfigSettingString<TId extends string = string> extends ConfigSetting<string, TId> {
   readonly editorTitle: string;
   readonly glassesEditTitle: string;
@@ -216,6 +222,8 @@ export class ConfigSettingString<TId extends string = string> extends ConfigSett
       const candidate = this.validator(normalized) ? this.get() : normalized;
       if (!this.validator(candidate)) setStringSetting(this.storageKey + ".valid", candidate);
     }
+    const service = API_SETTING_SERVICES[this.id];
+    if (service && normalized !== this.get()) setStringSetting(apiStatusKey(service), JSON.stringify(resetApiStatus(Boolean(normalized.trim()))));
     setStringSetting(this.storageKey, normalized);
     return normalized;
   }
@@ -735,7 +743,7 @@ export const voiceProviderSetting = new ConfigSettingEnum<VoiceProvider>({
   id: "voice-provider",
   label: "Transcription Provider",
   storageKey: "voice.provider",
-  defaultValue: "onboard",
+  defaultValue: "soniox",
   values: ["onboard", "onboard-whisper", "elevenlabs", "whisper", "soniox"],
   formatValue: (value) => voiceProviderLabels[value] ?? value,
   isDisabled: (value) => {
@@ -825,7 +833,8 @@ export const assistantBridgeTokenSetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "Agent bridge auth token",
   glassesEditTitle: "Edit bridge token",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  inputKind: "password",
+  formatValue: (value) => (value ? "••••••••" : "(not set)"),
   description: "Shared secret that must match the bridge's configured token.",
 });
 
@@ -845,7 +854,8 @@ export const elevenLabsApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "ElevenLabs API key",
   glassesEditTitle: "Edit ElevenLabs key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  inputKind: "password",
+  formatValue: (value) => (value ? "••••••••" : "(not set)"),
   description: "ElevenLabs API key, used when ElevenLabs is the transcription provider. The key needs the speech-to-text permission.",
 });
 
@@ -856,7 +866,8 @@ export const openAiApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "OpenAI API key",
   glassesEditTitle: "Edit OpenAI key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  inputKind: "password",
+  formatValue: (value) => (value ? "••••••••" : "(not set)"),
   description: "OpenAI API key, used when Whisper is the transcription provider or an OpenAI model is selected for the voice assistant.",
 });
 
@@ -867,7 +878,8 @@ export const sonioxApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "Soniox API key",
   glassesEditTitle: "Edit Soniox key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  inputKind: "password",
+  formatValue: (value) => (value ? "••••••••" : "(not set)"),
   description: "Soniox API key, used when Soniox is the transcription provider.",
 });
 
@@ -878,20 +890,33 @@ export const anthropicApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "Anthropic API key",
   glassesEditTitle: "Edit Anthropic key",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  inputKind: "password",
+  formatValue: (value) => (value ? "••••••••" : "(not set)"),
   description: "Anthropic API key, used when an Anthropic model is selected for the voice assistant.",
 });
+
+function apiKeySetting(id: string, label: string, storageKey: string): ConfigSettingString {
+  return new ConfigSettingString({ id, label, storageKey, defaultValue: "", inputKind: "password",
+    editorTitle: label, normalize: value => (value ?? "").trim(), formatValue: value => value ? "••••••••" : "(not set)" });
+}
+export const openRouterApiKeySetting = apiKeySetting("openrouter-api-key", "OpenRouter key", "llm.openRouterApiKey");
+export const parallelApiKeySetting = apiKeySetting("parallel-api-key", "Parallel key", "search.parallelApiKey");
+export const cerebrasApiKeySetting = apiKeySetting("cerebras-api-key", "Cerebras key", "llm.cerebrasApiKey");
+export const braveApiKeySetting = apiKeySetting("brave-api-key", "Brave key", "search.braveApiKey");
+export const aiChatDraftSetting = new ConfigSettingString({ id: "ai-chat-draft", label: "AI Chat draft", storageKey: "aiChat.draft", defaultValue: "", editorTitle: "Edit draft" });
+export const paseoChatDraftSetting = new ConfigSettingString({ id: "paseo-chat-draft", label: "Paseo draft", storageKey: "paseo.chatDraft", defaultValue: "", editorTitle: "Edit draft" });
 
 export const assistantModelSetting = new ConfigSettingEnum<AssistantModel>({
   id: "assistant-model",
   label: "Assistant model",
   storageKey: "assistant.model",
-  defaultValue: "auto",
+  defaultValue: "openrouter",
   values: ASSISTANT_MODEL_CHOICES,
   formatValue: assistantModelLabel,
   isDisabled: (value) => {
     const provider = assistantModelProvider(value);
     if (provider === "anthropic") return anthropicApiKeySetting.get().trim().length === 0;
+    if (provider === "openrouter") return openRouterApiKeySetting.get().trim().length === 0;
     if (provider === "openai") return openAiApiKeySetting.get().trim().length === 0;
     if (provider === "local") return !isLocalModelReady();
     return false;
@@ -907,7 +932,8 @@ export const mapboxApiKeySetting = new ConfigSettingString({
   defaultValue: "",
   editorTitle: "Mapbox public token (pk.…)",
   glassesEditTitle: "Edit Mapbox token",
-  formatValue: (value) => (value ? `${value.slice(0, 6)}...` : "(not set)"),
+  inputKind: "password",
+  formatValue: (value) => (value ? "••••••••" : "(not set)"),
   description: "Mapbox public token (pk. prefix), used by the Navigate app for maps, geocoding, and directions.",
 });
 

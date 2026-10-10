@@ -21,7 +21,7 @@ export type AssistantTurnCallbacks = {
   /** Streamed reply text (delta plus the full text so far). */
   onTextDelta: (delta: string, textSoFar: string) => void;
   /** A tool is being invoked; label is display-ready, e.g. "calendar.list_events". */
-  onToolActivity: (label: string) => void;
+  onToolActivity: (label: string, input?: unknown) => void;
   onTurnDone: (result: { stopReason: string | null }) => void;
   onError: (message: string) => void;
 };

@@ -1,5 +1,6 @@
 import { streamAnthropicMessage } from "../native/anthropic";
 import { streamLocalQwen } from "../native/llama";
+import { streamOpenRouterResponse } from "../native/openrouter";
 import { streamOpenAiResponse } from "../native/openai";
 import type {
   LlmContentBlock,
@@ -128,7 +129,9 @@ export class DirectAssistantBackend {
         },
       };
       streamHandle =
-        options.provider === "openai"
+        options.provider === "openrouter"
+          ? streamOpenRouterResponse(streamOptions)
+          : options.provider === "openai"
           ? streamOpenAiResponse(streamOptions)
           : options.provider === "local"
             ? streamLocalQwen(streamOptions)
@@ -160,7 +163,7 @@ export class DirectAssistantBackend {
         continue;
       }
       const canonicalName = options.resolveToolName(toolUse.name);
-      options.callbacks.onToolActivity(canonicalName);
+      options.callbacks.onToolActivity(canonicalName, toolUse.input);
       const result = await options.registry.callTool(canonicalName, toolUse.input);
       const content = result.ok ? result.content ?? "" : result.error ?? "Tool error";
       results.push({

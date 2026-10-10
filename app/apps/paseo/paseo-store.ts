@@ -1,3 +1,4 @@
+import { apiStatusKey, resetApiStatus } from "../../ui/api-key-status";
 import { getStringSetting, setStringSetting } from "../../native/settings-store";
 import { deserializePairing, serializePairing, type PaseoPairing } from "./paseo-pairing";
 
@@ -13,7 +14,9 @@ export function loadPairing(): PaseoPairing | null {
 }
 
 export function savePairing(pairing: PaseoPairing | null): void {
-  setStringSetting(PASEO_PAIRING_KEY, serializePairing(pairing));
+  const encoded = serializePairing(pairing);
+  if (getStringSetting(PASEO_PAIRING_KEY, "") !== encoded) setStringSetting(apiStatusKey("paseo"), JSON.stringify(resetApiStatus(Boolean(pairing))));
+  setStringSetting(PASEO_PAIRING_KEY, encoded);
 }
 
 /**

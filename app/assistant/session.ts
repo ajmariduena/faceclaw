@@ -16,7 +16,7 @@ import type {
 } from "./types";
 
 /** One shared conversation, independent of the voice overlay or chat window. */
-export type AssistantTranscriptEntry = { role: "user" | "assistant"; text: string };
+export type AssistantTranscriptEntry = { role: "user" | "assistant"; text: string; action?: boolean };
 export type AssistantSessionHistory = {
   messages: LlmMessage[];
   transcript: AssistantTranscriptEntry[];
@@ -89,7 +89,7 @@ export class AssistantSession {
 
   private rebuildTextHistory(): void {
     this.messages.splice(0, this.messages.length, ...this.transcript
-      .filter((entry) => entry.text.trim())
+      .filter((entry) => entry.text.trim() && !entry.action)
       .map((entry) => ({ role: entry.role, content: entry.text })));
   }
 
@@ -126,8 +126,13 @@ export class AssistantSession {
         this.changed();
         callbacks.onTextDelta(delta, full);
       },
-      onToolActivity: (label) => {
+      onToolActivity: (label, input) => {
         if (generation !== this.turnGeneration) return;
+        const args = input as { hours?: number; minutes?: number; seconds?: number } | undefined;
+        const duration = label === "timer.set" ? [args?.hours ? `${args.hours} h` : "", args?.minutes ? `${args.minutes} min` : "", args?.seconds ? `${args.seconds} s` : ""].filter(Boolean).join(" ") : "";
+        const name = label === "timer.set" ? "Timer" : label.replace(/[._]/g, " ");
+        const action = { role: "assistant" as const, text: `> ${name}${duration ? ` · ${duration}` : ""}`, action: true };
+        this.transcript.splice(this.transcript.indexOf(reply), 0, action);
         this.status = `→ ${label}`;
         this.changed();
         callbacks.onToolActivity(label);
@@ -173,7 +178,8 @@ export class AssistantSession {
       apiKey: llm.apiKey,
       model: llm.model,
       effort: llm.effort,
-      system: isLocal ? ASSISTANT_SYSTEM_PROMPT_BASE : buildAssistantSystemPrompt(ctx),
+      system: (isLocal ? ASSISTANT_SYSTEM_PROMPT_BASE : buildAssistantSystemPrompt(ctx)) +
+        "\nReply in 1–2 short lines suited to a 576×288 glasses display. Keep tool actions concise.",
       messages: turnMessages,
       buildTools: () => this.buildToolDefinitions(),
       registry: this.registry,

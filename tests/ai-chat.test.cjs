@@ -364,6 +364,10 @@ function chatLayerEnv() {
   let windowOptions;
   const { createAiChatWindow } = load('app/apps/ai-chat/ai-chat-app.ts', {
     '../../graphics/image': graphics, '../../graphics/ui-fonts': { getDefaultSmallFont: () => font },
+    '../../graphics/evenhub-font': { EvenHubFont: { get() { throw new Error('fixture fallback'); } } },
+    '../../graphics/terminal-painter': require('./helpers/load-typescript.cjs').loader()('app/graphics/terminal-painter.ts'),
+    '../../ui/chat-draft': require('./helpers/load-typescript.cjs').loader()('app/ui/chat-draft.ts'),
+    '../../native/settings-store': { onSettingsStoreChanged: () => () => {} },
     '../../graphics/textwrap': textwrap, '../../assistant/models': { assistantModelLabel: (s) => s },
     '../../ui/dashboard-settings': { assistantBackendSetting: { get: () => 'direct' } },
     '../../ui/gestures': load('app/ui/gestures.ts', {}), '../../ui/window-menu': {},
@@ -372,7 +376,7 @@ function chatLayerEnv() {
     } },
     '../../ui/shell/shell': { shell: { getAssistantConversations: () => env.store } },
     './voice-draft': { VoiceDraft: class { active = false; text = ''; status = ''; cancel() {} } },
-  });
+  }, { setInterval: () => 1, clearInterval() {} });
   createAiChatWindow({ actions: {}, setSurfaceVisible() {}, onClosed() {} });
   const layer = windowOptions.baseLayer;
   return { ...env, layer, paint: (width = 576, height = 260) => layer.paint({ stack: { getBaseSize: () => ({ width, height }) } }) };
@@ -383,17 +387,17 @@ test('scrollback stays anchored during streaming, follows at the bottom and rese
   const session = env.store.ensureSession();
   for (let i = 0; i < 20; i++) session.transcript.push({ role: i % 2 ? 'assistant' : 'user', text: `Message ${i}: sample conversation text.` });
   env.paint();
-  assert.ok(env.layer.maxFirstLine > 0);
+  assert.ok(env.layer.maxScrollBack > 0);
   env.layer.handleInput({ type: 'swipe-up' });
-  const first = env.layer.firstLine;
+  const first = env.layer.scrollBack;
   session.transcript.push({ role: 'assistant', text: 'New streamed text '.repeat(30) });
   env.paint();
-  assert.equal(env.layer.firstLine, first);
+  assert.equal(env.layer.scrollBack, first + 1);
   for (let i = 0; i < 50; i++) env.layer.handleInput({ type: 'swipe-down' });
-  assert.equal(env.layer.firstLine, null);
+  assert.equal(env.layer.scrollBack, 0);
   env.layer.handleInput({ type: 'scroll-up' });
   env.store.create(); env.paint();
-  assert.equal(env.layer.firstLine, null);
+  assert.equal(env.layer.scrollBack, 0);
 });
 
 test('chat paints at both window heights with pending speech pinned beneath history', () => {

@@ -141,7 +141,7 @@ test('list: sidebar sections with counts, ">" on the selection, footer counts; s
   assert.ok(trace2.draws.every((d) => d.y + 27 <= 244 || d.y >= 244));
   // Unpaired message.
   const image3 = new graphics.GrayImage(576, 288);
-  painter.paintList(image3, face, { rows: [], selected: -1, footerRight: '', message: 'Not paired. Tap to pair with the link from "paseo daemon pair".' }, 0);
+  painter.paintList(image3, face, { rows: [], selected: -1, footerRight: '', message: 'Not paired' }, 0);
   save(image3, 'paseo-app-list-unpaired');
 });
 
@@ -212,7 +212,7 @@ test('chat: user right / agent left, one rule above the newest, newest bright, d
 
   // Pair screen.
   const image6 = new graphics.GrayImage(576, 288);
-  painter.paintPair(image6, face, { title: 'Pair Paseo', steps: ['Run "paseo daemon pair" on the computer', 'Paste the link into the phone app, then tap'], draft: 'https://app.paseo.sh/#offer=…', busy: '', error: '' });
+  painter.paintPair(image6, face, { title: 'Pair Paseo', steps: ['Run "paseo daemon pair" on the computer', 'Pairing link in the phone app'], draft: 'https://app.paseo.sh/#offer=…', busy: '', error: '' });
   save(image6, 'paseo-app-pair');
 });
 

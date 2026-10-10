@@ -2,6 +2,7 @@ import { isLocalModelReady, LOCAL_MODEL } from "../native/llama";
 
 export const ASSISTANT_MODEL_VALUES = [
   "auto",
+  "openrouter",
   "hauku",
   "sonnet",
   "opus",
@@ -20,11 +21,12 @@ export function supportedAssistantModel(value: AssistantModel): AssistantModel {
   return global.isIOS && value === "qwen" ? "auto" : value;
 }
 
-export type AssistantProvider = "anthropic" | "openai" | "local";
+export type AssistantProvider = "anthropic" | "openai" | "openrouter" | "local";
 
 export type AssistantApiKeys = {
   anthropic: string;
   openai: string;
+  openrouter?: string;
 };
 
 export type ResolvedAssistantModel = {
@@ -43,6 +45,7 @@ type ModelDefinition = {
 };
 
 const MODEL_DEFINITIONS: Record<Exclude<AssistantModel, "auto">, ModelDefinition> = {
+  openrouter: { label: "gpt-oss-120b", provider: "openrouter", model: "openai/gpt-oss-120b" },
   // Keep the user-facing spelling requested for the picker while using
   // Anthropic's canonical Haiku alias on the wire.
   hauku: { label: "Haiku", provider: "anthropic", model: "claude-haiku-4-5" },
@@ -78,10 +81,13 @@ export function resolveAssistantModel(
   const normalizedKeys: AssistantApiKeys = {
     anthropic: keys.anthropic.trim(),
     openai: keys.openai.trim(),
+    openrouter: keys.openrouter?.trim() ?? "",
   };
   let resolvedSelection = selection;
   if (selection === "auto") {
-    if (normalizedKeys.openai) {
+    if (normalizedKeys.openrouter) {
+      resolvedSelection = "openrouter";
+    } else if (normalizedKeys.openai) {
       resolvedSelection = "terra";
     } else if (normalizedKeys.anthropic) {
       resolvedSelection = "sonnet";
