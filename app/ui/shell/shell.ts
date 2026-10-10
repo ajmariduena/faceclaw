@@ -58,6 +58,7 @@ import { ToolDebugMenuLayer } from "./tool-debug-layer";
 import type { InProcessWindow } from "./in-process-window";
 import { BrightnessPickerLayer } from "./brightness-picker-layer";
 import { toolRegistry } from "../../assistant/tool-registry";
+import { LEAN_NOTIFICATION_POPUPS } from "../../lean";
 import {
   appViewportRect,
   minWindowTop,
@@ -209,6 +210,16 @@ export type ShellConfig = {
    * it. Hosts that leave it out offer no notifications to select.
    */
   openNotificationsWindow?: () => { window: InProcessWindow; opened: boolean } | null;
+  /** Launch (or focus) an app by id; the wakeword opens AI Chat through it. */
+  launchApp?: (appId: string) => Promise<void>;
+  /**
+   * Start AI Chat's dictation once its window is in front (the wakeword's
+   * lean action); without it the shell forwards the wakeword event to the
+   * window instead.
+   */
+  startAiChatListening?: () => boolean;
+  /** Close the glasses connection (system menu > Disconnect). */
+  disconnect?: () => Promise<void> | void;
 };
 
 /**
@@ -568,6 +579,7 @@ class Shell {
         next.setForeground?.(true);
         next.requestRender();
       }
+      if (this.home) this.showHome();
     }
     this.config.onWindowsChanged?.();
     this.config.requestShellRender();
@@ -810,7 +822,7 @@ class Shell {
    * (matching the old sleep-popup behavior).
    */
   openNotificationModal(notificationKey: string, wokeScreen: boolean): void {
-    if (!this.screenOn) return;
+    if (!this.screenOn || !LEAN_NOTIFICATION_POPUPS) return;
     this.notificationModals.post(notificationKey, wokeScreen);
     this.config.requestShellRender();
   }
@@ -837,8 +849,16 @@ class Shell {
     this.config.requestShellRender();
   }
 
-  /** Called by a window when the user backs out of its root (double-tap). */
+  /**
+   * Called by a window when the user backs out of its root (double-tap).
+   * With a home window that means returning home; the sidebar only exists
+   * without one.
+   */
   yieldFocusToSidebar(): void {
+    if (this.home) {
+      if (this.foregroundWindow()?.windowId !== this.home.windowId) this.showHome();
+      return;
+    }
     if (this.focus === "sidebar") return;
     this.focus = "sidebar";
     // Repaint the window so its selection highlight dims to the unfocused
@@ -925,7 +945,9 @@ class Shell {
       this.lastInputAtMs = Date.now();
       const wokeScreen = !this.screenOn && this.wake("sidebar");
       if (action === "voice-input" && !this.activeVoiceLayer && !this.activeKeyboardLayer) {
-        if (this.assistantLayer) {
+        if (this.home && this.config.launchApp) {
+          await this.openAiChatListening(event, frameId);
+        } else if (this.assistantLayer) {
           // The assistant overlay is up; a wakeword continues that conversation.
           this.startAssistantFollowUp(true);
         } else {
@@ -1032,13 +1054,6 @@ class Shell {
 
     if (!this.stack.isAtBase()) {
       await this.stack.handleInput(event);
-      return { shell: true, window: false };
-    }
-
-    // Shell overlays keep first refusal; returning only changes focus, never closes an app.
-    if (this.focus === "window" && event.type === "double-click" && this.home) {
-      if (this.foregroundWindow()?.windowId === this.home.windowId) this.sleep();
-      else this.showHome();
       return { shell: true, window: false };
     }
 
@@ -1753,6 +1768,10 @@ class Shell {
     if (!this.screenOn || this.activeVoiceLayer || !this.stack.isAtBase()) return;
     const foreground = this.foregroundWindow();
     if (!foreground) return;
+    if (this.home) {
+      this.openLeanSystemMenu(foreground);
+      return;
+    }
     const items: MenuItem[] = [];
     if (foreground.closeable) {
       items.push({
@@ -1794,7 +1813,7 @@ class Shell {
         label: "Brightness",
         onSelect: (ctx) => {
           ctx.stack.pop();
-          ctx.stack.push(new BrightnessPickerLayer(() => this.yieldFocusToSidebar()));
+          ctx.stack.push(new BrightnessPickerLayer(() => this.overlayClosed()));
           this.config.requestShellRender();
         },
       });
@@ -1812,13 +1831,49 @@ class Shell {
     const footer = foreground.hasAppMenu?.()
       ? (foreground.holdToTalk ? undefined : gestureHints([[GESTURE_SHORT_THEN_LONG_PRESS, "app menu"]]))
       : undefined;
-    const layer = new ShellOverlayMenuLayer(items, footer, () => this.yieldFocusToSidebar());
+    const layer = new ShellOverlayMenuLayer(items, footer, () => this.overlayClosed());
     layer.selectItem(initialSelection);
     this.stack.push(layer);
     // Tell the window the system menu opened over it: an app with its own
     // context menu up closes it, so the two context menus never stack.
     void foreground.handleInput(makeInputEvent({ type: "system-menu-opened" }), 0);
     this.config.requestShellRender();
+  }
+
+  /** The lean system menu: Home, Screen off, Disconnect; closing it leaves focus in the window. */
+  private openLeanSystemMenu(foreground: ShellWindow): void {
+    const items: MenuItem[] = [
+      { label: "Home", onSelect: (ctx) => { ctx.stack.pop(); this.showHome(); } },
+      { label: "Screen off", onSelect: (ctx) => { ctx.stack.pop(); this.sleep(); } },
+      { label: "Disconnect", onSelect: (ctx) => { ctx.stack.pop(); void this.config.disconnect?.(); } },
+    ];
+    this.stack.push(new ShellOverlayMenuLayer(items, undefined, () => this.overlayClosed()));
+    void foreground.handleInput(makeInputEvent({ type: "system-menu-opened" }), 0);
+    this.config.requestShellRender();
+  }
+
+  /** A shell overlay closed: the window keeps focus under a home; the sidebar takes it otherwise. */
+  private overlayClosed(): void {
+    if (!this.home) {
+      this.yieldFocusToSidebar();
+      return;
+    }
+    this.foregroundWindow()?.requestRender();
+    this.config.requestShellRender();
+  }
+
+  /** The wakeword's lean action: AI Chat in front, then listening. */
+  private async openAiChatListening(event: InputEvent, frameId: number): Promise<void> {
+    try {
+      await this.config.launchApp!("ai-chat");
+    } catch (error) {
+      console.warn(`wakeword: AI Chat launch failed: ${error}`);
+      return;
+    }
+    const window = this.foregroundWindow();
+    if (window?.appId !== "ai-chat" || !this.stack.isAtBase()) return;
+    if (this.config.startAiChatListening) this.config.startAiChatListening();
+    else await window.handleInput(event, frameId);
   }
 
   /**
@@ -1837,7 +1892,7 @@ class Shell {
               entry.spec.name.startsWith(`app.${appId}.`) || entry.windowId === foreground!.windowId,
           )
       : [];
-    this.stack.push(new ToolDebugMenuLayer(appId, entries, () => this.yieldFocusToSidebar()));
+    this.stack.push(new ToolDebugMenuLayer(appId, entries, () => this.overlayClosed()));
     this.config.requestShellRender();
   }
 

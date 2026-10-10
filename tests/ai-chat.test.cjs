@@ -262,7 +262,7 @@ function shellEnv({ wakeAction = 'voice-input', skipConfirmation = false } = {})
     './chrome-layer': { ShellChromeLayer: class {} }, './modal-layer': {}, './tool-debug-layer': {},
     './brightness-picker-layer': {}, './notification-modal-queue': load('app/ui/shell/notification-modal-queue.ts', {}),
     '../../native/notification-icons': {}, '../../native/notification-sources': {},
-    '../../assistant/tool-registry': {}, './geometry': {
+    '../../assistant/tool-registry': {}, '../../lean': { LEAN_NOTIFICATION_POPUPS: false }, './geometry': {
       sidebarWidth: () => 64, minWindowTop: () => 96, switcherPosition: () => 'left', uiDepth: () => 0,
       appViewportRect: () => ({ x: 64, y: 124, width: 576, height: 260 }),
     },

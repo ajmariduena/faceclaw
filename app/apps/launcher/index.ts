@@ -1,5 +1,6 @@
 import { shell } from "../../ui/shell/shell";
 import { type AppDefinition } from "../app-definition";
+import { LEAN_HIDDEN_APP_IDS } from "../../lean";
 import { createLauncherWindow, LAUNCHER_SURFACE_ID, LAUNCHER_WINDOW_ID } from "./launcher-app";
 import {
   getInstalledEvenHubApps,
@@ -7,11 +8,11 @@ import {
   renderInstalledEvenHubIcon,
 } from "../evenhub/installed-apps";
 
-/** Shared built-in and installed-app listing for both phone hosts. */
-export function launcherEntries(apps: readonly AppDefinition[]) {
+/** Shared built-in and installed-app listing for both phone hosts; the lean build's hidden apps only on request. */
+export function launcherEntries(apps: readonly AppDefinition[], includeHidden = false) {
   return [
     ...apps
-      .filter((app) => app.showInLauncher !== false)
+      .filter((app) => app.showInLauncher !== false && (includeHidden || !LEAN_HIDDEN_APP_IDS.has(app.appId)))
       .map((app) => ({
         appId: app.appId,
         label: app.title,

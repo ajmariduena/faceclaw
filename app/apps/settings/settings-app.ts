@@ -1,10 +1,11 @@
 import { type Plane } from "../../graphics/plane";
 import { LayerActions } from "../../ui/layers";
-import { EditTextSettingLayer } from "../../ui/dashboard-settings";
-import { createSettingsPanelLayer } from "../../ui/dashboard/settings-menus";
-import { SettingsDescriptionOverlayLayer } from "../../ui/dashboard/settings-panel";
+import { onAnySettingChanged } from "../../ui/dashboard-settings";
 import { createInProcessWindow, type InProcessWindow } from "../../ui/shell/in-process-window";
-import { type ShellWindow } from "../../ui/shell/shell";
+import { shell, type ShellWindow } from "../../ui/shell/shell";
+import { onWorkerStateChanged } from "../../ui/shell/worker-state";
+import { PASEO_GLANCE_STATE_KEY } from "../paseo/paseo-glance";
+import { StatusLayer } from "./status-layer";
 
 export const SETTINGS_WINDOW_ID = "settings";
 export const SETTINGS_SURFACE_ID = "window:settings";
@@ -31,13 +32,16 @@ export type SettingsAppWindow = {
 };
 
 /**
- * The Settings app: the settings menu tree (previously a dashboard submenu)
- * hosted in its own in-process window. In-process because the text-setting
- * editor is synchronized with the phone-side TextField through the
- * controller, which lives on the main thread.
+ * The glasses Settings app, reduced to status: batteries, the Paseo link,
+ * the service keys as the phone last tested them, brightness and Disconnect.
+ * Everything else is set on the phone (the settings menu tree in
+ * app/ui/dashboard/settings-menus.ts stays for that host). The section and
+ * text-editor hooks are kept for the controller's deep links; they are no-ops
+ * here.
  */
 export function createSettingsAppWindow(options: SettingsAppOptions): SettingsAppWindow {
-  const panel = createSettingsPanelLayer();
+  const layer = new StatusLayer();
+  let unsubscribers: (() => void)[] = [];
   const inProcess = createInProcessWindow({
     appId: "settings",
     windowId: SETTINGS_WINDOW_ID,
@@ -46,28 +50,30 @@ export function createSettingsAppWindow(options: SettingsAppOptions): SettingsAp
     icon: "settings",
     closeable: true,
     actions: options.actions,
-    // Not wrapped in YieldAtRootLayer: the panel routes double-click itself
-    // (right column -> left column, then left column -> sidebar).
-    baseLayer: panel,
+    baseLayer: layer,
     submitFrame: options.submitFrame,
     setSurfaceVisible: options.setSurfaceVisible,
     removeSurface: options.removeSurface,
-    onClosed: options.onClosed,
+    onClosed: () => {
+      for (const off of unsubscribers) off();
+      unsubscribers = [];
+      options.onClosed();
+    },
   });
-  const { window, stack, requestRender } = inProcess;
-  // The help-text band draws as its own plane so it can partially occlude
-  // list rows (a plane's raster covers lower planes' glyphs); it forwards
-  // input to the panel, so the stack behaves as if the panel were on top.
-  stack.push(new SettingsDescriptionOverlayLayer(panel));
+  const { window, requestRender } = inProcess;
+  const visible = () => shell.isWindowVisible(SETTINGS_WINDOW_ID);
+  const refresh = () => { if (visible()) requestRender(); };
+  unsubscribers = [
+    shell.onBatteryLevelsChanged(refresh),
+    onWorkerStateChanged(PASEO_GLANCE_STATE_KEY, refresh),
+    onAnySettingChanged(refresh),
+  ];
   return {
     window,
     inProcess,
     requestRender,
-    focusSection: (label) => {
-      panel.focusSection(label);
-      requestRender();
-    },
-    isTextEditorOnTop: () => stack.topMatches((layer) => layer instanceof EditTextSettingLayer),
-    closeTextEditor: () => stack.popIfTop((layer) => layer instanceof EditTextSettingLayer),
+    focusSection: () => {},
+    isTextEditorOnTop: () => false,
+    closeTextEditor: () => false,
   };
 }

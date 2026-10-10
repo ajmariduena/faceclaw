@@ -6,46 +6,57 @@ const ts = require('typescript');
 const { loader } = require('./helpers/load-typescript.cjs');
 const { HomeModel } = loader()('app/apps/home/home-model.ts');
 
-function harness() {
+function harness({ wakeAction = 'voice-input', startAiChatListening = null } = {}) {
   const source = ts.createSourceFile('shell.ts', fs.readFileSync('app/ui/shell/shell.ts', 'utf8'), ts.ScriptTarget.Latest, true);
   const klass = source.statements.find(node => ts.isClassDeclaration(node) && node.name.text === 'Shell');
   const names = ['registerWindow', 'registerHomeWindow', 'showHome', 'focusWindow', 'wake', 'sleep', 'routeInput',
     'receiveInput', 'isFocusTarget', 'inputTargetWindow', 'syncInputFocus', 'setSelectedIndex', 'noteWindowVisible',
-    'foregroundWindow', 'isScreenOn', 'getFocus'];
+    'foregroundWindow', 'isScreenOn', 'getFocus', 'yieldFocusToSidebar', 'overlayClosed', 'openLeanSystemMenu',
+    'openAiChatListening', 'removeWindow', 'mostRecentWindowIndex', 'closeWindow', 'openNotificationModal'];
   const methods = names.map(name => klass.members.find(node => node.name?.getText(source) === name).getText(source));
-  const context = { exports: {}, Date, acceptInput: () => true, isWatchInput: () => false,
-    isDirectionalInput: () => false, ShellOverlayMenuLayer: class {} };
+  const pushed = [];
+  class OverlayMenu { constructor(items, footer, onClosed) { this.items = items; this.footer = footer; this.onClosed = onClosed; } }
+  const context = { exports: {}, Date, console, acceptInput: () => true, isWatchInput: () => false,
+    isDirectionalInput: () => false, ShellOverlayMenuLayer: OverlayMenu, LEAN_NOTIFICATION_POPUPS: false,
+    makeInputEvent: payload => ({ ...payload, timestampMs: Date.now() }),
+    wakeWordActionSetting: { get: () => wakeAction } };
   vm.runInNewContext(ts.transpileModule(`export class Harness { ${methods.join('\n')} }`, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText, context);
   const shell = new context.exports.Harness();
   const model = new HomeModel();
-  let overlay = false, overlayInputs = 0, sleeps = 0, wakes = 0, menus = 0;
-  Object.assign(shell, {
-    windows: [], selectedIndex: 0, focus: 'sidebar', screenOn: true, mruWindowIds: [],
-    lastInput: null, inputFocusedWindowId: null,
-    config: { requestShellRender() {}, onScreenStateChanged(on) { on ? wakes++ : sleeps++; } },
-    stack: { isAtBase: () => !overlay, clearToBase: () => { overlay = false; },
-      handleInput: () => { overlayInputs++; overlay = false; }, popIfTop: () => false },
-    cancelEscapeMenuTimer() {}, endNotificationSelection() {}, returnFromNotification() {},
-    openEscapeMenu() { menus++; overlay = true; },
-    handleSidebarInput() { return { shell: true, window: false }; },
-  });
+  let overlay = false, overlayInputs = 0, sleeps = 0, wakes = 0, menus = 0, disconnects = 0, posted = 0, listening = 0;
   const window = id => ({ windowId: id, appId: id, surfaceId: `window:${id}`, title: id,
     inputs: [], closes: 0, renders: 0, visible: false, screen: true, closeable: id !== 'home',
     requestRender() { this.renders++; }, handleInput(e) { this.inputs.push(e.type); },
     setForeground(v) { this.visible = v; }, setScreenOn(v) { this.screen = v; }, close() { this.closes++; } });
+  const aiChat = window('ai-chat');
+  Object.assign(shell, {
+    windows: [], selectedIndex: 0, focus: 'sidebar', screenOn: true, mruWindowIds: [], attention: new Map(),
+    lastInput: null, inputFocusedWindowId: null,
+    config: { requestShellRender() {}, onScreenStateChanged(on) { on ? wakes++ : sleeps++; },
+      disconnect: () => { disconnects++; },
+      launchApp: async appId => { if (appId === 'ai-chat') { if (!shell.windows.includes(aiChat)) shell.registerWindow(aiChat); shell.focusWindow('ai-chat'); } },
+      startAiChatListening: startAiChatListening && (() => { listening++; return startAiChatListening(); }) },
+    stack: { isAtBase: () => !overlay, clearToBase: () => { overlay = false; },
+      handleInput: () => { overlayInputs++; overlay = false; }, popIfTop: () => false,
+      push: layer => { pushed.push(layer); overlay = true; }, pop: () => { overlay = false; } },
+    notificationModals: { post() { posted++; } },
+    cancelEscapeMenuTimer() {}, endNotificationSelection() {}, returnFromNotification() {},
+    openEscapeMenu() { menus++; overlay = true; },
+    handleSidebarInput() { return { shell: true, window: false }; },
+  });
   shell.registerWindow(window('launcher'));
   const home = window('home');
   shell.registerHomeWindow(home, waking => waking ? model.wake() : model.returnHome());
   const app = window('calendar');
   shell.registerWindow(app);
   const input = type => shell.receiveInput({ type, source: 'ring', timestampMs: Date.now() });
-  return { shell, home, app, model, input, setOverlay: () => { overlay = true; },
-    counts: () => ({ overlayInputs, sleeps, wakes, menus }) };
+  return { shell, home, app, aiChat, model, input, pushed, setOverlay: () => { overlay = true; },
+    counts: () => ({ overlayInputs, sleeps, wakes, menus, disconnects, posted, listening }) };
 }
 
-test('home owns boot focus; app double tap returns without closing it or changing the card', async () => {
+test('home owns boot focus; an app gets the double tap first and its root back-out returns home', async () => {
   const h = harness();
   assert.equal(h.shell.foregroundWindow(), h.home);
   assert.equal(h.shell.getFocus(), 'window');
@@ -53,36 +64,43 @@ test('home owns boot focus; app double tap returns without closing it or changin
   h.model.open();
   h.shell.focusWindow('calendar');
   await h.input('double-click');
+  assert.deepEqual(h.app.inputs, ['double-click']);
+  assert.equal(h.shell.foregroundWindow(), h.app, 'the shell no longer intercepts the double tap');
+  h.shell.yieldFocusToSidebar();
   assert.equal(h.shell.foregroundWindow(), h.home);
-  assert.equal(h.model.selected.id, 'paseo');
+  assert.equal(h.shell.getFocus(), 'window', 'no sidebar in the lean shell');
+  assert.equal(h.model.selected.id, 'calendar');
   assert.equal(h.model.view, 'home');
   assert.equal(h.app.closes, 0);
-  assert.deepEqual(h.app.inputs, []);
+  h.shell.yieldFocusToSidebar();
+  assert.equal(h.shell.foregroundWindow(), h.home);
 });
 
-test('double tap on home sleeps; wake from home or app selects Calendar and focuses home', async () => {
+test('double tap reaches the home window itself; wake from home or app selects Paseo and focuses home', async () => {
   const h = harness();
   h.model.move(-1);
   await h.input('double-click');
-  assert.equal(h.shell.isScreenOn(), false);
+  assert.deepEqual(h.home.inputs, ['double-click']);
+  assert.equal(h.shell.isScreenOn(), true, 'the home window decides (with its 700 ms guard)');
+  h.shell.sleep();
   assert.equal(h.home.screen, false);
   await h.input('double-click');
   assert.equal(h.shell.isScreenOn(), true);
-  assert.equal(h.model.selected.id, 'calendar');
+  assert.equal(h.model.selected.id, 'paseo');
   assert.equal(h.shell.getFocus(), 'window');
   h.model.move(1);
   h.shell.focusWindow('calendar');
   h.shell.sleep();
   await h.input('display-wake');
   assert.equal(h.shell.foregroundWindow(), h.home);
-  assert.equal(h.model.selected.id, 'calendar');
+  assert.equal(h.model.selected.id, 'paseo');
   h.model.move(1);
   await h.input('display-wake');
-  assert.equal(h.model.selected.id, 'paseo');
+  assert.equal(h.model.selected.id, 'calendar');
   assert.equal(h.counts().wakes, 2);
 });
 
-test('shell overlays retain double tap priority; reserved holds still reach their existing handlers', async () => {
+test('shell overlays retain double tap priority; closing one keeps the window focused', async () => {
   const h = harness();
   h.shell.focusWindow('calendar');
   h.setOverlay();
@@ -91,11 +109,67 @@ test('shell overlays retain double tap priority; reserved holds still reach thei
   assert.equal(h.counts().overlayInputs, 1);
   await h.input('long-press');
   assert.equal(h.counts().menus, 1);
-  await h.input('double-click');
+  h.shell.stack.pop();
+  h.shell.overlayClosed();
+  assert.equal(h.shell.getFocus(), 'window');
   assert.equal(h.shell.foregroundWindow(), h.app);
   await h.input('short-then-long-press');
-  assert.deepEqual(h.app.inputs, ['short-then-long-press']);
+  assert.deepEqual(h.app.inputs.filter(type => type !== 'double-click'), ['short-then-long-press']);
   assert.equal(h.app.closes, 0);
+});
+
+test('the lean system menu is Home, Screen off and Disconnect, without gesture hints', async () => {
+  const h = harness();
+  h.shell.focusWindow('calendar');
+  h.shell.openLeanSystemMenu(h.app);
+  const menu = h.pushed[0];
+  assert.equal(menu.items.map(item => item.label).join('|'), 'Home|Screen off|Disconnect');
+  assert.equal(menu.footer, undefined);
+  assert.deepEqual(h.app.inputs, ['system-menu-opened']);
+  const ctx = { stack: h.shell.stack };
+  menu.items[2].onSelect(ctx);
+  assert.equal(h.counts().disconnects, 1);
+  menu.items[1].onSelect(ctx);
+  assert.equal(h.shell.isScreenOn(), false);
+  h.shell.wake('window');
+  h.shell.focusWindow('calendar');
+  menu.items[0].onSelect(ctx);
+  assert.equal(h.shell.foregroundWindow(), h.home);
+});
+
+test('closing the foreground window returns home, and notification popups stay off', () => {
+  const h = harness();
+  h.model.move(1);
+  h.model.open();
+  h.shell.focusWindow('calendar');
+  h.shell.closeWindow('calendar');
+  assert.equal(h.app.closes, 1);
+  assert.equal(h.shell.foregroundWindow(), h.home);
+  assert.equal(h.shell.getFocus(), 'window');
+  assert.equal(h.model.view, 'home');
+  h.shell.openNotificationModal('key', false);
+  assert.equal(h.counts().posted, 0);
+});
+
+test('"Hey Even" wakes the screen and opens AI Chat listening, except while an app captures voice', async () => {
+  const h = harness();
+  h.shell.sleep();
+  await h.input('wakeword');
+  assert.equal(h.shell.isScreenOn(), true);
+  assert.equal(h.shell.foregroundWindow(), h.aiChat);
+  assert.deepEqual(h.aiChat.inputs, ['wakeword'], 'without a dictation seam the wakeword is forwarded');
+  h.aiChat.isVoiceCapturing = () => true;
+  await h.input('wakeword');
+  assert.deepEqual(h.aiChat.inputs, ['wakeword']);
+  h.aiChat.isVoiceCapturing = () => false;
+  const seamed = harness({ startAiChatListening: () => true });
+  await seamed.input('wakeword');
+  assert.equal(seamed.counts().listening, 1);
+  assert.deepEqual(seamed.aiChat.inputs, []);
+  const off = harness({ wakeAction: 'off' });
+  off.shell.sleep();
+  await off.input('wakeword');
+  assert.equal(off.shell.isScreenOn(), false);
 });
 
 test('startup stays on home instead of restoring workers that can steal focus later', async () => {
@@ -112,9 +186,9 @@ test('startup stays on home instead of restoring workers that can steal focus la
   const controller = new context.exports.Harness();
   await controller.restoreOpenApps();
   assert.equal(reads, 0);
-  assert.equal(h.model.selected.id, 'calendar');
+  assert.equal(h.model.selected.id, 'paseo');
   assert.equal(h.shell.foregroundWindow(), h.home);
   h.model.move(1);
   await controller.restoreOpenApps();
-  assert.equal(h.model.selected.id, 'paseo');
+  assert.equal(h.model.selected.id, 'calendar');
 });

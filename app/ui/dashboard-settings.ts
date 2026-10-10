@@ -701,6 +701,14 @@ export const useMicControlSetting = new ConfigSettingBoolean({
     "Use the custom firmware's per-temple mic-control channel for the Microphones app's array capture. When off, use the standard single mixed stream.",
 });
 
+export const developerInMoreSetting = new ConfigSettingBoolean({
+  id: "developer-in-more",
+  label: "Developer in More",
+  storageKey: "developer.showInMore",
+  defaultValue: false,
+  description: "Add a Developer row to the More list on the glasses (the app grid, diagnostics and EvenHub loading live there).",
+});
+
 export const showBleBandwidthSetting = new ConfigSettingBoolean({
   id: "show-ble-bandwidth",
   label: "Show BLE bandwidth usage",

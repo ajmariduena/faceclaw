@@ -5,7 +5,7 @@ import { applyHomeLayout } from "./home-layout";
 
 const homeApp: AppDefinition = {
   appId: "home",
-  title: "Inicio",
+  title: "Home",
   icon: "layout-grid",
   showInLauncher: false,
   boot: ctx => {

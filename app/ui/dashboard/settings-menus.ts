@@ -59,6 +59,7 @@ import {
   menuAnimationSetting,
   saveVoiceRecordingsSetting,
   showBleBandwidthSetting,
+  developerInMoreSetting,
   suspendEvenHubWhenScreenOffSetting,
   textSettingMenuItem,
   timeFormatSetting,
@@ -176,6 +177,7 @@ function settingsSections(): SettingsSection[] {
         toggleSettingMenuItem(suspendEvenHubWhenScreenOffSetting),
         toggleSettingMenuItem(useMicControlSetting),
         toggleSettingMenuItem(showBleBandwidthSetting),
+        toggleSettingMenuItem(developerInMoreSetting),
       ],
     },
     {

@@ -112,17 +112,19 @@ test('the home card snapshot carries the two latest agents with their lines and 
     agent('b', { title: 'PR #1221 jelou-cli', updatedAt: iso(-240_000), requiresAttention: true, attentionReason: 'finished' }),
     agent('c', { title: 'Older', updatedAt: iso(-900_000) }),
     agent('sub', { updatedAt: iso(0), labels: { 'paseo.parent-agent-id': 'a' } }),
+    agent('d', { title: 'Needs you, older', updatedAt: iso(-600_000), pendingPermissions: [{ id: 'q', kind: 'tool', name: 'Bash' }] }),
   ];
   const snapshot = buildGlanceSnapshot({ configured: true, connected: true, status: '' }, agents, (a) => (a.id === 'a' ? '¿Apruebas correr los tests de BLE?' : 'Listo para fusionar a producción.'));
-  assert.deepEqual(snapshot.updates.map((update) => update.agentId), ['a', 'b']);
+  assert.deepEqual(snapshot.updates.map((update) => update.agentId), ['a', 'd']);
   assert.equal(snapshot.updates[0].bucket, 'needs');
   assert.equal(glanceWhoLine(snapshot.updates[0], NOW), 'Fix reconnect BLE · 1 min');
-  assert.equal(glanceWhoLine(snapshot.updates[1], NOW), 'PR #1221 jelou-cli · 4 min');
-  assert.equal(snapshot.needs, 1);
+  assert.equal(glanceWhoLine(snapshot.updates[1], NOW), 'Needs you, older · 10 min');
+  assert.equal(snapshot.needs, 2);
   assert.equal(snapshot.working, 0);
   assert.deepEqual(JSON.parse(JSON.stringify(snapshot)), snapshot);
-  assert.equal(glanceEmptyStatus(null), 'Toca para emparejar');
-  assert.equal(glanceEmptyStatus(buildGlanceSnapshot({ configured: false, connected: false, status: '' }, [], () => '')), 'Toca para emparejar');
-  assert.equal(glanceEmptyStatus(buildGlanceSnapshot({ configured: true, connected: false, status: 'Conectando…' }, agents, () => '')), 'Conectando…');
-  assert.equal(glanceEmptyStatus(buildGlanceSnapshot({ configured: true, connected: true, status: '' }, [], () => '')), 'Sin novedades');
+  assert.equal(glanceEmptyStatus(null), 'Not paired');
+  assert.equal(glanceEmptyStatus(buildGlanceSnapshot({ configured: false, connected: false, status: '' }, [], () => '')), 'Not paired');
+  assert.equal(glanceEmptyStatus(buildGlanceSnapshot({ configured: true, connected: false, status: 'Connecting…' }, agents, () => '')), 'Connecting…');
+  assert.equal(glanceEmptyStatus(buildGlanceSnapshot({ configured: true, connected: false, status: '' }, agents, () => '')), 'Mac unreachable');
+  assert.equal(glanceEmptyStatus(buildGlanceSnapshot({ configured: true, connected: true, status: '' }, [], () => '')), 'No updates');
 });

@@ -433,7 +433,7 @@ async function startMap(): Promise<void> {
 async function startNavigationTo(target: NavTarget, requestedProfile: RouteProfile): Promise<string> {
   const query = target.kind === "query" ? target.query : target.name;
   if (!isMapboxConfigured()) {
-    statusMessage = "Navigation needs a Mapbox token. This is free (up to a usage limit); open Mapbox in a browser on your phone or pick Edit token below.";
+    statusMessage = "Mapbox token missing. Get a free one at mapbox.com, then pick Edit token below.";
     phase = "idle";
     render();
     throw new Error(statusMessage);
@@ -1377,7 +1377,7 @@ function paintIdle(image: GrayImage, win: NavWindow): void {
   const entries = busy ? [] : idleEntries();
   const configured = isMapboxConfigured();
   const hint = !configured
-    ? "Navigation needs a Mapbox public token (free at mapbox.com). Get one, then enter it here or in Settings > API Keys."
+    ? "Mapbox token missing. Get a free public token at mapbox.com, then enter it here or in the phone's API keys."
     : entries.length
       ? "View the map or pick a destination below. Use Voice input (system menu, long-press) to say a destination."
       : "Ask the voice assistant to navigate somewhere, or pick Voice input from the system menu (long-press) to say a destination. Save Home, Work and other places from the app menu.";

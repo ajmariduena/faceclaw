@@ -118,3 +118,11 @@ node --test v3-scenes.test.cjs stock-scenes.test.cjs
 Catorce escenas finales de 640×480, banda en (32,96), cinco puntos siempre presentes. Los estados vacíos no quitan tarjetas. El reloj conserva exactamente los píxeles v2. No hay modos v3 para AI Chat/Conversar ni integración real de gestos, voz o proveedores. Doble tap vuelve a la tarjeta desde app; en home apaga; despertar seleccionará Calendario. Solo una grabación activa confirma con «¿Detener y salir? / > Seguir / Salir». Fuente privada sigue exclusivamente en `out/local-fonts/` ignorado; no se tocaron modos anteriores.
 
 Modelo completo, límites de caché y estimación vigente: [v3: sin menú](../../research/even-ui/plan.md#v3-sin-menú).
+
+## Lean CORE
+
+`lean-core.test.cjs` pinta con los painters de producción las pantallas del CORE lean (`research/lean-spec.md`): las cinco tarjetas del home con sus estados, More, el placeholder de Converse, los estados de Settings y Timers. Deja `out/lean-core-*.png` y comprueba marco, paso de 27 px, chrome en inglés y que no haya instrucciones de gestos.
+
+```sh
+node --test tools/headless-render/lean-core.test.cjs
+```
