@@ -11,6 +11,8 @@ import { ResourceUsageLayer } from "./resource-usage";
 import { LoadAppFromQrLayer, LoadAppFromUrlLayer } from "./load-app";
 import { unicodeTestMenu } from "./unicode-test";
 import { type AppContext } from "../app-definition";
+import { launcherEntries } from "../launcher";
+import { LauncherGridLayer } from "../launcher/launcher-app";
 import { appViewportSize } from "../../ui/shell/geometry";
 import {
   createInProcessWindow,
@@ -118,6 +120,19 @@ export function createDeveloperAppWindow(appContext: AppContext, options: InProc
           const layer = new LoadAppFromQrLayer(appContext);
           ctx.stack.push(layer);
           layer.open(ctx);
+        },
+      },
+      {
+        // The full app grid (folders, uninstall) that the lean More list replaced.
+        label: "App grid",
+        onSelect: (ctx) => {
+          const grid = new LauncherGridLayer({
+            apps: () => launcherEntries(appContext.apps),
+            launchApp: (appId) => appContext.launchApp(appId),
+            uninstallApp: (appId) => appContext.uninstallApp(appId),
+            onBack: () => ctx.stack.pop(),
+          });
+          ctx.stack.push(grid);
         },
       },
       {

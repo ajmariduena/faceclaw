@@ -8,16 +8,15 @@ import { IconGrid, ICON_GRID_BAND_INSET_X, ICON_GRID_HIGHLIGHT_INSET_Y, ICON_GRI
 import { Layer, LayerActions, LayerContext } from "../../ui/layers";
 import { MenuLayer, type MenuItem } from "../../ui/menu";
 import { WINDOW_MENU_LAYOUT } from "../../ui/window-menu";
-import { onAnySettingChanged } from "../../ui/dashboard-settings";
 import { createInProcessWindow } from "../../ui/shell/in-process-window";
 import {
   getFolderAssignments,
   getFolders,
-  getFolderStateFingerprint,
   setAppFolder,
   unusedNewFolderName,
 } from "./launcher-folders";
 import { shell, type ShellWindow } from "../../ui/shell/shell";
+import { MoreListLayer } from "./more-list";
 
 export type LauncherAppEntry = {
   appId: string;
@@ -38,6 +37,11 @@ export type LauncherOptions = {
   submitFrame: (planes: Plane[], paintMs: number, frameId: number) => Promise<void>;
   /** Flip the launcher's compositor surface visibility on foreground changes. */
   setSurfaceVisible: (visible: boolean) => void;
+};
+
+export type LauncherGridOptions = Pick<LauncherOptions, "apps" | "launchApp" | "uninstallApp"> & {
+  /** Backing out of the top grid; yields to the shell by default. */
+  onBack?: () => void;
 };
 
 export const LAUNCHER_WINDOW_ID = "launcher";
@@ -66,7 +70,7 @@ type LauncherGridEntry =
  * and is re-read every paint, so assistant folder tools take effect without
  * the layer holding any copy of the state.
  */
-class LauncherGridLayer implements Layer {
+export class LauncherGridLayer implements Layer {
   // Watch swipes are spatial: up/down move between rows, left/right between
   // columns. From the leftmost column, left keeps going out: it leaves the
   // open folder if there is one, else yields to the sidebar — "left" points
@@ -86,7 +90,7 @@ class LauncherGridLayer implements Layer {
     onBack: () => this.back(),
   });
 
-  constructor(private readonly options: LauncherOptions) {}
+  constructor(private readonly options: LauncherGridOptions) {}
 
   onFocus(lastInput: InputEvent | null): void {
     this.grid.onFocus(lastInput);
@@ -170,7 +174,8 @@ class LauncherGridLayer implements Layer {
       this.exitFolder();
       return false;
     }
-    shell.yieldFocusToSidebar();
+    if (this.options.onBack) this.options.onBack();
+    else shell.yieldFocusToSidebar();
     return true;
   }
 
@@ -284,45 +289,23 @@ class LauncherGridLayer implements Layer {
 }
 
 /**
- * The launcher: a pinned, uncloseable in-process window presenting the app
- * grid. Selecting an app asks the controller to launch it and foregrounds the
- * new window.
+ * The launcher: a pinned, uncloseable in-process window presenting the More
+ * list (the lean build's fixed four rows). Selecting an app asks the
+ * controller to launch it and foregrounds the new window. The app grid
+ * (LauncherGridLayer) stays reachable from the Developer app.
  */
 export function createLauncherWindow(options: LauncherOptions): ShellWindow {
-  const gridLayer = new LauncherGridLayer(options);
   const created = createInProcessWindow({
     appId: "launcher",
     windowId: LAUNCHER_WINDOW_ID,
-    title: "Apps",
-    iconLetter: "A",
+    title: "More",
+    iconLetter: "M",
     icon: "layout-grid",
     closeable: false,
-    menuItems: () => gridLayer.menuItems(),
     actions: options.actions,
-    onFocus: (lastInput) => gridLayer.onFocus(lastInput),
-    // Not wrapped in YieldAtRootLayer: the grid handles double-click itself to
-    // back out of item selection before yielding to the sidebar.
-    baseLayer: gridLayer,
+    baseLayer: new MoreListLayer(options.launchApp),
     submitFrame: options.submitFrame,
     setSurfaceVisible: options.setSurfaceVisible,
   });
-  // The assistant's folder tools change the grouping from outside the window;
-  // the settings broadcast is the change signal, and the fingerprint check
-  // keeps every unrelated setting change from repainting the launcher. The
-  // launcher is pinned for the app's lifetime, so the subscription never needs
-  // tearing down.
-  let lastState = `${getFolderStateFingerprint()}\n${launcherAppsFingerprint(options.apps())}`;
-  onAnySettingChanged(() => {
-    const state = `${getFolderStateFingerprint()}\n${launcherAppsFingerprint(options.apps())}`;
-    if (state === lastState) return;
-    lastState = state;
-    created.requestRender();
-  });
   return created.window;
-}
-
-function launcherAppsFingerprint(apps: LauncherAppEntry[]): string {
-  return apps
-    .map((app) => `${app.appId}:${app.label}:${app.icon}:${app.iconKey ?? ""}:${app.uninstallable ? 1 : 0}`)
-    .join("|");
 }
