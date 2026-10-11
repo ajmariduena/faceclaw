@@ -92,6 +92,28 @@ test('hello goes out on open, server_info makes the client connected, and reques
   assert.equal(client.phase, 'idle');
 });
 
+test('workspace listing requests resolved names and supports subsequent pages', async () => {
+  const { client, transports } = makeClient(DIRECT);
+  client.start();
+  const transport = transports[0];
+  transport.open();
+  transport.serverInfo();
+  const first = client.fetchWorkspaces({ subscribe: true });
+  const request = transport.sent.at(-1).message;
+  assert.equal(request.type, 'fetch_workspaces_request');
+  assert.deepEqual(request.subscribe, {});
+  assert.deepEqual(request.page, { limit: 200 });
+  transport.receive({ type: 'session', message: { type: 'fetch_workspaces_response', payload: { requestId: request.requestId, entries: [{ id: 'ws', name: 'Workspace' }], pageInfo: { hasMore: true, nextCursor: 'next' } } } });
+  assert.equal((await first).entries[0].name, 'Workspace');
+  const second = client.fetchWorkspaces({ cursor: 'next' });
+  const next = transport.sent.at(-1).message;
+  assert.deepEqual(next.page, { limit: 200, cursor: 'next' });
+  assert.equal(next.subscribe, undefined);
+  transport.receive({ type: 'session', message: { type: 'fetch_workspaces_response', payload: { requestId: next.requestId, entries: [], pageInfo: { hasMore: false, nextCursor: null } } } });
+  await second;
+  client.stop();
+});
+
 test('a dropped connection retries with growing backoff and fails in-flight requests', async () => {
   const timers = [];
   const realSetTimeout = global.setTimeout;

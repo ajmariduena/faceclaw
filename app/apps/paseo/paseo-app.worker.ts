@@ -45,6 +45,7 @@ import { buildGlanceSnapshot, glanceUrgentAgent, PASEO_GLANCE_STATE_KEY, type Bu
 import {
   agentBucket,
   agentTitle,
+  sessionWorkspaceName,
   BUCKET_LABELS,
   chatEntries,
   chatEntryFromTimeline,
@@ -170,6 +171,7 @@ let screenOn = true;
 let client: PaseoDaemonClient | null = null;
 let clientUnsubscribers: Array<() => void> = [];
 const agents = new Map<string, AgentSnapshot>();
+const workspaceNames = new Map<string, string>();
 let agentsLoaded = false;
 let chat: ChatState | null = null;
 let dictation: Dictation | null = null;
@@ -349,6 +351,7 @@ function syncClient(): void {
     clientUnsubscribers = [
       created.onChange(() => onClientChanged(created)),
       created.on("agent_update", (message) => onAgentUpdate(message.payload)),
+      created.on("workspace_update", (message) => onWorkspaceUpdate(message.payload)),
       created.on("agent_stream", (message) => onAgentStream(message.payload)),
       created.on("glance.summary", (message) => onGlanceSummary(message.payload)),
       created.on("dictation_stream_partial", (message) => {
@@ -372,6 +375,7 @@ function stopClient(): void {
   clientUnsubscribers = [];
   client = null;
   agents.clear();
+  workspaceNames.clear();
   agentsLoaded = false;
   attentionBaselined = false;
   knownStatus.clear();
@@ -387,13 +391,14 @@ function reportIdle(): void {
 function onClientChanged(current: PaseoDaemonClient): void {
   if (current !== client) return;
   if (current.connected) void bootstrap(current);
-  else agentsLoaded = false;
+  else { agentsLoaded = false; workspaceNames.clear(); }
   schedulePublish();
   scheduleRender();
 }
 
 /** A fresh connection: reload the agent list (subscribed) and whatever chat is open. */
 async function bootstrap(current: PaseoDaemonClient): Promise<void> {
+  void loadWorkspaces(current);
   try {
     const page = await current.fetchAgents({ subscribe: true });
     if (current !== client || !current.connected) return;
@@ -412,6 +417,33 @@ async function bootstrap(current: PaseoDaemonClient): Promise<void> {
     console.warn(`paseo: agent list failed: ${errorMessage(error)}`);
     showNotice(`Can't list agents: ${errorMessage(error)}`);
   }
+}
+
+async function loadWorkspaces(current: PaseoDaemonClient): Promise<void> {
+  try {
+    const first = await current.fetchWorkspaces({ subscribe: true });
+    if (current !== client || !current.connected) return;
+    workspaceNames.clear();
+    for (const workspace of first.entries) workspaceNames.set(workspace.id, workspace.name);
+    let cursor = first.pageInfo.hasMore ? first.pageInfo.nextCursor : null;
+    while (cursor) {
+      const next = await current.fetchWorkspaces({ cursor });
+      if (current !== client || !current.connected) return;
+      for (const workspace of next.entries) workspaceNames.set(workspace.id, workspace.name);
+      cursor = next.pageInfo.hasMore ? next.pageInfo.nextCursor : null;
+    }
+    scheduleRender();
+  } catch (error) {
+    console.warn(`paseo: workspace list failed: ${errorMessage(error)}`);
+  }
+}
+
+function onWorkspaceUpdate(payload: any): void {
+  if (payload?.kind === "upsert" && typeof payload.workspace?.id === "string" && typeof payload.workspace?.name === "string")
+    workspaceNames.set(payload.workspace.id, payload.workspace.name);
+  else if (payload?.kind === "remove" && typeof payload.id === "string") workspaceNames.delete(payload.id);
+  else return;
+  scheduleRender();
 }
 
 function onAgentUpdate(payload: any): void {
@@ -1325,7 +1357,7 @@ function listView(): ListView {
   const sections = sectionAgents(agents.values());
   for (const section of sections) {
     rows.push({ kind: "section", label: section.label, count: section.agents.length });
-    for (const agent of section.agents) rows.push({ kind: "agent", title: agentTitle(agent), key: agent.id });
+    for (const agent of section.agents) rows.push({ kind: "agent", title: sessionWorkspaceName(agent, workspaceNames), key: agent.id });
   }
   let selected = rows.findIndex((row) => row.kind === "agent" && row.key === listSelectionKey);
   if (selected < 0) selected = rows.findIndex((row) => row.kind === "agent");

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   agentBucket, isListedAgent, sectionAgents, sectionCounts, formatAge, formatDuration, formatClock,
-  chatEntries, chatEntryFromTimeline, upsertEntry, fallbackLine, plainText, windowBlocks,
+  chatEntries, chatEntryFromTimeline, upsertEntry, fallbackLine, plainText, windowBlocks, sessionWorkspaceName,
 } = require('../.test-build/app/apps/paseo/paseo-model.js');
 const { buildGlanceSnapshot, glanceWhoLine, glanceEmptyStatus, glanceVerdict, glanceUrgentAgent } = require('../.test-build/app/apps/paseo/paseo-glance.js');
 
@@ -44,6 +44,13 @@ test('sections keep the sidebar order, skip empty buckets and sort by activity',
   assert.deepEqual(sections.map((section) => section.agents.map((a) => a.id)), [['ask'], ['review'], ['busy'], ['new-done', 'old-done']]);
   assert.equal(sectionCounts(sections), '1 needs · 1 ready · 1 working · 2 done');
   assert.deepEqual(sectionAgents([]), []);
+});
+
+test('session rows show the resolved workspace name and retain an agent title fallback', () => {
+  const workspaces = new Map([['ws-1', '  Client   Workspace  ']]);
+  assert.equal(sessionWorkspaceName(agent('a', { workspaceId: 'ws-1', title: 'Agent name' }), workspaces), 'Client Workspace');
+  assert.equal(sessionWorkspaceName(agent('a', { workspaceId: 'missing', title: 'Agent name' }), workspaces), 'Agent name');
+  assert.equal(sessionWorkspaceName(agent('a', { title: null }), workspaces), 'Untitled');
 });
 
 test('ages and durations read like the approved renders', () => {
