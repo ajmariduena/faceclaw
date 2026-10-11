@@ -39,7 +39,7 @@ test('app paints one bordered card with six stable dots centred on the card and 
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(image.pixels[y * 576 + x], 0);
   }
   const drawn = texts();
-  for (const expected of ['Sat 10', 'Nothing today', 'Not paired', 'Bots', 'Setup required', 'Live facts · ES/EN', 'Coming soon', 'More', 'ES ', ' EN'])
+  for (const expected of ['Sat 10', 'Nothing today', 'Not paired', 'Bots', 'Setup required', 'Live facts · ES/EN', 'More', 'ES ', ' EN'])
     assert.ok(drawn.includes(expected), expected);
   for (const spanish of ['Sábado', 'Toca para', 'Sin ', 'Más', 'Traducir', 'Calendario', 'Nada sonando', 'Sin notificaciones'])
     assert.ok(!drawn.some(text => text.includes(spanish)), spanish);

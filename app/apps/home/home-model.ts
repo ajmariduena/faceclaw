@@ -82,7 +82,7 @@ export function emptyCardStatus(card: HomeCardId): string {
     case "paseo": return "No updates";
     case "bots": return "Setup required";
     case "translate": return "Ready";
-    case "converse": return "Coming soon";
+    case "converse": return "Setup required";
     case "more": return "";
   }
 }

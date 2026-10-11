@@ -1,4 +1,4 @@
-export const API_SERVICES = ["paseo", "soniox", "openrouter", "parallel", "cerebras", "anthropic", "openai", "brave", "mapbox", "elevenlabs", "cursor"] as const;
+export const API_SERVICES = ["paseo", "soniox", "openrouter", "parallel", "perplexity", "cerebras", "anthropic", "openai", "brave", "mapbox", "elevenlabs", "cursor"] as const;
 export type ApiService = typeof API_SERVICES[number];
 export type ApiKeyStatus = { state: "ok" | "failed" | "missing" | "untested"; at: number; ms: number | null; error: string | null };
 export const apiStatusKey = (service: ApiService): string => `apiKeys.status.${service}`;
@@ -31,6 +31,10 @@ export async function testHttpApiKey(service: Exclude<ApiService, "paseo" | "son
       url = "https://api.parallel.ai/v1/search"; method = "POST";
       headers = { "x-api-key": key, "Content-Type": "application/json" };
       body = JSON.stringify({ mode: "fast", search_queries: ["Even Realities smart glasses"], advanced_settings: { max_results: 1 } }); break;
+    case "perplexity":
+      url = "https://api.perplexity.ai/search"; method = "POST";
+      headers = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+      body = JSON.stringify({ query: "Even Realities smart glasses", search_type: "fast", max_results: 1 }); break;
     case "brave": url = "https://api.search.brave.com/res/v1/web/search?q=Even%20Realities&count=1"; headers = { "X-Subscription-Token": key }; break;
     case "mapbox": url = `https://api.mapbox.com/search/geocode/v6/forward?q=Quito&limit=1&access_token=${encodeURIComponent(key)}`; headers = {}; break;
     case "elevenlabs": url = "https://api.elevenlabs.io/v1/user"; headers = { "xi-api-key": key }; break;

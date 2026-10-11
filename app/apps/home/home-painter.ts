@@ -20,6 +20,8 @@ export type HomeSnapshot = {
   bots?: BotsGlance | null;
   /** A Soniox key is stored, so Translate can start. */
   translateReady?: boolean;
+  /** Soniox, OpenRouter and a search key are stored, so Converse can start. */
+  converseReady?: boolean;
   /** Ring and glasses levels from the shell; null (or absent) while unknown. */
   battery?: HomeBattery;
   /** The last Open-Meteo reading; null (or absent) hides the complication. */
@@ -146,7 +148,7 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
       face.drawText(panel, x + face.measureLine(left) + 20, 136, right, 255);
     }, data.translateReady ? "Ready" : "Setup required");
   } else if (card.id === "converse") {
-    glance(() => centered(136, "Live facts · ES/EN"), emptyCardStatus(card.id));
+    glance(() => centered(136, "Live facts · ES/EN"), data.converseReady ? "Ready" : "Setup required");
   } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id)
     : card.id === "paseo" ? glanceEmptyStatus(data.paseo)
     : card.id === "bots" ? data.bots?.status ?? emptyCardStatus(card.id) : emptyCardStatus(card.id));

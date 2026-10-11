@@ -55,7 +55,7 @@ test('phone key row ignores results from a credential edited while a test is run
   const storage = new Map(); let finish;
   class Observable { constructor() { this.events = []; } notifyPropertyChange(key, value) { this.events.push([key, value]); } }
   class ObservableArray extends Array { static get [Symbol.species]() { return Array; } constructor(rows) { super(...rows); } }
-  const names = ['paseoPairingLinkSetting', 'cursorApiKeySetting', 'grokBotNamesSetting', 'sonioxApiKeySetting', 'openRouterApiKeySetting', 'parallelApiKeySetting', 'cerebrasApiKeySetting', 'anthropicApiKeySetting', 'openAiApiKeySetting', 'braveApiKeySetting', 'mapboxApiKeySetting', 'elevenLabsApiKeySetting'];
+  const names = ['paseoPairingLinkSetting', 'cursorApiKeySetting', 'grokBotNamesSetting', 'sonioxApiKeySetting', 'openRouterApiKeySetting', 'parallelApiKeySetting', 'perplexityApiKeySetting', 'cerebrasApiKeySetting', 'anthropicApiKeySetting', 'openAiApiKeySetting', 'braveApiKeySetting', 'mapboxApiKeySetting', 'elevenLabsApiKeySetting'];
   const settings = Object.fromEntries(names.map(name => { let value = 'old'; return [name, { get: () => value, set: v => { value = v; } }]; }));
   const load = loader({}, {
     '@nativescript/core': { Observable, ObservableArray }, '../ui/dashboard-settings': settings,
@@ -65,7 +65,7 @@ test('phone key row ignores results from a credential edited while a test is run
   });
   const page = {}; load('app/phone-ui/api-keys-page.ts').navigatingTo({ object: page });
   assert.deepEqual(Array.from(page.bindingContext.rows, row => `${row.group}: ${row.label}`),
-    ['Paseo: Pairing link', 'Grok Bot: Cursor', 'Grok Bot: Bot name', 'Listening · Translate, Converse: Soniox', 'Facts & AI Chat: OpenRouter', 'Search · Converse: Parallel']);
+    ['Paseo: Pairing link', 'Grok Bot: Cursor', 'Grok Bot: Bot name', 'Listening · Translate, Converse: Soniox', 'Facts & AI Chat: OpenRouter', 'Search · Converse: Perplexity', 'Search · Converse: Brave (fallback)']);
   assert.deepEqual([page.bindingContext.rows[1].secure, page.bindingContext.rows[2].secure, page.bindingContext.rows[2].testVisibility], [true, false, 'collapse']);
   page.bindingContext.rows[2].onEdit({ object: { text: 'Glasses, Research' } });
   assert.equal(settings.grokBotNamesSetting.get(), 'Glasses, Research');
@@ -74,5 +74,5 @@ test('phone key row ignores results from a credential edited while a test is run
   finish({ status: { state: 'ok', at: 1, ms: 10, error: null } }); await pending;
   assert.equal(storage.has('apiKeys.status.openrouter'), false);
   assert.equal(row.testing, false);
-  page.bindingContext.toggleAdvanced(); assert.equal(page.bindingContext.rows.length, 12);
+  page.bindingContext.toggleAdvanced(); assert.equal(page.bindingContext.rows.length, 13);
 });

@@ -27,7 +27,7 @@ function harness(stockAvailable = false) {
     '../../native/location-permissions': { hasLocationPermission: () => locationPermitted },
     '../../native/settings-store': { getStringSetting: (key, fallback) => stored.get(key) ?? fallback, setStringSetting: (key, value) => stored.set(key, value) },
     '../../util/http': { fetchTextWithUserAgent: async url => { fetched.push(url); return { ok: true, status: 200, json: async () => weatherBody }; } },
-    '../../ui/dashboard-settings': { onAnySettingChanged: subscribe, sonioxApiKeySetting: { get: () => sonioxKey } },
+    '../../ui/dashboard-settings': { onAnySettingChanged: subscribe, sonioxApiKeySetting: { get: () => sonioxKey }, openRouterApiKeySetting: { get: () => '' }, perplexityApiKeySetting: { get: () => '' }, braveApiKeySetting: { get: () => '' } },
     '../../ui/shell/in-process-window': { createInProcessWindow: opts => { options = opts; return { window: { windowId: 'home' }, requestRender: () => renders++ }; } },
     '../../ui/shell/shell': { shell: { isScreenOn: () => true, sleep: () => sleeps++, foregroundWindow: () => ({ windowId: foreground }),
       getBatteryLevels: () => battery, onBatteryLevelsChanged: subscribe } },

@@ -47,7 +47,6 @@ const leanLoad = loader({ Uint32Array, Int32Array, DataView, ArrayBuffer, Date }
 });
 const leanGraphics = leanLoad('app/graphics/image.ts');
 const { paintMoreList, moreRows } = leanLoad('app/apps/launcher/more-list.ts');
-const { paintConversePlaceholder } = leanLoad('app/apps/converse/converse-app.ts');
 const { statusRows } = leanLoad('app/apps/settings/status-layer.ts');
 const { paintTerminalList } = leanLoad('app/ui/terminal.ts');
 const { paintTimersList } = leanLoad('app/apps/timer/timers-list.ts');
@@ -167,16 +166,8 @@ test('More: the four fixed rows at a 46 px pitch, "· More 1/4", icons dim with 
   }
 });
 
-test('Converse placeholder, Settings status rows and Timers share the frame and footer', async () => {
+test('Settings status rows and Timers share the frame and footer', async () => {
   const stock = await leanFacePromise;
-  {
-    const { face, texts } = tracing(stock);
-    const image = new leanGraphics.GrayImage(576, 288);
-    paintConversePlaceholder(image, face);
-    checkFrame(image);
-    assert.equal(texts().join('|'), 'Not built yet|Live facts · ES/EN|· Converse');
-    save(leanGraphics, image, 'lean-core-converse');
-  }
   {
     const { face, draws, texts } = tracing(stock);
     const image = new leanGraphics.GrayImage(576, 288);

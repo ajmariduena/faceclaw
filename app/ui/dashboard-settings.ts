@@ -191,6 +191,7 @@ export function getStringSettingById(id: string): ConfigSettingString | null {
 
 const API_SETTING_SERVICES: Record<string, ApiService> = {
   "openrouter-api-key": "openrouter", "parallel-api-key": "parallel", "cerebras-api-key": "cerebras", "brave-api-key": "brave",
+  "perplexity-api-key": "perplexity",
   "soniox-api-key": "soniox", "openai-api-key": "openai", "anthropic-api-key": "anthropic", "mapbox-api-key": "mapbox", "elevenlabs-api-key": "elevenlabs", "paseo-pairing-link": "paseo",
   "cursor-api-key": "cursor",
 };
@@ -928,6 +929,7 @@ export const openRouterApiKeySetting = apiKeySetting("openrouter-api-key", "Open
 export const parallelApiKeySetting = apiKeySetting("parallel-api-key", "Parallel key", "search.parallelApiKey");
 export const cerebrasApiKeySetting = apiKeySetting("cerebras-api-key", "Cerebras key", "llm.cerebrasApiKey");
 export const braveApiKeySetting = apiKeySetting("brave-api-key", "Brave key", "search.braveApiKey");
+export const perplexityApiKeySetting = apiKeySetting("perplexity-api-key", "Perplexity key", "search.perplexityApiKey");
 export const aiChatDraftSetting = new ConfigSettingString({ id: "ai-chat-draft", label: "AI Chat draft", storageKey: "aiChat.draft", defaultValue: "", editorTitle: "Edit draft" });
 export const paseoChatDraftSetting = new ConfigSettingString({ id: "paseo-chat-draft", label: "Paseo draft", storageKey: "paseo.chatDraft", defaultValue: "", editorTitle: "Edit draft" });
 export const cursorApiKeySetting = apiKeySetting("cursor-api-key", "Cursor key", "grokbot.cursorApiKey");

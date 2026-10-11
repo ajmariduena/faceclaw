@@ -131,7 +131,7 @@ test('More: four fixed rows, scroll stops at the ends, tap launches, double tap 
 test('Settings: status rows read batteries, the Paseo link and the phone\'s key tests; brightness and Disconnect act', async () => {
   const statuses = {
     'apiKeys.status.openrouter': JSON.stringify({ state: 'ok', at: 1, ms: 320, error: null }),
-    'apiKeys.status.parallel': JSON.stringify({ state: 'failed', at: 1, ms: null, error: 'Invalid key (401)' }),
+    'apiKeys.status.perplexity': JSON.stringify({ state: 'failed', at: 1, ms: null, error: 'Invalid key (401)' }),
     'apiKeys.status.soniox': JSON.stringify({ state: 'ok', at: 1, ms: 200, error: null }),
   };
   const e = env({ statuses, soniox: '', brightness: '50', paseo: { configured: true, status: '', updates: [], needs: 0, working: 0 } });
@@ -154,7 +154,7 @@ test('Settings: status rows read batteries, the Paseo link and the phone\'s key 
   assert.equal(row('Paseo'), 'connected');
   assert.equal(row('Soniox'), 'missing', 'no key stored beats the phone\'s stale ok');
   assert.equal(row('OpenRouter'), 'ok');
-  assert.equal(row('Parallel'), 'failed');
+  assert.equal(row('Perplexity'), 'failed');
   assert.equal(row('Brightness'), '50%');
   assert.equal(e.draws.find(d => d.text === '>').y, e.draws.find(d => d.text === 'Brightness').y, 'opens on the first actionable row');
   assert.ok(e.texts().includes('· Settings'));
@@ -268,16 +268,6 @@ test('Timers: lists active countdowns with remaining time, cancels after a neste
   removed.push(1, 2);
   e.draws.length = 0; layer.paint(e.ctx);
   assert.deepEqual(e.texts(), ['No active timers', '· Timers']);
-});
-
-test('Converse placeholder paints the frame with Not built yet', () => {
-  const e = env();
-  const { paintConversePlaceholder } = e.load('app/apps/converse/converse-app.ts');
-  const { GrayImage } = e.load('app/graphics/image.ts');
-  paintConversePlaceholder(new GrayImage(576, 288), e.face);
-  assert.deepEqual(e.texts(), ['Not built yet', 'Live facts · ES/EN', '· Converse']);
-  assert.equal(e.draws[0].value, 255);
-  assert.equal(e.draws[1].value, 136);
 });
 
 test('the registry hides the spec\'s apps from the lean UI without dropping them, and adds Converse', () => {

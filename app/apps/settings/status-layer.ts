@@ -126,7 +126,7 @@ function readSnapshot(): StatusSnapshot {
     keys: [
       { label: "Soniox", value: keyStatusValue(soniox, readKeyTestStatus("soniox")) },
       { label: "OpenRouter", value: keyStatusValue(null, readKeyTestStatus("openrouter")) },
-      { label: "Parallel", value: keyStatusValue(null, readKeyTestStatus("parallel")) },
+      { label: "Perplexity", value: keyStatusValue(null, readKeyTestStatus("perplexity")) },
     ],
     brightness: brightnessSetting.get(),
     screenTimeout: screenTimeoutSetting.get(),

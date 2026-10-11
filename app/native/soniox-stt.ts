@@ -34,6 +34,8 @@ export type SonioxToken = {
 export type SonioxSttOptions = CloudSttOptions & {
   /** Real-time translation: https://soniox.com/docs/translation/stt-translation/rt-translation */
   translation?: { type: "two_way"; language_a: string; language_b: string };
+  /** Continuous transcription without translation: every sentence ends with an <end> final. */
+  languageHints?: string[];
   /** Every response's tokens as received, for callers that need translation_status. */
   onTokens?: (tokens: SonioxToken[]) => void;
 };
@@ -60,6 +62,7 @@ export class SonioxSttClient implements CloudSttClient {
         if (this.closed) return;
         // The API key rides in the config message; there is no auth header.
         const translation = this.options.translation;
+        const languageHints = translation ? [translation.language_a, translation.language_b] : this.options.languageHints;
         this.trySendText(
           JSON.stringify({
             api_key: this.options.apiKey,
@@ -68,9 +71,9 @@ export class SonioxSttClient implements CloudSttClient {
             sample_rate: CLOUD_STT_SAMPLE_RATE,
             num_channels: 1,
             enable_speaker_diarization: true,
-            ...(translation ? {
-              translation,
-              language_hints: [translation.language_a, translation.language_b],
+            ...(translation ? { translation } : {}),
+            ...(languageHints ? {
+              language_hints: languageHints,
               enable_language_identification: true,
               enable_endpoint_detection: true,
             } : {}),

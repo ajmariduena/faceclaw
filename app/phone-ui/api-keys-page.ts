@@ -11,10 +11,11 @@ const definitions: { service: ApiService; label: string; group: string; setting:
   { service: "cursor", label: "Cursor", group: "Grok Bot", setting: settings.cursorApiKeySetting },
   { service: "soniox", label: "Soniox", group: "Listening · Translate, Converse", setting: settings.sonioxApiKeySetting },
   { service: "openrouter", label: "OpenRouter", group: "Facts & AI Chat", setting: settings.openRouterApiKeySetting },
-  { service: "parallel", label: "Parallel", group: "Search · Converse", setting: settings.parallelApiKeySetting },
+  { service: "perplexity", label: "Perplexity", group: "Search · Converse", setting: settings.perplexityApiKeySetting },
+  { service: "brave", label: "Brave (fallback)", group: "Search · Converse", setting: settings.braveApiKeySetting },
   ...([
-    ["cerebras", "Cerebras direct", settings.cerebrasApiKeySetting], ["anthropic", "Anthropic", settings.anthropicApiKeySetting],
-    ["openai", "OpenAI", settings.openAiApiKeySetting], ["brave", "Brave", settings.braveApiKeySetting],
+    ["parallel", "Parallel", settings.parallelApiKeySetting], ["cerebras", "Cerebras direct", settings.cerebrasApiKeySetting], ["anthropic", "Anthropic", settings.anthropicApiKeySetting],
+    ["openai", "OpenAI", settings.openAiApiKeySetting],
     ["mapbox", "Mapbox", settings.mapboxApiKeySetting], ["elevenlabs", "ElevenLabs", settings.elevenLabsApiKeySetting],
   ] as const).map(([service, label, setting]) => ({ service, label, setting, group: "Advanced", advanced: true })),
 ];
