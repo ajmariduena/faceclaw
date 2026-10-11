@@ -22,6 +22,19 @@ const facts = [
   { topic: 'Cerebras CS-4', source: 'cerebras.ai', text: 'Cerebras lanzó el CS-4 el 18 de agosto de 2026, su nuevo acelerador de IA.' },
 ];
 const [now, prev, older] = facts;
+// The Cuenca conversation from the context test, newest first.
+const history = [
+  { topic: 'Parque Nacional Cajas', source: 'es.wikipedia.org', text: 'No es Patrimonio de la Humanidad de la UNESCO; es reserva de biosfera.' },
+  { topic: 'Cajas', source: 'viajacongus.com', text: 'El Parque Nacional Cajas está a media hora en coche de Cuenca.' },
+  { topic: 'Catedral de Cuenca', source: 'ec.viajandox.com', text: 'La Catedral Nueva de Cuenca se terminó en 1975.' },
+];
+const PREV = 120, PREV_HEADER = 70, OLDER = 70;
+function factBlock(img, face, pitch, fact, y, header, body) {
+  face.drawText(img, 20, y, `${fact.topic} · ${fact.source}`, header);
+  const lines = wrapLines(face, fact.text, W - 40);
+  lines.forEach((line, i) => face.drawText(img, 20, y + pitch * (i + 1) + 4, line, body));
+  return y + pitch * (lines.length + 1) + 4;
+}
 
 const VARIANTS = {
   // Even's AI Cue: rounded box, icon + topic + source, the fact underneath.
@@ -55,6 +68,33 @@ const VARIANTS = {
     const lines = wrapLines(face, now.text, W - 40);
     const top = H - 20 - pitch * lines.length;
     lines.forEach((line, i) => face.drawText(img, 20, top + pitch * i, line, WHITE));
+  },
+  // History 1: the newest on top, the one before it under it, dimmer.
+  'anterior-abajo'(img, face, pitch) {
+    const y = factBlock(img, face, pitch, history[0], 20, DIM, WHITE);
+    factBlock(img, face, pitch, history[1], y + 18, PREV_HEADER, PREV);
+  },
+  // History 2: like a chat, older facts above and dimmer, the newest at the bottom in white.
+  'anterior-arriba'(img, face, pitch) {
+    const newestLines = wrapLines(face, history[0].text, W - 40).length;
+    const newestTop = H - 20 - pitch * (newestLines + 1) - 4;
+    const prevLines = wrapLines(face, history[1].text, W - 40).length;
+    factBlock(img, face, pitch, history[1], newestTop - 18 - pitch * (prevLines + 1) - 4, PREV_HEADER, PREV);
+    factBlock(img, face, pitch, history[0], newestTop, DIM, WHITE);
+  },
+  // History 3: the newest and the two before it without headers, each step dimmer.
+  'dos-anteriores'(img, face, pitch) {
+    let y = factBlock(img, face, pitch, history[0], 20, DIM, WHITE) + 14;
+    for (const [fact, value] of [[history[1], PREV], [history[2], OLDER]]) {
+      const lines = wrapLines(face, fact.text, W - 40);
+      lines.forEach((line, i) => face.drawText(img, 20, y + pitch * i, line, value));
+      y += pitch * lines.length + 10;
+    }
+  },
+  // History 4: the previous fact without its header, so it takes less room.
+  'anterior-compacto'(img, face, pitch) {
+    const y = factBlock(img, face, pitch, history[0], 20, DIM, WHITE) + 18;
+    wrapLines(face, history[1].text, W - 40).forEach((line, i) => face.drawText(img, 20, y + pitch * i, line, PREV));
   },
   // Waiting: nothing but a faint mark that it is listening.
   espera(img, face) {

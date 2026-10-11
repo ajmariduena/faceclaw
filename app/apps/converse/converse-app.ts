@@ -1,4 +1,4 @@
-import { Http } from "@nativescript/core";
+import { Device, Http } from "@nativescript/core";
 import { GrayImage } from "../../graphics/image";
 import type { InputEvent } from "../../ui/gestures";
 import type { Layer, LayerContext } from "../../ui/layers";
@@ -80,7 +80,7 @@ class ConverseRootLayer extends YieldAtRootLayer {
  * the foreground or turning the screen off pauses it; coming back resumes.
  */
 export function createConverseWindow(options: InProcessAppOptions): InProcessWindow {
-  const session = new ConverseSession(() => app.requestRender(), (sentence, language, keys) => lookupFact(sentence, language, keys, post));
+  const session = new ConverseSession(() => app.requestRender(), (sentence, language, keys, context) => lookupFact(sentence, language, keys, post, { ...context, region: Device.region }));
   const layer = new ConverseLayer(session, terminalFace);
   const app = createInProcessWindow({
     appId: "converse",

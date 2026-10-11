@@ -89,7 +89,7 @@ function sessionHarness() {
     '../evenhub/mic-router': { activeCommunicator: () => ({}) },
     '../translate/translate-session': { describeFailure: (message) => message },
   })('app/apps/converse/converse-session.ts');
-  const session = new ConverseSession(() => {}, (sentence, language) => new Promise((resolve) => lookups.push({ sentence, language, resolve })));
+  const session = new ConverseSession(() => {}, (sentence, language, _keys, context) => new Promise((resolve) => lookups.push({ sentence, language, context, resolve })));
   session.start();
   options.onStatus('Listening (Soniox)...');
   const say = (text, language) => {
@@ -128,7 +128,7 @@ test('Jev and Cerebras are called directly when their keys are set, OpenRouter a
   const fact = await lookupFact('¿Qué altura tiene el Chimborazo?', 'es', { ...KEYS, typesafe: 'ts-key', cerebras: 'cb-key' }, post);
   assert.equal(fact.text, 'Mide 6.263 m.');
   const typesafe = calls.find((call) => call.url.includes('typesafe'));
-  assert.equal(typesafe.body.state, '¿Qué altura tiene el Chimborazo?');
+  assert.equal(typesafe.body.state, 'Latest utterance: ¿Qué altura tiene el Chimborazo?');
   assert.ok(!calls.some((call) => call.url.includes('alpha/decisions')));
 });
 
@@ -140,4 +140,37 @@ test('Converse says which key is still missing', () => {
   assert.equal(missingConverseKey('sx', { ...none, typesafe: 'ts' }), 'Cerebras');
   assert.equal(missingConverseKey('sx', { ...none, openRouter: 'or' }), 'Perplexity');
   assert.equal(missingConverseKey('sx', { ...none, typesafe: 'ts', cerebras: 'cb', brave: 'br' }), null);
+});
+
+test('a follow-up sentence is searched with the one before it and written with the conversation', async () => {
+  const { post, calls } = fakePost({
+    'https://api.typesafe.ai/v1/systemone': () => ({ status: 200, json: { answers: { lookup: { noul: 0.9 } } } }),
+    'https://api.perplexity.ai/search': () => PERPLEXITY,
+    'https://api.cerebras.ai/': () => writer('Cuenca | Cuenca tiene unos 330 000 habitantes. | 1'),
+  });
+  const context = { earlier: ['El mes pasado fui a Cuenca con mi familia.'], shown: ['La catedral se terminó en 1975.'], region: 'EC' };
+  const fact = await lookupFact('¿Sabes cuántos habitantes tiene?', 'es', { ...KEYS, typesafe: 'ts', cerebras: 'cb' }, post, context);
+  assert.equal(fact.topic, 'Cuenca');
+  const queries = calls.filter((call) => call.url.includes('perplexity')).map((call) => call.body);
+  assert.deepEqual(queries.map((q) => q.query), ['¿Sabes cuántos habitantes tiene?', 'El mes pasado fui a Cuenca con mi familia. ¿Sabes cuántos habitantes tiene?']);
+  assert.equal(queries[0].country, 'EC');
+  assert.match(calls.find((call) => call.url.includes('typesafe')).body.state, /Earlier: El mes pasado fui a Cuenca/);
+  const prompt = calls.find((call) => call.url.includes('cerebras')).body.messages.map((m) => m.content).join('\n');
+  assert.match(prompt, /Earlier conversation:\nEl mes pasado fui a Cuenca/);
+  assert.match(prompt, /Already shown:\nLa catedral se terminó en 1975\./);
+});
+
+test('a fact line missing its topic still shows the fact', () => {
+  const fact = parseFactLine('Anthropic acusa a tres empresas de extraer datos de Claude | 1', ['https://donporque.com/x']);
+  assert.deepEqual({ ...fact }, { topic: '', text: 'Anthropic acusa a tres empresas de extraer datos de Claude', source: 'donporque.com' });
+  assert.equal(parseFactLine('Muy largo tema que en realidad es todo el dato completo sin separar | 1', ['https://a.com']).topic, '');
+});
+
+test('each sentence carries what was said before it, and leaving starts a new conversation', () => {
+  const { session, lookups, say } = sessionHarness();
+  say('El mes pasado fui a Cuenca.', 'es');
+  say('¿Cuántos habitantes tiene?', 'es');
+  assert.deepEqual(Array.from(lookups[1].context.earlier), ['El mes pasado fui a Cuenca.']);
+  session.stop();
+  assert.equal(session.transcript.length, 0);
 });

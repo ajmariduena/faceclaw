@@ -6,7 +6,7 @@ import { sonioxApiKeySetting } from "../../ui/dashboard-settings";
 import { voiceActivity } from "../../ui/shell/voice-activity";
 import { activeCommunicator } from "../evenhub/mic-router";
 import { describeFailure } from "../translate/translate-session";
-import type { Fact, FactKeys } from "./converse-facts";
+import type { Fact, FactContext, FactKeys } from "./converse-facts";
 import { converseKeys, missingConverseKey } from "./converse-keys";
 
 export type ConverseState =
@@ -19,9 +19,11 @@ export type ConverseState =
   | { kind: "mic-busy" }
   | { kind: "failed"; message: string };
 
-export type FactLookup = (sentence: string, language: string, keys: FactKeys) => Promise<Fact | null>;
+export type FactLookup = (sentence: string, language: string, keys: FactKeys, context: FactContext) => Promise<Fact | null>;
 
 export const SILENCE_AUTO_STOP_MS = 3 * 60_000;
+const KEPT_SENTENCES = 200;
+const KEPT_FACTS = 10;
 
 /**
  * Live facts: the glasses mic into a Soniox ES/EN session through the shared
@@ -31,6 +33,9 @@ export const SILENCE_AUTO_STOP_MS = 3 * 60_000;
 export class ConverseSession {
   state: ConverseState = { kind: "paused" };
   fact: Fact | null = null;
+  /** Every finished sentence since the app opened; pausing keeps it, leaving clears it. */
+  readonly transcript: string[] = [];
+  private readonly shownFacts: string[] = [];
   private client: CloudSttClient | null = null;
   private offPcm: (() => void) | null = null;
   private offVoiceActivity: (() => void) | null = null;
@@ -99,6 +104,8 @@ export class ConverseSession {
   stop(): void {
     this.pause();
     this.fact = null;
+    this.transcript.length = 0;
+    this.shownFacts.length = 0;
   }
 
   tick(nowMs = Date.now()): void {
@@ -108,10 +115,15 @@ export class ConverseSession {
   private heard(sentence: string, keys: FactKeys): void {
     if (!sentence) return;
     const index = ++this.heardCount;
-    void this.lookup(sentence, this.language, keys).then((fact) => {
+    const context = { earlier: [...this.transcript], shown: [...this.shownFacts] };
+    this.transcript.push(sentence);
+    if (this.transcript.length > KEPT_SENTENCES) this.transcript.shift();
+    void this.lookup(sentence, this.language, keys, context).then((fact) => {
       if (!fact || index < this.shownIndex) return;
       this.shownIndex = index;
       this.fact = fact;
+      this.shownFacts.push(fact.text);
+      if (this.shownFacts.length > KEPT_FACTS) this.shownFacts.shift();
       this.onChange();
     }, () => {});
   }
