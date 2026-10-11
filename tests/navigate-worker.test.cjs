@@ -40,12 +40,12 @@ function fixture({ key = 'test-key' } = {}) {
     '../compass/calibration': { calibrateHeading: value => value + 5, normalizeHeading: value => ((value % 360) + 360) % 360 },
     '../../native/frame-timings': { startFrame: () => 1, finishFrame() {}, logFrame() {}, span: (_id, _name, fn) => fn(), runWithFrame: (_id, fn) => fn() },
     '../../native/active-display': { getActiveDisplay: () => null },
-    '../../ui/window-menu': { WindowMenu: class { constructor(options) { menus.push(options); } paint() { return []; } isOpen() { return false; } resize() {} open() {} }, WindowMenuLayer: class {} },
+    '../../ui/window-menu': { WindowMenu: class { constructor(options) { menus.push(options); } paint() { return []; } isOpen() { return false; } resize() {} open() { calls.push(['menu']); } }, WindowMenuLayer: class {} },
     '../../graphics/image': { GrayImage: class {} },
     '../../graphics/ttf-font': { TtfFont: { load: () => ({}) } },
     '../../ui/terminal-face': { terminalFace: () => ({}) },
     './nav-render': { paintGuidance() {}, formatDistance: meters => [String(meters), 'm'] },
-    '../../ui/terminal': { listScrollTop: () => 0, paintTerminalList() {}, stepSelection: (rows, selected, direction) => Math.max(0, Math.min(rows.length - 1, selected + direction)) },
+    '../../ui/terminal': { listScrollTop: () => 0, paintTerminalList() {}, stepSelection: (rows, selected, direction) => { for (let i = selected + direction; i >= 0 && i < rows.length; i += direction) if (rows[i].selectable !== false) return i; return selected; } },
     '../../graphics/plane': { planesFingerprint: () => 'frame' },
     '../../graphics/terminal-painter': { fitLine: (_face, text) => text, paintChat: (_image, _face, view) => chats.push(view) },
     '../../ui/chat-draft': loader({ Math })('app/ui/chat-draft.ts'),
@@ -54,6 +54,7 @@ function fixture({ key = 'test-key' } = {}) {
       getGoogleMapsKey: () => key,
       newSearchSession: () => 'session',
       autocompletePlaces: async input => { searches.push(input); return [{ placeId: `place:${input}`, name: `Lugar ${input}`, detail: 'Guayaquil', distanceMeters: 1200 }]; },
+      nearbyPlaces: async type => { searches.push(`nearby:${type}`); return [{ placeId: `near:${type}`, name: 'Farmacia Cruz Azul', detail: 'Av. 9 de Octubre', distanceMeters: 300 }]; },
       RoadTiles: class { tile() { return null; } clear() {} },
       worldPixel: (lat, lng, zoom) => [lng * 2 ** zoom, -lat * 2 ** zoom],
     },
@@ -230,4 +231,29 @@ test('without a Google key the list explains what to do instead of searching', a
   assert.equal(h.state().phase, 'idle');
   assert.match(h.state().statusMessage, /clave de Google Maps/);
   assert.equal((await h.handleNavigateTool('start_route', { query: 'x' })).ok, false);
+});
+
+test('home lists dictation, saved places and nearby shortcuts; a shortcut searches nearest first', async () => {
+  const h = fixture();
+  h.send({ type: 'navigation-sensors', windowId: 'navigate:main', event: { kind: 'location', location: { latitude: -2.17, longitude: -79.92, accuracy: 5 } } });
+  for (let i = 0; i < 3; i++) h.input('scroll-down');
+  h.input('click');
+  assert.equal(h.state().phase, 'search');
+  await flush();
+  assert.deepEqual(h.searches, ['nearby:pharmacy']);
+  assert.equal(h.state().suggestions[0].placeId, 'near:pharmacy');
+  assert.equal(h.messages.some(m => m.type === 'voice-draft'), false);
+  h.input('click');
+  assert.equal(h.state().target.placeId, 'near:pharmacy');
+});
+
+test('a tap during guidance opens the menu where the route can be stopped', async () => {
+  const h = fixture();
+  h.handleNavigateTool('start_route', { query: 'Malecón' });
+  await flush();
+  h.nav({ type: 'ready' });
+  h.nav({ type: 'status', status: 'OK' });
+  h.input('click');
+  assert.ok(h.calls.some(c => c[0] === 'menu'));
+  assert.equal(h.state().phase, 'guiding');
 });

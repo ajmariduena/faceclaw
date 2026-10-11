@@ -67,6 +67,7 @@ import {
   autocompletePlaces,
   getGoogleMapsKey,
   GOOGLE_MAPS_KEY_SETTING_KEY,
+  nearbyPlaces,
   newSearchSession,
   RoadTiles,
   worldPixel,
@@ -147,7 +148,18 @@ type Target = { placeId: string; latitude: number; longitude: number; title: str
 type IdleRow =
   | { kind: "search" }
   | { kind: "saved"; destination: SavedDestination }
-  | { kind: "recent"; destination: RecentDestination };
+  | { kind: "recent"; destination: RecentDestination }
+  | { kind: "header"; label: string }
+  | { kind: "nearby"; label: string; type: string };
+
+const NEARBY: ReadonlyArray<{ label: string; type: string }> = [
+  { label: "Gasolinera", type: "gas_station" },
+  { label: "Farmacia", type: "pharmacy" },
+  { label: "Cajero", type: "atm" },
+  { label: "Supermercado", type: "supermarket" },
+  { label: "Café", type: "cafe" },
+  { label: "Restaurante", type: "restaurant" },
+];
 
 let window: NavWindow | null = null;
 let screenOn = true;
@@ -464,6 +476,34 @@ function setQuery(text: string): void {
         render();
       });
   }, SEARCH_DEBOUNCE_MS);
+}
+
+/** Nearest places of one type; without a GPS fix yet, a text search of its name. */
+function searchNearby(label: string, type: string): void {
+  beginSearch(false);
+  if (!lastFix) {
+    setQuery(label);
+    return;
+  }
+  query = label;
+  searchState = "searching";
+  const generation = ++searchGeneration;
+  nearbyPlaces(type, { latitude: lastFix.latitude, longitude: lastFix.longitude })
+    .then((found) => {
+      if (generation !== searchGeneration) return;
+      suggestions = found;
+      searchSelected = 0;
+      searchTop = 0;
+      searchState = "done";
+      render();
+    })
+    .catch((error) => {
+      if (generation !== searchGeneration) return;
+      searchState = "error";
+      searchError = String((error as Error)?.message ?? error);
+      render();
+    });
+  render();
 }
 
 function pickSuggestion(suggestion: PlaceSuggestion): void {
@@ -854,8 +894,10 @@ function reconcileTracking(): void {
 
 function idleRows(): IdleRow[] {
   const rows: IdleRow[] = [{ kind: "search" }];
-  for (const destination of loadSavedDestinations()) if (destination.address) rows.push({ kind: "saved", destination });
+  for (const destination of loadSavedDestinations()) if (destination.address || destination.builtin) rows.push({ kind: "saved", destination });
   for (const destination of loadRecentDestinations()) rows.push({ kind: "recent", destination });
+  rows.push({ kind: "header", label: "Cerca de ti" });
+  for (const nearby of NEARBY) rows.push({ kind: "nearby", ...nearby });
   return rows;
 }
 
@@ -873,8 +915,10 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 
 function idleTerminalRows(rows: IdleRow[]): TerminalRow[] {
   return rows.map((row) => {
-    if (row.kind === "search") return { label: "Buscar un lugar" };
-    if (row.kind === "saved") return { label: row.destination.name };
+    if (row.kind === "search") return { label: "Dictar un lugar" };
+    if (row.kind === "saved") return { label: row.destination.name, value: row.destination.address ? "" : "Sin dirección" };
+    if (row.kind === "header") return { label: row.label, selectable: false };
+    if (row.kind === "nearby") return { label: row.label };
     return { label: row.destination.name, value: distanceLabel(row.destination) };
   });
 }
@@ -885,8 +929,10 @@ function activateIdleRow(row: IdleRow): void {
     return;
   }
   if (row.kind === "search") beginSearch();
-  else if (row.kind === "saved") navigateToSaved(row.destination);
-  else {
+  else if (row.kind === "nearby") searchNearby(row.label, row.type); else if (row.kind === "saved") {
+    if (row.destination.address) navigateToSaved(row.destination);
+    else beginAddressEdit(row.destination.id, row.destination.name, "");
+  } else if (row.kind === "recent") {
     const recent = row.destination;
     startTrip({ placeId: recent.placeId, latitude: recent.latitude ?? 0, longitude: recent.longitude ?? 0, title: recent.name, detail: recent.place });
   }
@@ -920,7 +966,7 @@ function handleInput(win: NavWindow, event: InputEvent, frameId: number): void {
     renderAndSubmit(win, frameId);
     return;
   }
-  if (event.type === "short-then-long-press") {
+  if (event.type === "short-then-long-press" || (event.type === "click" && (phase === "starting" || phase === "guiding"))) {
     windowMenu(win).open();
     renderAndSubmit(win, frameId);
     return;

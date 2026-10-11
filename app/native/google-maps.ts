@@ -12,6 +12,8 @@ import { fetchWithUserAgent } from "../util/http";
 
 export const GOOGLE_MAPS_KEY_SETTING_KEY = "maps.googleApiKey";
 const AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
+const NEARBY_URL = "https://places.googleapis.com/v1/places:searchNearby";
+const NEARBY_RADIUS_M = 5_000;
 const TILE_ROOT = "https://tile.googleapis.com/v1";
 const FETCH_TIMEOUT_MS = 12_000;
 export const TILE_SIZE = 256;
@@ -69,6 +71,48 @@ export async function autocompletePlaces(
     });
   }
   return out;
+}
+
+/** The closest places of one Places type (e.g. "pharmacy"), nearest first. */
+export async function nearbyPlaces(type: string, origin: { latitude: number; longitude: number }): Promise<PlaceSuggestion[]> {
+  const center = { latitude: origin.latitude, longitude: origin.longitude };
+  const response = await withTimeout(fetchWithUserAgent(NEARBY_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": requireKey(),
+      "X-Goog-FieldMask": "places.id,places.displayName,places.shortFormattedAddress,places.location",
+    },
+    body: JSON.stringify({
+      includedTypes: [type],
+      maxResultCount: 10,
+      rankPreference: "DISTANCE",
+      languageCode: "es",
+      locationRestriction: { circle: { center, radius: NEARBY_RADIUS_M } },
+    }),
+  }), "Google search");
+  if (!response.ok) throw new Error(await failure(response, "Google search"));
+  const json: any = await response.json();
+  const out: PlaceSuggestion[] = [];
+  for (const place of Array.isArray(json?.places) ? json.places : []) {
+    const name = String(place?.displayName?.text ?? "").trim();
+    if (!place?.id || !name) continue;
+    const latitude = Number(place.location?.latitude), longitude = Number(place.location?.longitude);
+    out.push({
+      placeId: String(place.id),
+      name,
+      detail: String(place.shortFormattedAddress ?? "").trim(),
+      distanceMeters: Number.isFinite(latitude) && Number.isFinite(longitude) ? Math.round(distanceMeters(origin, { latitude, longitude })) : null,
+    });
+  }
+  return out;
+}
+
+function distanceMeters(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
+  const rad = Math.PI / 180;
+  const h = Math.sin(((b.latitude - a.latitude) * rad) / 2) ** 2 +
+    Math.cos(a.latitude * rad) * Math.cos(b.latitude * rad) * Math.sin(((b.longitude - a.longitude) * rad) / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 /**

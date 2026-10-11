@@ -17,13 +17,14 @@ export const FAINT = 68;
 const GHOST = 40;
 
 /** Map focus (the wearer) and the ellipse the streets fade out within. */
-export const MAP_FOCUS: readonly [number, number] = [446, 232];
+export const MAP_FOCUS: readonly [number, number] = [130, 232];
 export const MAP_RADIUS: readonly [number, number] = [126, 152];
-const CLUSTER_X = 24;
+/** The turn cluster sits right of the map, so the map takes the less intrusive left edge of view. */
+const CLUSTER_X = 276;
 const GLYPH_Y = 196;
 const GLYPH_SIZE = 48;
 const TEXT_X = CLUSTER_X + 66;
-const TEXT_WIDTH = 300;
+const TEXT_WIDTH = 576 - 16 - TEXT_X;
 
 export type GuidanceFonts = {
   face: Face;
@@ -197,7 +198,7 @@ function paintStreetMap(image: GrayImage, map: StreetMap, tiny: NumberFont): voi
   else drawDot(image, fx, fy, 14, map.faint ? MID : BRIGHT);
   if (map.northUp) tiny.drawText(image, Math.round(fx - tiny.measureText("N") / 2), fy - ry + 6, "N", MID);
   const mark = "Google Maps";
-  tiny.drawText(image, Math.round(image.width - 8 - tiny.measureText(mark)), image.height - 16, mark, FAINT);
+  tiny.drawText(image, 8, image.height - 16, mark, FAINT);
 }
 
 /** Anti-aliased polyline whose brightness falls off across the map ellipse. */
