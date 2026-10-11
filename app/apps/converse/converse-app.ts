@@ -23,7 +23,7 @@ const LABELS: Partial<Record<ConverseState["kind"], string>> = {
   paused: "· Paused",
 };
 
-export function converseView(session: Pick<ConverseSession, "state" | "fact">): ConverseView {
+export function converseView(session: Pick<ConverseSession, "state" | "fact" | "previous">): ConverseView {
   const state = session.state;
   const message = state.kind === "missing-key" ? { title: `${state.service} key missing`, detail: "Add it in the phone app, under API keys." }
     : state.kind === "no-glasses" ? { title: "Glasses not connected", detail: "Live facts listens through the glasses mic." }
@@ -31,7 +31,7 @@ export function converseView(session: Pick<ConverseSession, "state" | "fact">): 
     : state.kind === "failed" ? { title: "Live facts stopped", detail: state.message }
     : null;
   const label = LABELS[state.kind] ?? (state.kind === "listening" && !session.fact ? "· Live facts" : "");
-  return { fact: session.fact, status: { label, bright: state.kind === "paused" }, message };
+  return { fact: session.fact, previous: session.previous, status: { label, bright: state.kind === "paused" }, message };
 }
 
 const post: Post = async (url, headers, body, timeoutMs) => {

@@ -45,7 +45,7 @@ Latencia objetivo: unos 1,5–2,5 s desde que termina la frase hasta que aparece
 - OpenRouter queda solo de respaldo si falta la clave de TypeSafe o de Cerebras, o si Cerebras falla.
 
 ## Pantalla (11 oct)
-Elegida la variante «solo texto» (`tools/headless-render/live-facts.cjs`, `texto`): sin recuadro, el tema y la fuente en tenue, y el dato en blanco. Entre un dato y otro, la pantalla queda vacía con una marca tenue de «Live facts».
+Elegida la variante «solo texto» (`tools/headless-render/live-facts.cjs`, `texto`): sin recuadro, el tema en tenue (sin fuente) y el dato en blanco. El dato anterior queda debajo, más tenue (`anterior-abajo`). Cada búsqueda lleva las frases anteriores de la conversación y los datos ya mostrados. Entre un dato y otro, la pantalla queda vacía con una marca tenue de «Live facts».
 
 ## Decisiones abiertas
 - Dónde corre el «cerebro» (detectar, buscar, redactar): directo desde el teléfono (las claves quedan en el teléfono) o a través del daemon de Paseo en la Mac por el relay (las claves se quedan en la Mac, pero depende de la Mac).

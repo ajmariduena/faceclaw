@@ -69,10 +69,12 @@ test('the screen is the fact under its topic, nothing else', () => {
   const painter = loader({}, { '../paseo/paseo-painter': { CONTENT_TOP: 20, FOOTER_TOP: 250, LEFT: 20, PITCH: 27, RIGHT: 556,
     fitLine: (_face, text) => text, wrapLines: (_face, text) => [text], wrapCapped: (_face, text) => [text] } })('app/apps/converse/converse-painter.ts');
   const face = recordingFace();
-  painter.paintConverse({}, face, { fact: { topic: 'Chimborazo', source: 'es.wikipedia.org', text: 'Mide 6.263 m.' }, status: { label: '', bright: false }, message: null });
-  assert.deepEqual(face.draws.map((d) => [d.text, d.value]), [['Chimborazo', 153], ['Mide 6.263 m.', 255]]);
+  const previous = { topic: 'Cajas', source: 'x.com', text: 'Está a media hora de Cuenca.' };
+  painter.paintConverse({}, face, { fact: { topic: 'Chimborazo', source: 'es.wikipedia.org', text: 'Mide 6.263 m.' }, previous, status: { label: '', bright: false }, message: null });
+  assert.deepEqual(face.draws.map((d) => [d.text, d.value]), [['Chimborazo', 153], ['Mide 6.263 m.', 255], ['Cajas', 70], ['Está a media hora de Cuenca.', 120]]);
+  assert.ok(face.draws[2].y > face.draws[1].y, 'the previous fact sits under the newest');
   face.draws.length = 0;
-  painter.paintConverse({}, face, { fact: null, status: { label: '· Live facts', bright: false }, message: null });
+  painter.paintConverse({}, face, { fact: null, previous: null, status: { label: '· Live facts', bright: false }, message: null });
   assert.deepEqual(face.draws.map((d) => [d.text, d.value]), [['· Live facts', 85]]);
 });
 
@@ -110,6 +112,7 @@ test('a slow lookup never replaces the fact of a later sentence', async () => {
   lookups[0].resolve({ topic: 'Guayaquil', source: 'inec.gob.ec', text: '3 millones.' });
   await new Promise((r) => setImmediate(r));
   assert.equal(session.fact.topic, 'Anthropic');
+  assert.equal(session.previous, null, 'a stale lookup does not become the previous fact either');
 });
 
 test('interim transcripts are not looked up', () => {
@@ -173,4 +176,15 @@ test('each sentence carries what was said before it, and leaving starts a new co
   assert.deepEqual(Array.from(lookups[1].context.earlier), ['El mes pasado fui a Cuenca.']);
   session.stop();
   assert.equal(session.transcript.length, 0);
+});
+
+test('a new fact moves the one it replaces to previous', async () => {
+  const { session, lookups, say } = sessionHarness();
+  say('¿Qué altura tiene el Chimborazo?', 'es');
+  lookups[0].resolve({ topic: 'Chimborazo', source: '', text: 'Mide 6.263 m.' });
+  await new Promise((r) => setImmediate(r));
+  say('¿Y el Cotopaxi qué tan alto es?', 'es');
+  lookups[1].resolve({ topic: 'Cotopaxi', source: '', text: 'Mide 5.897 m.' });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual([session.fact.topic, session.previous.topic], ['Cotopaxi', 'Chimborazo']);
 });

@@ -33,6 +33,8 @@ const KEPT_FACTS = 10;
 export class ConverseSession {
   state: ConverseState = { kind: "paused" };
   fact: Fact | null = null;
+  /** The fact the newest one replaced, still shown dimmer under it. */
+  previous: Fact | null = null;
   /** Every finished sentence since the app opened; pausing keeps it, leaving clears it. */
   readonly transcript: string[] = [];
   private readonly shownFacts: string[] = [];
@@ -103,7 +105,7 @@ export class ConverseSession {
 
   stop(): void {
     this.pause();
-    this.fact = null;
+    this.fact = this.previous = null;
     this.transcript.length = 0;
     this.shownFacts.length = 0;
   }
@@ -121,6 +123,7 @@ export class ConverseSession {
     void this.lookup(sentence, this.language, keys, context).then((fact) => {
       if (!fact || index < this.shownIndex) return;
       this.shownIndex = index;
+      this.previous = this.fact;
       this.fact = fact;
       this.shownFacts.push(fact.text);
       if (this.shownFacts.length > KEPT_FACTS) this.shownFacts.shift();
