@@ -2,19 +2,22 @@
   <ActionBar title="API keys" />
   <GridLayout rows="auto,*,auto" class="p-16">
     <Button row="0" text="Test all" tap="{{ testAll }}" isEnabled="{{ testAllEnabled }}" />
-    <ListView row="1" items="{{ rows }}" separatorColor="transparent">
-      <ListView.itemTemplate>
-        <StackLayout class="m-b-16">
-          <Label text="{{ group }}" class="body-text" />
-          <Label text="{{ label }}" class="h3" />
-          <GridLayout columns="*,auto">
-            <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="{{ secure }}" autocorrect="false" autocapitalizationType="none" hint="{{ placeholder }}" />
-            <Button col="1" text="{{ testLabel }}" tap="{{ onTest }}" isEnabled="{{ enabled }}" visibility="{{ testVisibility }}" />
-          </GridLayout>
-          <Label text="{{ status }}" textWrap="true" />
-        </StackLayout>
-      </ListView.itemTemplate>
-    </ListView>
+    <!-- Not a ListView: recycled cells fire textChange with another row's text and overwrite that row's key. -->
+    <ScrollView row="1">
+      <Repeater items="{{ rows }}">
+        <Repeater.itemTemplate>
+          <StackLayout class="m-b-16">
+            <Label text="{{ group }}" class="body-text" />
+            <Label text="{{ label }}" class="h3" />
+            <GridLayout columns="*,auto">
+              <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="{{ secure }}" autocorrect="false" autocapitalizationType="none" hint="{{ placeholder }}" />
+              <Button col="1" text="{{ testLabel }}" tap="{{ onTest }}" isEnabled="{{ enabled }}" visibility="{{ testVisibility }}" />
+            </GridLayout>
+            <Label text="{{ status }}" textWrap="true" />
+          </StackLayout>
+        </Repeater.itemTemplate>
+      </Repeater>
+    </ScrollView>
     <Button row="2" text="{{ advancedLabel }}" tap="{{ toggleAdvanced }}" />
   </GridLayout>
 </Page>
