@@ -5,6 +5,7 @@ import { renderIcon, type IconName } from "../../graphics/icons";
 import { paintHomeColumn } from "./column-painter";
 import type { HomeWeatherReading } from "./home-weather";
 import { glanceEmptyStatus, glanceVerdict, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
+import type { BotsGlance } from "../bots/bots-model";
 
 export type HomeFace = {
   readonly lineHeight: number;
@@ -16,6 +17,7 @@ export type HomeSnapshot = {
   calendar: HomeCalendar;
   /** What the Paseo worker last published; null before it publishes (or when the app never ran). */
   paseo?: PaseoGlanceSnapshot | null;
+  bots?: BotsGlance | null;
   /** A Soniox key is stored, so Translate can start. */
   translateReady?: boolean;
   /** Ring and glasses levels from the shell; null (or absent) while unknown. */
@@ -24,7 +26,7 @@ export type HomeSnapshot = {
   weather?: HomeWeatherReading | null;
 };
 
-export const HOME_DOTS_TOP = 120;
+export const HOME_DOTS_TOP = 115;
 const DIM = 153;
 const CARD_TEXT_WIDTH = 278;
 
@@ -117,6 +119,24 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
       lines.forEach((line, i) => text(20, rows[2 + i]!, line));
     } else if (paseo.note) text(20, rows[1]!, paseo.note, DIM);
     if (paseo.ledger) text(20, rows[rows.length - 1]!, paseo.ledger, DIM);
+  } else if (card.id === "bots" && data.bots?.updates.length) {
+    const pitch = Math.max(27, face.lineHeight + 4);
+    const fits = (y: number) => y + face.lineHeight <= 254;
+    header();
+    let y = 62;
+    for (const update of data.bots.updates) {
+      if (!fits(y + pitch)) break;
+      text(20, y, update.who, DIM);
+      y += pitch;
+      const lines = wrapped(face, update.line, CARD_TEXT_WIDTH, 3);
+      if (lines.length > 2) { lines.length = 2; lines[1] = `${lines[1]}…`; }
+      for (const line of lines) {
+        if (!fits(y)) break;
+        text(20, y, line);
+        y += pitch;
+      }
+      y += 14;
+    }
   } else if (card.id === "translate") {
     glance(() => {
       const left = "ES ", right = " EN";
@@ -128,7 +148,8 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
   } else if (card.id === "converse") {
     glance(() => centered(136, "Live facts · ES/EN"), emptyCardStatus(card.id));
   } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id)
-    : card.id === "paseo" ? glanceEmptyStatus(data.paseo) : emptyCardStatus(card.id));
+    : card.id === "paseo" ? glanceEmptyStatus(data.paseo)
+    : card.id === "bots" ? data.bots?.status ?? emptyCardStatus(card.id) : emptyCardStatus(card.id));
 
   image.bitBlt(paintHomeColumn(homeColumnState(data.now, data.battery, data.weather, data.paseo), face), 0, 0);
   image.bitBlt(panel.withDrawsBaked(), 230, 14);

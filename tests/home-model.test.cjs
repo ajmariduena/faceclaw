@@ -4,11 +4,11 @@ const { loader } = require('./helpers/load-typescript.cjs');
 const { HomeModel, HOME_CARDS, HOME_SLEEP_GUARD_MS, calendarCardState, emptyCardStatus, homeColumnState, dayLabel } =
   loader()('app/apps/home/home-model.ts');
 
-test('five fixed cards wrap in both directions, Paseo first, with English names', () => {
+test('six fixed cards wrap in both directions, Paseo then Bots, with English names', () => {
   const model = new HomeModel();
-  assert.deepEqual(Array.from(HOME_CARDS, card => card.id), ['paseo', 'calendar', 'translate', 'converse', 'more']);
-  assert.deepEqual(Array.from(HOME_CARDS, card => card.name), ['Paseo', 'Calendar', 'Translate', 'Converse', 'More']);
-  assert.deepEqual(Array.from(HOME_CARDS, card => card.appId), ['paseo', 'calendar', 'translate', 'converse', 'launcher']);
+  assert.deepEqual(Array.from(HOME_CARDS, card => card.id), ['paseo', 'bots', 'calendar', 'translate', 'converse', 'more']);
+  assert.deepEqual(Array.from(HOME_CARDS, card => card.name), ['Paseo', 'Bots', 'Calendar', 'Translate', 'Converse', 'More']);
+  assert.deepEqual(Array.from(HOME_CARDS, card => card.appId), ['paseo', 'bots', 'calendar', 'translate', 'converse', 'launcher']);
   model.move(-1);
   assert.equal(model.selected.id, 'more');
   model.move(1);

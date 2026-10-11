@@ -8,6 +8,7 @@ import { testApiKey } from "./api-key-tests";
 
 const definitions: { service: ApiService; label: string; group: string; setting: settings.ConfigSettingString; advanced?: boolean }[] = [
   { service: "paseo", label: "Pairing link", group: "Paseo", setting: settings.paseoPairingLinkSetting },
+  { service: "cursor", label: "Cursor", group: "Grok Bot", setting: settings.cursorApiKeySetting },
   { service: "soniox", label: "Soniox", group: "Listening · Translate, Converse", setting: settings.sonioxApiKeySetting },
   { service: "openrouter", label: "OpenRouter", group: "Facts & AI Chat", setting: settings.openRouterApiKeySetting },
   { service: "parallel", label: "Parallel", group: "Search · Converse", setting: settings.parallelApiKeySetting },
@@ -20,6 +21,8 @@ const definitions: { service: ApiService; label: string; group: string; setting:
 
 class ApiKeyRow extends Observable {
   testing = false;
+  readonly secure = true;
+  readonly testVisibility = "visible";
   private revision = 0;
   private detail = "";
   constructor(readonly definition: typeof definitions[number]) { super(); }
@@ -68,17 +71,38 @@ class ApiKeyRow extends Observable {
     } finally { this.testing = false; this.notifyPropertyChange("enabled", true); }
   }
 }
+/** Shares the key rows' template, so it exposes the same bindings. */
+class BotNamesRow extends Observable {
+  readonly label = "Bot name";
+  readonly group = "Grok Bot";
+  readonly secure = false;
+  readonly testVisibility = "collapse";
+  readonly testLabel = "";
+  readonly enabled = true;
+  readonly placeholder = "Glasses";
+  readonly status = "The exact name of your glasses bot. A misspelled name creates an empty bot.";
+  get value(): string { return settings.grokBotNamesSetting.get(); }
+  set value(value: string) { if (value !== this.value) settings.grokBotNamesSetting.set(value); }
+  onEdit(args: { object: { text: string } }): void { this.value = args.object.text; }
+  onTest(): void {}
+}
+
 class ApiKeysViewModel extends Observable {
   readonly allRows = definitions.map(d => new ApiKeyRow(d));
-  readonly rows = new ObservableArray(this.allRows.filter(row => !row.definition.advanced));
+  private readonly botNames = new BotNamesRow();
   advanced = false;
+  readonly rows = new ObservableArray<ApiKeyRow | BotNamesRow>(this.visibleRows());
   testing = false;
   get testAllEnabled(): boolean { return !this.testing; }
   get advancedLabel(): string { return this.advanced ? "Advanced ▴" : "Advanced ▾"; }
   toggleAdvanced(): void {
     this.advanced = !this.advanced;
-    this.rows.splice(0, this.rows.length, ...this.allRows.filter(row => this.advanced || !row.definition.advanced));
+    this.rows.splice(0, this.rows.length, ...this.visibleRows());
     this.notifyPropertyChange("advancedLabel", this.advancedLabel);
+  }
+  private visibleRows(): (ApiKeyRow | BotNamesRow)[] {
+    return this.allRows.filter(row => this.advanced || !row.definition.advanced)
+      .flatMap(row => row.definition.service === "cursor" ? [row, this.botNames] : [row]);
   }
   async testAll(): Promise<void> {
     if (this.testing) return;

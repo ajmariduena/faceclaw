@@ -192,6 +192,7 @@ export function getStringSettingById(id: string): ConfigSettingString | null {
 const API_SETTING_SERVICES: Record<string, ApiService> = {
   "openrouter-api-key": "openrouter", "parallel-api-key": "parallel", "cerebras-api-key": "cerebras", "brave-api-key": "brave",
   "soniox-api-key": "soniox", "openai-api-key": "openai", "anthropic-api-key": "anthropic", "mapbox-api-key": "mapbox", "elevenlabs-api-key": "elevenlabs", "paseo-pairing-link": "paseo",
+  "cursor-api-key": "cursor",
 };
 
 export class ConfigSettingString<TId extends string = string> extends ConfigSetting<string, TId> {
@@ -929,6 +930,24 @@ export const cerebrasApiKeySetting = apiKeySetting("cerebras-api-key", "Cerebras
 export const braveApiKeySetting = apiKeySetting("brave-api-key", "Brave key", "search.braveApiKey");
 export const aiChatDraftSetting = new ConfigSettingString({ id: "ai-chat-draft", label: "AI Chat draft", storageKey: "aiChat.draft", defaultValue: "", editorTitle: "Edit draft" });
 export const paseoChatDraftSetting = new ConfigSettingString({ id: "paseo-chat-draft", label: "Paseo draft", storageKey: "paseo.chatDraft", defaultValue: "", editorTitle: "Edit draft" });
+export const cursorApiKeySetting = apiKeySetting("cursor-api-key", "Cursor key", "grokbot.cursorApiKey");
+export const grokBotNamesSetting = new ConfigSettingString({
+  id: "grokbot-names",
+  label: "Bot name",
+  storageKey: "grokbot.botNames",
+  defaultValue: "Glasses",
+  editorTitle: "Grok Bot name",
+  normalize: (value) => (value ?? "").replace(/[\x00-\x1f]+/g, " "),
+  description: "The exact name of the Grok Bot the glasses talk to. A misspelled name creates a new, empty bot.",
+});
+export const botsChatDraftSetting = new ConfigSettingString({ id: "bots-chat-draft", label: "Bots draft", storageKey: "grokbot.chatDraft", defaultValue: "", editorTitle: "Edit draft" });
+export const botsWakeOnReplySetting = new ConfigSettingBoolean({
+  id: "grokbot-wake-on-reply",
+  label: "Wake when a bot replies",
+  storageKey: "grokbot.wakeOnReply",
+  defaultValue: true,
+  description: "When a Grok Bot answers something you asked and its chat is not on screen, buzz; if the glasses are asleep, wake them into that chat.",
+});
 
 export const assistantModelSetting = new ConfigSettingEnum<AssistantModel>({
   id: "assistant-model",

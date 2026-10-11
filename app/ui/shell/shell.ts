@@ -210,7 +210,7 @@ export type ShellConfig = {
    * it. Hosts that leave it out offer no notifications to select.
    */
   openNotificationsWindow?: () => { window: InProcessWindow; opened: boolean } | null;
-  /** Launch (or focus) an app by id; the wakeword opens AI Chat through it. */
+  /** Launch (or focus) an app by id; the wakeword opens Bots or AI Chat through it. */
   launchApp?: (appId: string) => Promise<void>;
   /**
    * Start AI Chat's dictation once its window is in front (the wakeword's
@@ -218,6 +218,10 @@ export type ShellConfig = {
    * window instead.
    */
   startAiChatListening?: () => boolean;
+  /** Bots can take the wakeword (a Cursor key is set); without it the wakeword opens AI Chat. */
+  botsReady?: () => boolean;
+  /** Start dictation in the Bots chat once Bots is in front. */
+  startBotsListening?: () => boolean;
   /** Close the glasses connection (system menu > Disconnect). */
   disconnect?: () => Promise<void> | void;
 };
@@ -446,11 +450,11 @@ class Shell {
     return this.conversations;
   }
 
-  async prepareChatVoiceCapture(): Promise<boolean> {
+  async prepareChatVoiceCapture(windowId = "ai-chat"): Promise<boolean> {
     if (this.activeVoiceLayer || this.activeKeyboardLayer || this.voiceDialogPending) return false;
     const ready = (await this.config.prepareVoiceCapture?.()) ?? true;
     return ready && !this.activeVoiceLayer && !this.activeKeyboardLayer &&
-      this.stack.isAtBase() && this.isWindowFocused("ai-chat");
+      this.stack.isAtBase() && this.isWindowFocused(windowId);
   }
   private assistantLayer: AssistantLayer | null = null;
   private readonly assistantActivityListeners = new Set<(event: AssistantActivityEvent) => void>();
@@ -963,7 +967,7 @@ class Shell {
       const wokeScreen = !this.screenOn && this.wake("sidebar");
       if (action === "voice-input" && !this.activeVoiceLayer && !this.activeKeyboardLayer) {
         if (this.home && this.config.launchApp) {
-          await this.openAiChatListening(event, frameId);
+          await this.openBotsListening(event, frameId);
         } else if (this.assistantLayer) {
           // The assistant overlay is up; a wakeword continues that conversation.
           this.startAssistantFollowUp(true);
@@ -1877,6 +1881,26 @@ class Shell {
     }
     this.foregroundWindow()?.requestRender();
     this.config.requestShellRender();
+  }
+
+  /** The wakeword's lean action: the default bot's chat (or the one on screen) listening; AI Chat when Bots can't take it. */
+  private async openBotsListening(event: InputEvent, frameId: number): Promise<void> {
+    if (!this.config.startBotsListening || !this.config.botsReady?.()) {
+      await this.openAiChatListening(event, frameId);
+      return;
+    }
+    try {
+      await this.config.launchApp!("bots");
+    } catch (error) {
+      console.warn(`wakeword: Bots launch failed: ${error}`);
+      await this.openAiChatListening(event, frameId);
+      return;
+    }
+    if (this.foregroundWindow()?.appId !== "bots") {
+      await this.openAiChatListening(event, frameId);
+      return;
+    }
+    if (this.stack.isAtBase()) this.config.startBotsListening();
   }
 
   /** The wakeword's lean action: AI Chat in front, then listening. */

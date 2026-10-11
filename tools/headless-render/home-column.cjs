@@ -11,7 +11,7 @@ const { createRenderContext } = require('./render.cjs');
 const { stockFont } = require('./stock-font.cjs');
 
 const COLUMN_ICONS = ['calendar', 'circle', 'glasses', 'battery', 'sun', 'moon', 'cloud', 'cloud-sun', 'cloud-moon', 'cloud-rain', 'cloud-lightning', 'square-terminal'];
-const CARD_ICONS = ['square-terminal', 'calendar-days', 'languages', 'messages-square', 'layout-grid'];
+const CARD_ICONS = ['square-terminal', 'sparkles', 'calendar-days', 'languages', 'messages-square', 'layout-grid'];
 
 function save(graphics, band, name) {
   const out = new graphics.GrayImage(640, 480);
