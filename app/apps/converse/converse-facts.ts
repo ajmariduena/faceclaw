@@ -67,7 +67,7 @@ async function search(sentence: string, keys: FactKeys, post: Post): Promise<Sea
 async function write(sentence: string, language: string, results: SearchResult[], keys: FactKeys, post: Post): Promise<Fact | null> {
   const languageName = language === "en" ? "English" : "Spanish";
   const messages = [
-    { role: "system", content: `Someone just said the utterance in a live conversation. Using only the numbered sources, give the single most useful fact about what it mentions: confirm or correct a claim, answer a question, or identify a name. Reply on one line as: topic | fact | source number. The topic is 1 to 3 words. The fact is one sentence in ${languageName}, at most ${MAX_FACT_CHARS} characters, no markdown. If the sources say nothing relevant, reply exactly: -` },
+    { role: "system", content: `Someone just said the utterance in a live conversation. Using only the numbered sources, give the single most useful fact about what it mentions: confirm or correct a claim, answer a question, or identify a name. Reply on one line as: topic | fact | source number. The topic is 1 to 3 words. The fact is one complete sentence in ${languageName} that names its subject, at most ${MAX_FACT_CHARS} characters, no markdown. If the sources say nothing relevant, reply exactly: -` },
     { role: "user", content: `Utterance: ${sentence}\n\nSources:\n${results.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join("\n")}` },
   ];
   const attempts: [string, string, object][] = [];

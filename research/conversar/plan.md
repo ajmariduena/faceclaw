@@ -38,6 +38,12 @@ Latencia objetivo: unos 1,5–2,5 s desde que termina la frase hasta que aparece
 - **Con Perplexity Fast en la cadena completa:** la búsqueda tarda 280–360 ms y la línea con el dato sale unos 1,19 s después de que termina la frase (antes 1,55–1,75 s). Con el envío a las gafas serían unos 1,4 s en total.
 - Ahora el tiempo se reparte en: Soniox detectando el fin de frase (~380 ms), la búsqueda o Jev (~350 ms, en paralelo), el redactor (~300 ms) y el envío a las gafas (~200 ms).
 
+## Proveedores directos (11 oct)
+- Jev directo (`POST https://api.typesafe.ai/v1/systemone`, `jev-latest`): unos 350 ms y la misma decisión que por OpenRouter (0,95 contra 0,05 en las frases de prueba).
+- Cerebras directo (`gpt-oss-120b`, `reasoning_effort: low`): 360–490 ms.
+- La cadena de la app (`converse-facts.ts`) con Jev y Cerebras directos y Perplexity Fast tarda unos 0,5–0,6 s de mediana desde que tiene el texto de la frase hasta la línea (por OpenRouter eran unos 1,2 s desde que termina la frase). Con Soniox (~0,4 s) y el envío a las gafas (~0,2 s) serían unos 1,1 s en total (estimado).
+- OpenRouter queda solo de respaldo si falta la clave de TypeSafe o de Cerebras, o si Cerebras falla.
+
 ## Pantalla (11 oct)
 Elegida la variante «solo texto» (`tools/headless-render/live-facts.cjs`, `texto`): sin recuadro, el tema y la fuente en tenue, y el dato en blanco. Entre un dato y otro, la pantalla queda vacía con una marca tenue de «Live facts».
 
