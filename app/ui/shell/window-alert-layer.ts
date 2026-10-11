@@ -25,7 +25,7 @@ const PAD_Y = 12;
 
 /**
  * A window's alert in Even's notification box, alone on the screen it woke.
- * Tap opens it in the window, double tap dismisses it.
+ * Tap dismisses it, double tap opens it in the window: opening is the rarer choice.
  */
 export class WindowAlertLayer implements Layer {
   constructor(
@@ -58,8 +58,8 @@ export class WindowAlertLayer implements Layer {
   }
 
   handleInput(event: InputEvent, _ctx: LayerContext): void {
-    if (event.type === "click") this.actions.open();
-    else if (event.type === "double-click") this.actions.dismiss();
+    if (event.type === "click") this.actions.dismiss();
+    else if (event.type === "double-click") this.actions.open();
   }
 
   onRemoved(): void {
