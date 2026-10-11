@@ -65,12 +65,12 @@ function recordingFace() {
   return { draws, lineHeight: 20, measureLine: (text) => Array.from(text).length * 10, drawText: (_image, x, y, text, value = 255) => draws.push({ x, y, text, value }) };
 }
 
-test('the screen is the fact under its topic and source, nothing else', () => {
+test('the screen is the fact under its topic, nothing else', () => {
   const painter = loader({}, { '../paseo/paseo-painter': { CONTENT_TOP: 20, FOOTER_TOP: 250, LEFT: 20, PITCH: 27, RIGHT: 556,
     fitLine: (_face, text) => text, wrapLines: (_face, text) => [text], wrapCapped: (_face, text) => [text] } })('app/apps/converse/converse-painter.ts');
   const face = recordingFace();
   painter.paintConverse({}, face, { fact: { topic: 'Chimborazo', source: 'es.wikipedia.org', text: 'Mide 6.263 m.' }, status: { label: '', bright: false }, message: null });
-  assert.deepEqual(face.draws.map((d) => [d.text, d.value]), [['Chimborazo · es.wikipedia.org', 153], ['Mide 6.263 m.', 255]]);
+  assert.deepEqual(face.draws.map((d) => [d.text, d.value]), [['Chimborazo', 153], ['Mide 6.263 m.', 255]]);
   face.draws.length = 0;
   painter.paintConverse({}, face, { fact: null, status: { label: '· Live facts', bright: false }, message: null });
   assert.deepEqual(face.draws.map((d) => [d.text, d.value]), [['· Live facts', 85]]);

@@ -1,6 +1,6 @@
 /**
  * Live facts with no frame and no footer, like Translate: the newest fact in
- * white under its topic and source in dim, and a faint "· Live facts" while
+ * white under its topic in dim, and a faint "· Live facts" while
  * listening with nothing to show yet.
  */
 import type { GrayImage } from "../../graphics/image";
@@ -25,8 +25,7 @@ export function paintConverse(image: GrayImage, face: Face, view: ConverseView):
     wrapCapped(face, view.message.detail, width, 3)
       .forEach((line, index) => face.drawText(image, LEFT, CONTENT_TOP + (index + 1) * PITCH, line, DIM));
   } else if (view.fact) {
-    const header = [view.fact.topic, view.fact.source].filter(Boolean).join(" · ");
-    face.drawText(image, LEFT, CONTENT_TOP, fitLine(face, header, width), DIM);
+    if (view.fact.topic) face.drawText(image, LEFT, CONTENT_TOP, fitLine(face, view.fact.topic, width), DIM);
     wrapLines(face, view.fact.text, width)
       .forEach((line, index) => face.drawText(image, LEFT, CONTENT_TOP + (index + 1) * PITCH + 4, line, 255));
   }

@@ -30,7 +30,7 @@ const history = [
 ];
 const PREV = 120, PREV_HEADER = 70, OLDER = 70;
 function factBlock(img, face, pitch, fact, y, header, body) {
-  face.drawText(img, 20, y, `${fact.topic} · ${fact.source}`, header);
+  face.drawText(img, 20, y, fact.topic, header);
   const lines = wrapLines(face, fact.text, W - 40);
   lines.forEach((line, i) => face.drawText(img, 20, y + pitch * (i + 1) + 4, line, body));
   return y + pitch * (lines.length + 1) + 4;
