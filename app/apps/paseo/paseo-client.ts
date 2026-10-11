@@ -220,6 +220,14 @@ export class PaseoDaemonClient {
     );
   }
 
+  /** Workspace descriptors carry the user's resolved workspace names. */
+  fetchWorkspaces(options: { subscribe?: boolean; cursor?: string } = {}): Promise<{ entries: Array<{ id: string; name: string }>; pageInfo: { hasMore: boolean; nextCursor: string | null } }> {
+    return this.request(
+      { type: "fetch_workspaces_request", page: { limit: 200, ...(options.cursor ? { cursor: options.cursor } : {}) }, ...(options.subscribe ? { subscribe: {} } : {}) },
+      "fetch_workspaces_response",
+    );
+  }
+
   fetchAgentTimeline(agentId: string, limit: number): Promise<{ agentId: string; agent: any; entries: Array<{ item: any; cursor?: any }>; hasMore?: boolean }> {
     return this.request(
       { type: "fetch_agent_timeline_request", agentId, direction: "tail", limit, projection: "projected" },

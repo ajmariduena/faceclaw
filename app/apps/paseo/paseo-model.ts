@@ -24,6 +24,7 @@ export type PermissionRequest = {
 export type AgentSnapshot = {
   id: string;
   title: string | null;
+  workspaceId?: string;
   provider?: string;
   status: AgentStatus;
   createdAt: string;
@@ -74,6 +75,12 @@ export function agentActivityMs(agent: AgentSnapshot): number {
 
 export function agentTitle(agent: AgentSnapshot): string {
   return (agent.title ?? "").replace(/\s+/g, " ").trim() || "Untitled";
+}
+
+/** The glasses identify a session by its workspace, falling back for older daemons. */
+export function sessionWorkspaceName(agent: AgentSnapshot, workspaces: ReadonlyMap<string, string>): string {
+  const name = agent.workspaceId ? workspaces.get(agent.workspaceId) : undefined;
+  return name?.replace(/\s+/g, " ").trim() || agentTitle(agent);
 }
 
 export type AgentSection = { bucket: Bucket; label: string; agents: AgentSnapshot[] };
