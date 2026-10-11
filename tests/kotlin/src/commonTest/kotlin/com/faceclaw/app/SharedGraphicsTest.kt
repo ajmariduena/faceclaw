@@ -98,6 +98,24 @@ class SharedGraphicsTest {
     }
 
     @Test
+    fun blankedWireFrameKeepsTheLastShownContentForAWakeDelta() {
+        val c = SurfaceCompositor()
+        c.configureScreen(3, 2)
+        c.configureSurface("app", 0, 0, 3, 2, 0, 0)
+        val shown = c.applyAndComposite("app", ArrayByteReader(ByteArray(6) { 90 }), 0, 0, 3, 2, "a")
+        c.setBlanked(true)
+        val asleep = c.composite()
+        assertEquals("blanked:" + shown.fingerprint, asleep.fingerprint)
+        assertContentEquals(ByteArray(6), asleep.gray)
+        assertContentEquals(ByteArray(6) { 90 }, asleep.screenGray)
+        val updated = c.applyAndComposite("app", ArrayByteReader(ByteArray(6) { 40 }), 0, 0, 3, 2, "b")
+        assertEquals(asleep.fingerprint, updated.fingerprint)
+        assertContentEquals(ByteArray(6) { 90 }, updated.screenGray)
+        c.setBlanked(false)
+        assertContentEquals(ByteArray(6) { 40 }, c.composite().screenGray)
+    }
+
+    @Test
     fun surfaceIsCurrentOnlyAfterItsContentAndEveryChangeWasComposited() {
         val c = SurfaceCompositor()
         c.configureScreen(3, 2)
