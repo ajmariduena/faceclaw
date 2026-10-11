@@ -16,6 +16,7 @@ test('key tests use each authenticated service and fixed minimal payloads', asyn
       assert.deepEqual(JSON.parse(request.body).search_queries, ['Even Realities smart glasses']);
     } else if (service === 'openrouter') assert.equal(request.url, 'https://openrouter.ai/api/v1/auth/key');
     else if (service === 'cursor') { assert.equal(request.url, 'https://api.cursor.com/v0/me'); assert.equal(request.headers.Authorization, 'Bearer fixture-key'); }
+    else if (service === 'google') { assert.equal(request.url, 'https://places.googleapis.com/v1/places:autocomplete'); assert.equal(request.headers['X-Goog-Api-Key'], 'fixture-key'); }
     assert.ok(!JSON.stringify(status).includes('fixture-key'));
   }
 });
@@ -55,7 +56,7 @@ test('phone key row ignores results from a credential edited while a test is run
   const storage = new Map(); let finish;
   class Observable { constructor() { this.events = []; } notifyPropertyChange(key, value) { this.events.push([key, value]); } }
   class ObservableArray extends Array { static get [Symbol.species]() { return Array; } constructor(rows) { super(...rows); } }
-  const names = ['paseoPairingLinkSetting', 'cursorApiKeySetting', 'grokBotNamesSetting', 'sonioxApiKeySetting', 'openRouterApiKeySetting', 'typesafeApiKeySetting', 'parallelApiKeySetting', 'perplexityApiKeySetting', 'cerebrasApiKeySetting', 'anthropicApiKeySetting', 'openAiApiKeySetting', 'braveApiKeySetting', 'mapboxApiKeySetting', 'elevenLabsApiKeySetting'];
+  const names = ['paseoPairingLinkSetting', 'cursorApiKeySetting', 'grokBotNamesSetting', 'sonioxApiKeySetting', 'openRouterApiKeySetting', 'typesafeApiKeySetting', 'parallelApiKeySetting', 'perplexityApiKeySetting', 'cerebrasApiKeySetting', 'anthropicApiKeySetting', 'openAiApiKeySetting', 'braveApiKeySetting', 'googleMapsApiKeySetting', 'mapboxApiKeySetting', 'elevenLabsApiKeySetting'];
   const settings = Object.fromEntries(names.map(name => { let value = 'old'; return [name, { get: () => value, set: v => { value = v; } }]; }));
   const load = loader({}, {
     '@nativescript/core': { Observable, ObservableArray }, '../ui/dashboard-settings': settings,
@@ -65,15 +66,15 @@ test('phone key row ignores results from a credential edited while a test is run
   });
   const page = {}; load('app/phone-ui/api-keys-page.ts').navigatingTo({ object: page });
   assert.deepEqual(Array.from(page.bindingContext.rows, row => `${row.group}: ${row.label}`),
-    ['Paseo: Pairing link', 'Grok Bot: Cursor', 'Listening · Translate, Converse: Soniox', 'Facts · Converse: Jev (TypeSafe)', 'Facts · Converse: Cerebras', 'Facts: OpenRouter', 'Search · Converse: Perplexity', 'Search · Converse: Brave (fallback)']);
+    ['Paseo: Pairing link', 'Grok Bot: Cursor', 'Listening · Translate, Converse: Soniox', 'Facts · Converse: Jev (TypeSafe)', 'Facts · Converse: Cerebras', 'Facts: OpenRouter', 'Search · Converse: Perplexity', 'Search · Converse: Brave (fallback)', 'Navigate: Google Maps']);
   assert.equal(page.bindingContext.rows[1].secure, true);
   const row = page.bindingContext.rows[5];
   const pending = row.onTest(); row.value = 'new';
   finish({ status: { state: 'ok', at: 1, ms: 10, error: null } }); await pending;
   assert.equal(storage.has('apiKeys.status.openrouter'), false);
   assert.equal(row.testing, false);
-  page.bindingContext.toggleAdvanced(); assert.equal(page.bindingContext.rows.length, 14);
-  const session = page.bindingContext.rows[13];
+  page.bindingContext.toggleAdvanced(); assert.equal(page.bindingContext.rows.length, 15);
+  const session = page.bindingContext.rows[14];
   assert.deepEqual([`${session.group}: ${session.label}`, session.secure, session.testVisibility], ['Advanced: Grok Bot session', false, 'collapse']);
   session.onEdit({ object: { text: 'Glasses' } });
   assert.equal(settings.grokBotNamesSetting.get(), 'Glasses');

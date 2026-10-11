@@ -1,4 +1,4 @@
-export const API_SERVICES = ["paseo", "soniox", "openrouter", "typesafe", "parallel", "perplexity", "cerebras", "anthropic", "openai", "brave", "mapbox", "elevenlabs", "cursor"] as const;
+export const API_SERVICES = ["paseo", "soniox", "openrouter", "typesafe", "parallel", "perplexity", "cerebras", "anthropic", "openai", "brave", "google", "mapbox", "elevenlabs", "cursor"] as const;
 export type ApiService = typeof API_SERVICES[number];
 export type ApiKeyStatus = { state: "ok" | "failed" | "missing" | "untested"; at: number; ms: number | null; error: string | null };
 export const apiStatusKey = (service: ApiService): string => `apiKeys.status.${service}`;
@@ -40,6 +40,10 @@ export async function testHttpApiKey(service: Exclude<ApiService, "paseo" | "son
       headers = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
       body = JSON.stringify({ query: "Even Realities smart glasses", search_type: "fast", max_results: 1 }); break;
     case "brave": url = "https://api.search.brave.com/res/v1/web/search?q=Even%20Realities&count=1"; headers = { "X-Subscription-Token": key }; break;
+    case "google":
+      url = "https://places.googleapis.com/v1/places:autocomplete"; method = "POST";
+      headers = { "X-Goog-Api-Key": key, "Content-Type": "application/json" };
+      body = JSON.stringify({ input: "Guayaquil" }); break;
     case "mapbox": url = `https://api.mapbox.com/search/geocode/v6/forward?q=Quito&limit=1&access_token=${encodeURIComponent(key)}`; headers = {}; break;
     case "elevenlabs": url = "https://api.elevenlabs.io/v1/user"; headers = { "xi-api-key": key }; break;
     case "cursor": url = "https://api.cursor.com/v0/me"; break;

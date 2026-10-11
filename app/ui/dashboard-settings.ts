@@ -876,6 +876,18 @@ export const botsWakeOnReplySetting = new ConfigSettingBoolean({
   description: "When Grok Bot answers something you asked and its chat is not on screen, buzz; if the glasses are asleep, wake them into the chat.",
 });
 
+export const googleMapsApiKeySetting = new ConfigSettingString({
+  id: "google-maps-api-key",
+  label: "Google Maps key",
+  storageKey: "maps.googleApiKey",
+  defaultValue: "",
+  editorTitle: "Google Maps Platform API key",
+  glassesEditTitle: "Edit Google Maps key",
+  inputKind: "password",
+  formatValue: (value) => (value ? "••••••••" : "(not set)"),
+  description: "Google Maps Platform key for Navigate: Navigation SDK, Places API (New) and Map Tiles API. A new key takes effect after restarting Faceclaw.",
+});
+
 export const mapboxApiKeySetting = new ConfigSettingString({
   id: "mapbox-api-key",
   label: "Mapbox token",
@@ -1161,6 +1173,28 @@ export const navigateRecentDestinationsSetting = new ConfigSettingString({
  * when the user confirms on the glasses. Deliberately not listed in the
  * Settings app.
  */
+export type NavigateTravelMode = "driving" | "walking" | "two-wheeler";
+export const navigateTravelModeSetting = new ConfigSettingEnum<NavigateTravelMode>({
+  id: "navigate-travel-mode",
+  label: "Modo",
+  storageKey: "navigate.travelMode",
+  defaultValue: "driving",
+  values: ["driving", "walking", "two-wheeler"],
+  formatValue: (value) => ({ driving: "Carro", walking: "A pie", "two-wheeler": "Moto" })[value],
+  description: "How Navigate routes: by car, on foot or by motorcycle.",
+});
+
+/** Staging buffer for Navigate's search: the phone editor writes it live and the glasses show Google's suggestions. */
+export const navigateSearchDraftSetting = new ConfigSettingString({
+  id: "navigate-search-draft",
+  label: "Buscar",
+  storageKey: "navigate.searchDraft",
+  defaultValue: "",
+  editorTitle: "Buscar un lugar o una dirección",
+  glassesEditTitle: "Buscar",
+  normalize: stripControlChars,
+});
+
 export const navigateDestinationNameDraftSetting = new ConfigSettingString({
   id: "navigate-destination-name-draft",
   label: "Destination name",

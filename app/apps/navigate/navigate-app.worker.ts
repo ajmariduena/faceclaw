@@ -1,42 +1,35 @@
 /**
- * Navigate app worker: voice/tool-set destination, Mapbox routing, and
- * turn-by-turn guidance with a live map pane.
- *
- * The BLE frame budget shapes the layout (see notes/navigate-app-design.md):
- * the map bitmap (left pane) refreshes on a slow staleness policy, while the
- * guidance text (right pane) updates per GPS fix and ships as small deltas.
+ * Navigate app worker: Google Places search, Google Navigation SDK guidance
+ * and the minimal guidance screen (nav-render.ts) over Google road tiles.
+ * Design and terms notes: research/navigate/google.md, minimal-fable.md.
  */
 import "@nativescript/core/globals";
 import { finishWorkerShutdown } from "../../ui/shell/worker-lifecycle";
 import { GrayImage } from "../../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../../graphics/plane";
 import { prepareFrameDraws } from "../../graphics/glyph-wire";
-import { getFont } from "../../graphics/bdffont";
 import { getDefaultSmallFont } from "../../graphics/ui-fonts";
+import { TtfFont } from "../../graphics/ttf-font";
+import { ensurePreinstalledFonts, installedFontPath } from "../../graphics/installed-fonts";
+import { fitLine } from "../../graphics/terminal-painter";
 import * as frameTimings from "../../native/frame-timings";
 import { getActiveDisplay } from "../../native/active-display";
-import {
-  drawRightValueMenuItem,
-  drawSubmenuIndicator,
-  drawToggleMenuItem,
-  submenuItem,
-  type MenuItem,
-} from "../../ui/menu";
-import { Menu, type MenuDrawArgs } from "../../ui/menu-core";
-import { LIST_ROW_TEXT_INSET, listRowHeight } from "../../ui/metrics";
+import { onSettingsStoreChanged } from "../../native/settings-store";
+import { drawRightValueMenuItem, drawSubmenuIndicator, drawToggleMenuItem, submenuItem, type MenuItem } from "../../ui/menu";
 import { WindowMenu, WindowMenuLayer } from "../../ui/window-menu";
 import type { LayerContext } from "../../ui/layers";
-import { truncateText, wrapText } from "../../graphics/textwrap";
-import { onSettingsStoreChanged } from "../../native/settings-store";
-import { openUrlOnPhone } from "../../native/open-url";
+import { truncateText } from "../../graphics/textwrap";
+import { terminalFace } from "../../ui/terminal-face";
+import { listScrollTop, paintTerminalList, stepSelection, type TerminalRow } from "../../ui/terminal";
 import {
+  enumSettingMenuItem,
   navigateDestinationAddressDraftSetting,
   navigateDestinationNameDraftSetting,
-  navigateRememberRecentSetting,
   navigateDisplayModeSetting,
+  navigateRememberRecentSetting,
+  navigateSearchDraftSetting,
+  navigateTravelModeSetting,
   navigateVerticalPositionSetting,
-  mapboxApiKeySetting,
-  enumSettingMenuItem,
   type ConfigSettingString,
 } from "../../ui/dashboard-settings";
 import {
@@ -46,8 +39,8 @@ import {
   HOME_DESTINATION_ID,
   loadRecentDestinations,
   loadSavedDestinations,
-  removeCustomDestination,
   rememberRecentDestination,
+  removeCustomDestination,
   removeRecentDestination,
   setDestinationAddress,
   updateCustomDestination,
@@ -56,14 +49,8 @@ import {
   type SavedDestination,
 } from "./destinations";
 import type { WorkerAppMessage, WorkerAppReply } from "../../ui/shell/worker-window";
-import type { ToolSpec, ToolResult } from "../../assistant/tool-registry";
-import {
-  GESTURE_CLICK,
-  GESTURE_DOUBLE_CLICK,
-  GESTURE_SCROLL,
-  GESTURE_SHORT_THEN_LONG_PRESS,
-  type InputEvent,
-} from "../../ui/gestures";
+import type { ToolResult, ToolSpec } from "../../assistant/tool-registry";
+import type { InputEvent } from "../../ui/gestures";
 import {
   addCompassListener,
   COMPASS_CHANGED,
@@ -75,53 +62,69 @@ import {
   type TrackedLocation,
 } from "./navigation-sensors";
 import {
-  fetchRoute,
-  fetchStaticMapGray,
-  geocodeForward,
-  isMapboxConfigured,
-  MAPBOX_TOKEN_SETTING_KEY,
-  type GeocodeCandidate,
-  type Route,
-  type RouteProfile,
-  type StaticMapCamera,
-} from "../../native/mapbox";
+  autocompletePlaces,
+  getGoogleMapsKey,
+  GOOGLE_MAPS_KEY_SETTING_KEY,
+  newSearchSession,
+  RoadTiles,
+  worldPixel,
+  type PlaceSuggestion,
+} from "../../native/google-maps";
+import { GoogleNavigation, type NavEvent, type NavStep, type TravelMode } from "../../native/google-navigation";
 import { calibrateHeading, normalizeHeading } from "../compass/calibration";
-import { bearingDegrees, haversineMeters, RouteFollower, type RouteProgress } from "./route-follower";
-import { drawManeuverGlyph } from "./maneuver-icons";
+import { paintGuidance, formatDistance, type GuidanceFonts, type GuidanceView, type StreetMap } from "./nav-render";
 
 declare const global: any;
 
-const MAP_SIZE = 260;
-const PANEL_X = MAP_SIZE + 10;
-/** Map refetch policy knobs (design doc: never per-fix, only when stale). */
-const BEARING_BUCKET_DEG = 15;
-const MOVE_REFRESH_FRACTION = 0.15;
-const IDLE_REFRESH_MS = 5_000;
-const IDLE_REFRESH_MIN_MOVE_M = 10;
-const MAP_RETRY_BACKOFF_MS = 5_000;
-const REROUTE_MIN_INTERVAL_MS = 20_000;
-const FIRST_FIX_TIMEOUT_MS = 10_000;
-const LOCATION_INTERVAL_MS = 1_000;
-/**
- * A fix older than this is not where the user is now. The tracker seeds each
- * start with the platform's cached fix, and after a previous trip that can be
- * the old destination: routing from it, or feeding it to the follower, ends a
- * fresh navigation with "Arrived" before a live fix ever comes in.
- */
-const FIX_MAX_AGE_MS = 60_000;
 /** Above this speed a GPS bearing is trustworthy for heading-up. */
 const BEARING_MIN_SPEED_MPS = 2.5;
-/** The head-direction chevron only redraws once the wearer has turned this far. */
+/** The map only re-rotates to the wearer's head once it has turned this far. */
 const HEADING_STEP_DEG = 4;
-/** Our claim on the shared glasses magnetometer (see setCompassEnabled). */
 const COMPASS_OWNER = "navigate";
+const SEARCH_DEBOUNCE_MS = 350;
+const ARRIVED_HOLD_MS = 8_000;
+/** Within this distance of the next maneuver the cluster turns bright. */
+const NEAR_METERS = 300;
+const NAVIGATE_SEARCH_DRAFT_KEY = "navigate.searchDraft";
 
-const largeFont = getFont("terminus32");
-const mediumFont = getFont("terminus24");
 const smallFont = getDefaultSmallFont();
+ensurePreinstalledFonts();
+const numberFontPath = installedFontPath("Roboto-Light.ttf");
+let guidanceFonts: GuidanceFonts | null = null;
 
-type NavPhase = "idle" | "acquiring" | "routing" | "navigating" | "map" | "arrived";
-type MapMode = "follow" | "overview";
+const TRAVEL_MODES: TravelMode[] = ["driving", "walking", "two-wheeler"];
+
+const NAVIGATE_TOOLS: ToolSpec[] = [
+  {
+    name: "start_route",
+    description:
+      "Start turn-by-turn navigation to a destination. Give the destination as free text (a place name, business, or address); Google resolves it near the user's current location. The name of one of the user's saved destinations (e.g. 'Casa', 'Trabajo', 'home', 'work') is used directly. Returns the resolved destination. If the wrong place was picked, call again with a more specific query.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Destination to search for, e.g. 'Mall del Sol' or 'Av. 9 de Octubre 100, Guayaquil'." },
+        profile: { type: "string", enum: TRAVEL_MODES, description: "Travel mode (default: the user's Navigate setting)." },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    availability: "open",
+    // Under the 15 s host backstop; search plus Google's route can be slow.
+    timeoutMs: 14_000,
+  },
+  {
+    name: "stop_route",
+    description: "Stop the current navigation session.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    availability: "open",
+  },
+  {
+    name: "route_status",
+    description: "Get the current navigation status: next maneuver and street, distance to it, and remaining distance and time.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    availability: "open",
+  },
+];
 
 type NavWindow = {
   windowId: string;
@@ -135,146 +138,86 @@ type NavWindow = {
   lastSubmittedFingerprint: string;
 };
 
-const NAVIGATE_TOOLS: ToolSpec[] = [
-  {
-    name: "start_route",
-    description:
-      "Start turn-by-turn navigation to a destination. Give the destination as free text (a place name, business, or address); it is resolved near the user's current location. The name of one of the user's saved destinations (e.g. 'home', 'work') is used directly. Returns the resolved destination, distance, and estimated time. If the wrong place was picked, call again with a more specific query.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "Destination to search for, e.g. 'Golden Gate Park' or '410 Townsend St'." },
-        profile: {
-          type: "string",
-          enum: ["driving", "walking", "cycling"],
-          description: "Travel mode (default driving).",
-        },
-      },
-      required: ["query"],
-      additionalProperties: false,
-    },
-    availability: "open",
-    // Under the 15 s host backstop; first GPS fix + two API calls can be slow.
-    timeoutMs: 14_000,
-  },
-  {
-    name: "stop_route",
-    description: "Stop the current navigation session.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    availability: "open",
-  },
-  {
-    name: "route_status",
-    description:
-      "Get the current navigation status: next maneuver, distance to it, remaining distance/time, and ETA.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    availability: "open",
-  },
-];
+type Phase = "idle" | "search" | "starting" | "guiding" | "arrived";
+type Target = { placeId: string; latitude: number; longitude: number; title: string; detail: string };
+type IdleRow =
+  | { kind: "search" }
+  | { kind: "saved"; destination: SavedDestination }
+  | { kind: "recent"; destination: RecentDestination };
 
-// Singleton window; navigation state outlives foreground/background flips.
 let window: NavWindow | null = null;
 let screenOn = true;
-
-let phase: NavPhase = "idle";
+let phase: Phase = "idle";
 let statusMessage = "";
-let destinationName = "";
-let destinationPlace = "";
-let destination: { longitude: number; latitude: number } | null = null;
-let profile: RouteProfile = "driving";
-let follower: RouteFollower | null = null;
-let progress: RouteProgress | null = null;
-let lastFix: TrackedLocation | null = null;
-let lastBearingDeg = 0;
-let lastRerouteAtMs = 0;
-let rerouteInFlight = false;
-/** Bumped on every new route/mode so stale map fetches can be discarded. */
-let routeGeneration = 0;
-/** Invalidates GPS/geocoding/routing work when the route is replaced or closed. */
-let navigationGeneration = 0;
 
-/**
- * Where to go: free text to geocode (optionally shown under a saved
- * destination's label), or an already-resolved place (a recent destination).
- */
-type NavTarget =
-  | { kind: "query"; query: string; label?: string }
-  | { kind: "place"; name: string; place: string; longitude: number; latitude: number };
+let idleSelected = 0;
+let idleTop = 0;
 
-/**
- * An entry on the idle page's list: the map, a destination, or (while no
- * Mapbox token is set) one of the setup actions offered in its place.
- */
-type IdleEntry =
-  | { kind: "saved"; destination: SavedDestination }
-  | { kind: "recent"; destination: RecentDestination }
-  | { kind: "action"; label: string; detail: string; run: () => void };
+let query = "";
+let suggestions: PlaceSuggestion[] = [];
+let searchSelected = 0;
+let searchTop = 0;
+let searchState: "empty" | "searching" | "done" | "error" = "empty";
+let searchError = "";
+let searchSession = "";
+let searchGeneration = 0;
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** The idle page's list; created on first use (idleList) so module load stays free of paint dependencies. */
-let idleMenu: Menu<IdleEntry> | null = null;
-
-/**
- * In-progress destination edit: the phone text editor is open on `setting`
- * (a staging draft); click confirms with the typed value, double-click
- * cancels. `onDone` may start another edit (name, then address).
- */
-type DestinationEdit = {
-  setting: ConfigSettingString;
-  title: string;
-  onDone: (value: string) => void;
-  /** Runs on double-click (cancel); edits of a live setting restore it here. */
-  onCancel?: () => void;
-};
+/** Name and address edits for saved destinations (phone editor, click confirms). */
+type DestinationEdit = { setting: ConfigSettingString; title: string; onDone: (value: string) => void };
 let editing: DestinationEdit | null = null;
 
-let mapMode: MapMode = "follow";
-let zoomOffset = 0;
-let mapImage: GrayImage | null = null;
-let mapFetchedKey = "";
-let mapInFlight = false;
-let mapLastFetchAtMs = 0;
-let mapLastFetchCenter: [number, number] | null = null;
-let mapNextRetryAtMs = 0;
-let mapLastError = "";
-/** Bearing the current map image was rendered with (its "up"), for follow mode. */
-let mapFetchedBearingDeg = 0;
+const google = new GoogleNavigation();
+let googleStarted = false;
+let googleReady = false;
+let target: Target | null = null;
+let tripMode: TravelMode = "driving";
+/** A start_route call waiting for Google's route result. */
+let tripWaiter: { resolve: (summary: string) => void; reject: (error: Error) => void } | null = null;
+/** Recents get the trip only when it was picked from search or recents, not a saved place. */
+let rememberTrip = true;
+let tripGeneration = 0;
+let lastNav: Extract<NavEvent, { type: "nav" }> | null = null;
+let routeLatLng: Array<[number, number]> = [];
+let routeWorld: Array<[number, number]> = [];
+let routeWorldZoom = -1;
+let routeIndex = 0;
+let rerouting = false;
+let arrivedSide: "left" | "right" | null = null;
+let arrivedTimer: ReturnType<typeof setTimeout> | null = null;
+let position: { latitude: number; longitude: number; bearing: number; speed: number } | null = null;
+let lastBearingDeg = 0;
 
-// Glasses compass: the same firmware feed and wearer calibration as the
-// Compass app, so the position chevron shows where the wearer is looking
-// relative to the map rather than always pointing up the direction of travel.
+let lastFix: TrackedLocation | null = null;
+const tracker = new LocationTracker({
+  onLocation: (fix) => {
+    lastFix = fix;
+    if (phase === "idle") render();
+  },
+  onError: (message) => console.warn(`navigate location: ${message}`),
+});
+
+const tiles = new RoadTiles(() => {
+  if (phase === "guiding" || phase === "starting" || phase === "arrived") render();
+});
+
 let compassActive = false;
 let unsubscribeCompass: (() => void) | null = null;
-/** Wearer's true heading (degrees clockwise from north) as last drawn, or null before compass data arrives. */
 let headHeadingDeg: number | null = null;
-
-let tickTimer: ReturnType<typeof setInterval> | null = null;
-let firstFixWaiters: Array<(fix: TrackedLocation) => void> = [];
-
-const tracker = new LocationTracker({
-  onLocation: (fix) => handleFix(fix),
-  onError: (message) => {
-    statusMessage = message;
-    if (phase === "acquiring") stopNavigation(message);
-    render();
-  },
-});
 
 function post(message: WorkerAppReply): void {
   global.postMessage(message);
 }
 
-// Destinations edited on the phone (the text editor) repaint the idle list /
-// the edit screen live.
 onSettingsStoreChanged((key) => {
-  // The token key repaints too: the phone editor writes it live during
-  // Edit token, and the idle page changes shape once one is set.
-  if (key.startsWith("navigate.") || key === MAPBOX_TOKEN_SETTING_KEY) render();
+  if (key === NAVIGATE_SEARCH_DRAFT_KEY && phase === "search") {
+    setQuery(navigateSearchDraftSetting.get());
+    return;
+  }
+  if (key === GOOGLE_MAPS_KEY_SETTING_KEY) tiles.clear();
+  if (key.startsWith("navigate.") || key === GOOGLE_MAPS_KEY_SETTING_KEY) render();
 });
 
-// The host queues messages until this arrives: posts to a worker whose bundle
-// is still evaluating can be silently dropped (see WorkerAppHost). Top-level
-// evaluation is synchronous, so the handler below is installed before any
-// queued message can be delivered.
 post({ type: "worker-ready" });
 
 global.onmessage = (event: { data: WorkerAppMessage }) => {
@@ -302,7 +245,15 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         lastSubmittedFingerprint: "",
       };
       post({ type: "set-tools", windowId: message.windowId, tools: NAVIGATE_TOOLS });
+      reconcileTracking();
       break;
+    case "tool-call": {
+      const callId = message.callId;
+      handleNavigateTool(message.name, message.args)
+        .then((result) => post({ type: "tool-result", callId, result }))
+        .catch((error) => post({ type: "tool-result", callId, result: { ok: false, error: String((error as Error)?.message ?? error) } }));
+      break;
+    }
     case "resize-window":
       if (!window || window.windowId !== message.windowId) break;
       if (window.viewportWidth === message.viewport.width && window.viewportHeight === message.viewport.height) break;
@@ -310,20 +261,18 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       window.viewportHeight = message.viewport.height;
       window.menu?.resize(message.viewport);
       window.lastSubmittedFingerprint = "";
-      if (phase === "map") {
-        resetMapState();
-        maybeRefreshMap();
-      }
       render();
       break;
     case "close-window":
-      if (editing) {
-        // Window closed mid-edit: shut the phone editor down.
-        editing = null;
-        post({ type: "end-text-setting-edit" });
-      }
-      stopNavigation("");
+      if (editing || phase === "search") post({ type: "end-text-setting-edit" });
+      editing = null;
+      stopTrip("");
+      phase = "idle";
+      google.detach();
+      googleStarted = false;
+      googleReady = false;
       window = null;
+      reconcileTracking();
       reconcileCompass();
       break;
     case "input":
@@ -332,21 +281,21 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
         break;
       }
       window.focused = message.focused;
-      // Marks the main-thread -> worker hop, which is otherwise an
-      // unexplained gap inside the shell's handle-input span.
       frameTimings.logFrame(message.frameId, `input received in ${message.windowId} worker`);
       handleInput(window, message.event as InputEvent, message.frameId);
       break;
-    case "text-input":
+    case "text-input": {
+      const text = message.text.trim();
       if (editing) {
-        // Voice input as an alternative to the phone keyboard.
-        editing.setting.set(message.text.trim());
+        editing.setting.set(text);
         render();
-      } else if (message.text.trim()) {
-        // Voice input / typed text sets a destination directly.
-        void startNavigation(message.text.trim(), profile).catch(() => {});
+      } else if (text) {
+        if (phase !== "search") beginSearch();
+        navigateSearchDraftSetting.set(text);
+        setQuery(text);
       }
       break;
+    }
     case "render":
       if (!window) break;
       window.focused = message.focused;
@@ -356,295 +305,380 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       if (!window) break;
       window.foreground = message.foreground;
       window.focused = message.focused;
-      reconcileCompass();
-      if (window.foreground) {
-        maybeRefreshMap();
-        render();
-      }
+      reconcileTracking();
+      render();
       break;
     case "screen":
       screenOn = message.on;
       reconcileCompass();
-      if (screenOn && window?.foreground) {
-        maybeRefreshMap();
-        render();
-      }
+      if (screenOn) render();
       break;
-    case "tool-call": {
-      const callId = message.callId;
-      Promise.resolve(handleNavigateTool(message.name, message.args))
-        .then((result) => post({ type: "tool-result", callId, result }))
-        .catch((error) =>
-          post({
-            type: "tool-result",
-            callId,
-            result: { ok: false, error: String((error as Error)?.message ?? error) },
-          }),
-        );
-      break;
-    }
-    case "raw-mic-state":
-    case "raw-pcm":
-    case "alert-open":
-    case "input-focus":
+    default:
       break;
   }
 };
 
 // ---------------------------------------------------------------------------
-// Navigation state machine
+// Search
 
-/**
- * Navigate to free text: a saved destination's name ("home") routes to its
- * address under that label; anything else is geocoded as typed.
- */
-function startNavigation(query: string, requestedProfile: RouteProfile): Promise<string> {
-  const saved = findSavedDestinationByName(query);
-  return startNavigationTo(
-    saved ? { kind: "query", query: saved.address, label: saved.name } : { kind: "query", query },
-    requestedProfile,
-  );
-}
-
-async function startMap(): Promise<void> {
-  if (!isMapboxConfigured()) return;
-  stopNavigation("");
-  const generation = navigationGeneration;
-  phase = "acquiring";
-  mapMode = "follow";
-  zoomOffset = 0;
-  statusMessage = "Locating you for the map...";
-  render();
-  try {
-    ensureTracking();
-    await waitForFix();
-    if (generation !== navigationGeneration) return;
-    phase = "map";
-    statusMessage = "";
-    ensureTickTimer();
-    maybeRefreshMap();
-    render();
-  } catch (error) {
-    if (generation !== navigationGeneration) return;
-    stopNavigation(String((error as Error)?.message ?? error));
-    render();
-  }
-}
-
-async function startNavigationTo(target: NavTarget, requestedProfile: RouteProfile): Promise<string> {
-  const query = target.kind === "query" ? target.query : target.name;
-  if (!isMapboxConfigured()) {
-    statusMessage = "Mapbox token missing. Get a free one at mapbox.com, then pick Edit token below.";
-    phase = "idle";
-    render();
-    throw new Error(statusMessage);
-  }
-  const generation = ++navigationGeneration;
-  const checkCurrent = () => { if (generation !== navigationGeneration) throw new Error("Navigation cancelled."); };
-  const hadActiveRoute = phase === "navigating" && follower !== null;
-  const hadActiveMap = phase === "map";
-  const previous = {
-    destination,
-    destinationName,
-    destinationPlace,
-    profile,
-  };
-  try {
-    profile = requestedProfile;
-    phase = "acquiring";
-    statusMessage = `Locating you for "${query}"...`;
-    render();
-    ensureTracking();
-    const fix = await waitForFix();
-    checkCurrent();
-
-    phase = "routing";
-    let picked: GeocodeCandidate;
-    let candidates: GeocodeCandidate[] = [];
-    if (target.kind === "place") {
-      picked = {
-        name: target.name,
-        placeFormatted: target.place,
-        longitude: target.longitude,
-        latitude: target.latitude,
-        distanceMeters: null,
-      };
-    } else {
-      statusMessage = `Finding ${query}...`;
-      render();
-      candidates = await geocodeForward(query, fix, 5);
-      checkCurrent();
-      if (!candidates.length) {
-        throw new Error(`No places found matching "${query}".`);
-      }
-      picked = candidates[0]!;
-    }
-    destination = { longitude: picked.longitude, latitude: picked.latitude };
-    destinationName = target.kind === "query" && target.label ? target.label : picked.name;
-    destinationPlace = picked.placeFormatted;
-
-    statusMessage = `Routing to ${destinationName}...`;
-    render();
-    const route = await fetchRoute(fix, destination, profile);
-    checkCurrent();
-    adoptRoute(route);
-    // Saved destinations already have a row of their own on the idle page;
-    // everything else (voice, assistant, a re-picked recent) goes on the
-    // recent list, most recent first.
-    if (!(target.kind === "query" && target.label)) {
-      rememberRecentDestination({
-        name: picked.name,
-        place: picked.placeFormatted,
-        longitude: picked.longitude,
-        latitude: picked.latitude,
-      });
-    }
-    if (window) post({ type: "focus-window", windowId: window.windowId });
-    return startSummary(picked, candidates, route);
-  } catch (error) {
-    if (generation !== navigationGeneration) throw error;
-    const message = String((error as Error)?.message ?? error);
-    statusMessage = message;
-    // A failed new destination shouldn't close the existing map or guidance.
-    // Restore the destination too: geocoding may have overwritten it.
-    if (hadActiveRoute || hadActiveMap) {
-      phase = hadActiveRoute ? "navigating" : "map";
-      destination = previous.destination;
-      destinationName = previous.destinationName;
-      destinationPlace = previous.destinationPlace;
-      profile = previous.profile;
-    } else {
-      phase = "idle";
-    }
-    stopTrackingIfIdle();
-    render();
-    throw error;
-  }
-}
-
-function adoptRoute(route: Route): void {
-  follower = new RouteFollower(route);
-  progress = null;
-  phase = "navigating";
-  mapMode = "follow";
-  zoomOffset = 0;
+function beginSearch(): void {
+  phase = "search";
   statusMessage = "";
-  resetMapState();
-  ensureTracking();
-  ensureTickTimer();
-  if (lastFix) handleFix(lastFix);
-  maybeRefreshMap();
+  query = "";
+  suggestions = [];
+  searchSelected = 0;
+  searchTop = 0;
+  searchState = "empty";
+  searchSession = newSearchSession();
+  navigateSearchDraftSetting.set("");
+  post({ type: "start-text-setting-edit", settingId: navigateSearchDraftSetting.id });
   render();
 }
 
-function stopNavigation(finalStatus: string): void {
-  ++navigationGeneration;
-  phase = "idle";
-  statusMessage = finalStatus;
-  follower = null;
-  progress = null;
-  destination = null;
-  destinationName = "";
-  destinationPlace = "";
-  resetMapState();
-  stopTrackingIfIdle();
-  ensureTickTimer();
+function endSearch(): void {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = null;
+  searchGeneration++;
+  post({ type: "end-text-setting-edit" });
 }
 
-function isFreshFix(fix: TrackedLocation): boolean {
-  return Date.now() - fix.timestampMs < FIX_MAX_AGE_MS;
-}
-
-function handleFix(fix: TrackedLocation): void {
-  if (!lastFix || fix.timestampMs >= lastFix.timestampMs) lastFix = fix;
-  // A stale fix (a cached seed from a previous outing) may position the map
-  // until something better arrives, but it must not stand in for the user's
-  // current location: it neither starts a route nor advances guidance.
-  if (!isFreshFix(fix)) return;
-  if (fix.bearingDeg !== null && (fix.speedMps ?? 0) >= BEARING_MIN_SPEED_MPS) {
-    lastBearingDeg = fix.bearingDeg;
-  }
-  for (const waiter of firstFixWaiters.splice(0)) waiter(fix);
-
-  if (phase === "map") {
-    statusMessage = "";
-    maybeRefreshMap();
+function setQuery(text: string): void {
+  query = text.trim();
+  if (searchTimer) clearTimeout(searchTimer);
+  const generation = ++searchGeneration;
+  if (!query) {
+    suggestions = [];
+    searchState = "empty";
     render();
     return;
   }
-  if (phase !== "navigating" || !follower) return;
-  progress = follower.update(fix.longitude, fix.latitude);
-
-  if (progress.arrived) {
-    phase = "arrived";
-    statusMessage = "";
-    stopTrackingIfIdle();
-    ensureTickTimer();
-    render();
-    return;
-  }
-  if (progress.offRoute) {
-    void maybeReroute(fix);
-  }
-  maybeRefreshMap();
+  searchState = "searching";
   render();
+  searchTimer = setTimeout(() => {
+    searchTimer = null;
+    const origin = lastFix ? { latitude: lastFix.latitude, longitude: lastFix.longitude } : null;
+    autocompletePlaces(query, origin, searchSession)
+      .then((found) => {
+        if (generation !== searchGeneration) return;
+        suggestions = found;
+        searchSelected = 0;
+        searchTop = 0;
+        searchState = "done";
+        render();
+      })
+      .catch((error) => {
+        if (generation !== searchGeneration) return;
+        searchState = "error";
+        searchError = String((error as Error)?.message ?? error);
+        render();
+      });
+  }, SEARCH_DEBOUNCE_MS);
 }
 
-async function maybeReroute(fix: TrackedLocation): Promise<void> {
-  if (rerouteInFlight || !destination) return;
-  if (Date.now() - lastRerouteAtMs < REROUTE_MIN_INTERVAL_MS) return;
-  const generation = navigationGeneration;
-  rerouteInFlight = true;
-  lastRerouteAtMs = Date.now();
-  statusMessage = "Rerouting...";
+function pickSuggestion(suggestion: PlaceSuggestion): void {
+  endSearch();
+  startTrip({ placeId: suggestion.placeId, latitude: 0, longitude: 0, title: suggestion.name, detail: suggestion.detail });
+}
+
+/** Saved destinations hold plain addresses; Google's first suggestion gives the place to route to. */
+function navigateToSaved(destination: SavedDestination, mode = navigateTravelModeSetting.get()): void {
+  phase = "starting";
+  statusMessage = "";
+  const generation = ++tripGeneration;
   render();
-  try {
-    const route = await fetchRoute(fix, destination, profile);
-    if (generation === navigationGeneration && phase === "navigating") adoptRoute(route);
-  } catch (error) {
-    if (generation !== navigationGeneration) return;
-    statusMessage = `Reroute failed: ${String((error as Error)?.message ?? error)}`;
-    render();
-  } finally {
-    rerouteInFlight = false;
-  }
-}
-
-function ensureTracking(): void {
-  if (!tracker.isRunning()) tracker.start(LOCATION_INTERVAL_MS);
-}
-
-function stopTrackingIfIdle(): void {
-  if (phase === "idle" || phase === "arrived") {
-    tracker.stop();
-    firstFixWaiters = [];
-  }
-}
-
-function waitForFix(): Promise<TrackedLocation> {
-  if (lastFix && isFreshFix(lastFix)) {
-    return Promise.resolve(lastFix);
-  }
-  return new Promise<TrackedLocation>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      firstFixWaiters = firstFixWaiters.filter((waiter) => waiter !== onFix);
-      reject(new Error("Couldn't get a GPS fix yet; try again in a moment."));
-    }, FIRST_FIX_TIMEOUT_MS);
-    const onFix = (fix: TrackedLocation) => {
-      clearTimeout(timer);
-      resolve(fix);
-    };
-    firstFixWaiters.push(onFix);
-  });
+  const origin = lastFix ? { latitude: lastFix.latitude, longitude: lastFix.longitude } : null;
+  autocompletePlaces(destination.address, origin, newSearchSession())
+    .then((found) => {
+      if (generation !== tripGeneration) return;
+      const first = found[0];
+      if (!first) throw new Error(`No encontré «${destination.address}».`);
+      startTrip({ placeId: first.placeId, latitude: 0, longitude: 0, title: destination.name, detail: destination.address }, false, mode);
+    })
+    .catch((error) => {
+      if (generation !== tripGeneration) return;
+      failTrip(String((error as Error)?.message ?? error));
+    });
 }
 
 // ---------------------------------------------------------------------------
-// Head heading (glasses compass)
+// Trip
 
-/** Hold the magnetometer only while its reading is actually on screen. */
+function startTrip(next: Target, remember = true, mode = navigateTravelModeSetting.get()): void {
+  const key = getGoogleMapsKey();
+  if (!key) {
+    failTrip("Agrega la clave de Google Maps en el teléfono.");
+    return;
+  }
+  target = next;
+  tripMode = mode;
+  rememberTrip = remember;
+  tripGeneration++;
+  phase = "starting";
+  statusMessage = "";
+  lastNav = null;
+  routeLatLng = [];
+  routeWorld = [];
+  routeIndex = 0;
+  rerouting = false;
+  arrivedSide = null;
+  reconcileTracking();
+  if (!googleStarted) {
+    googleStarted = true;
+    google.start(key, handleNavEvent);
+  } else if (googleReady) {
+    google.navigateTo(next, tripMode);
+  }
+  if (window) post({ type: "focus-window", windowId: window.windowId });
+  render();
+}
+
+function stopTrip(message: string): void {
+  if (arrivedTimer) clearTimeout(arrivedTimer);
+  arrivedTimer = null;
+  if (phase === "starting" || phase === "guiding" || phase === "arrived") google.stop();
+  tripGeneration++;
+  settleTripWaiter(message || "Navigation stopped.");
+  target = null;
+  lastNav = null;
+  routeLatLng = [];
+  routeWorld = [];
+  rerouting = false;
+  phase = "idle";
+  statusMessage = message;
+  reconcileTracking();
+  reconcileCompass();
+}
+
+function failTrip(message: string): void {
+  stopTrip(message);
+  render();
+}
+
+const ERRORS: Record<string, string> = {
+  terms: "Acepta los términos de Google en el teléfono.",
+  "not-authorized": "La clave de Google no tiene Navigation SDK.",
+  restart: "Reinicia Faceclaw para usar la nueva clave.",
+  "location-permission": "Falta el permiso de ubicación precisa.",
+  network: "Sin conexión.",
+  NO_ROUTE_FOUND: "No encontré una ruta.",
+  NETWORK_ERROR: "Sin conexión.",
+  QUOTA_CHECK_FAILED: "La clave de Google no tiene cuota.",
+  LOCATION_DISABLED: "La ubicación está apagada.",
+  LOCATION_UNKNOWN: "Todavía no sé dónde estás.",
+  WAYPOINT_ERROR: "Google no reconoce ese lugar.",
+  ROUTING_TIMEOUT: "Google tardó demasiado; intenta otra vez.",
+};
+
+function handleNavEvent(event: NavEvent): void {
+  switch (event.type) {
+    case "ready":
+      googleReady = true;
+      if (phase === "starting" && target) google.navigateTo(target, tripMode);
+      return;
+    case "error":
+      if (!googleReady) googleStarted = false;
+      if (phase === "starting" || phase === "guiding") failTrip(ERRORS[event.code] ?? `Google: ${event.code}`);
+      return;
+    case "status":
+      if (phase !== "starting") return;
+      if (event.status === "OK") {
+        phase = "guiding";
+        settleTripWaiter(null);
+        reconcileCompass();
+        render();
+      } else if (event.status !== "ROUTE_CANCELED") {
+        failTrip(ERRORS[event.status] ?? `Google: ${event.status}`);
+      }
+      return;
+    case "route":
+      routeLatLng = event.points;
+      routeWorldZoom = -1;
+      routeIndex = 0;
+      rerouting = false;
+      if (target && rememberTrip && routeLatLng.length) {
+        const [latitude, longitude] = routeLatLng[routeLatLng.length - 1]!;
+        rememberRecentDestination({ name: target.title, place: target.detail, placeId: target.placeId, latitude, longitude });
+      }
+      render();
+      return;
+    case "nav":
+      if (phase !== "guiding" && phase !== "starting") return;
+      lastNav = event;
+      rerouting = event.state === "REROUTING";
+      if (event.step?.maneuver.startsWith("DESTINATION")) {
+        arrivedSide = event.step.maneuver.endsWith("LEFT") ? "left" : event.step.maneuver.endsWith("RIGHT") ? "right" : null;
+      }
+      render();
+      return;
+    case "location":
+      position = { latitude: event.lat, longitude: event.lng, bearing: event.bearing, speed: event.speed };
+      if (event.speed >= BEARING_MIN_SPEED_MPS && event.bearing >= 0) lastBearingDeg = event.bearing;
+      advanceRouteIndex();
+      if (phase === "guiding" || phase === "arrived") render();
+      return;
+    case "rerouting":
+      rerouting = true;
+      render();
+      return;
+    case "arrived":
+      if (!event.final || phase !== "guiding") return;
+      phase = "arrived";
+      google.stop();
+      reconcileCompass();
+      arrivedTimer = setTimeout(() => {
+        arrivedTimer = null;
+        if (phase === "arrived") {
+          stopTrip("");
+          render();
+        }
+      }, ARRIVED_HOLD_MS);
+      render();
+      return;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Assistant tools
+
+const SAVED_ALIASES: Record<string, string> = { home: "Casa", work: "Trabajo" };
+
+async function handleNavigateTool(name: string, args: any): Promise<ToolResult> {
+  switch (name) {
+    case "start_route": {
+      const wanted = String(args?.query ?? "").trim();
+      if (!wanted) return { ok: false, error: "start_route requires a destination query" };
+      if (!getGoogleMapsKey()) return { ok: false, error: "Add a Google Maps key on the phone first (API Keys > Google Maps)." };
+      const requested = String(args?.profile ?? "") as TravelMode;
+      const mode = TRAVEL_MODES.includes(requested) ? requested : navigateTravelModeSetting.get();
+      const saved = findSavedDestinationByName(SAVED_ALIASES[wanted.toLowerCase()] ?? wanted);
+      let first: PlaceSuggestion | undefined;
+      if (!saved?.address) {
+        const origin = lastFix ? { latitude: lastFix.latitude, longitude: lastFix.longitude } : null;
+        first = (await autocompletePlaces(wanted, origin, newSearchSession()))[0];
+        if (!first) return { ok: false, error: `No place found for "${wanted}".` };
+      }
+      const done = new Promise<string>((resolve, reject) => {
+        settleTripWaiter("Replaced by a new route.");
+        tripWaiter = { resolve, reject };
+      });
+      if (first) startTrip({ placeId: first.placeId, latitude: 0, longitude: 0, title: first.name, detail: first.detail }, true, mode);
+      else if (saved) navigateToSaved(saved, mode);
+      try {
+        return { ok: true, content: await done };
+      } catch (error) {
+        return { ok: false, error: String((error as Error)?.message ?? error) };
+      }
+    }
+    case "stop_route":
+      if (phase === "idle" || phase === "search") return { ok: true, content: "Navigation was not active." };
+      stopTrip("");
+      render();
+      return { ok: true, content: "Navigation stopped." };
+    case "route_status":
+      return { ok: true, content: describeRouteStatus() };
+    default:
+      return { ok: false, error: `Unknown navigate tool: ${name}` };
+  }
+}
+
+/** null resolves the waiting start_route call; a message rejects it. */
+function settleTripWaiter(error: string | null): void {
+  const waiter = tripWaiter;
+  if (!waiter) return;
+  tripWaiter = null;
+  if (error !== null) waiter.reject(new Error(error));
+  else waiter.resolve(`Navigating to ${target?.title ?? "the destination"}${target?.detail ? ` (${target.detail})` : ""} by ${navigateTravelModeSetting.displayValue(tripMode)}.`);
+}
+
+function describeRouteStatus(): string {
+  if (phase === "arrived") return `Arrived at ${target?.title ?? "the destination"}.`;
+  if (phase === "starting") return `Finding a route to ${target?.title ?? "the destination"}.`;
+  if (phase !== "guiding" || !target) return "Navigation is not active.";
+  if (rerouting) return `Rerouting to ${target.title}.`;
+  if (!lastNav) return `Navigating to ${target.title}; waiting for the first position.`;
+  const parts = [`Navigating to ${target.title}.`];
+  const step = lastNav.step;
+  if (step) parts.push(`Next: ${step.instruction || step.maneuver} in ${Math.round(Math.max(0, lastNav.stepMeters))} m.`);
+  if (lastNav.destMeters >= 0) parts.push(`${(lastNav.destMeters / 1000).toFixed(1)} km and ${Math.round(Math.max(0, lastNav.destSeconds) / 60)} min left.`);
+  return parts.join(" ");
+}
+
+// ---------------------------------------------------------------------------
+// Map
+
+function travelZoom(): number {
+  return tripMode === "walking" ? 17 : 16;
+}
+
+function routeInWorld(zoom: number): Array<[number, number]> {
+  if (routeWorldZoom !== zoom) {
+    routeWorld = routeLatLng.map(([lat, lng]) => worldPixel(lat, lng, zoom));
+    routeWorldZoom = zoom;
+  }
+  return routeWorld;
+}
+
+/** The route point nearest the wearer, searched a little ahead of the last one so loops don't jump back. */
+function advanceRouteIndex(): void {
+  if (!position || routeLatLng.length < 2) return;
+  const zoom = travelZoom();
+  const world = routeInWorld(zoom);
+  const here = worldPixel(position.latitude, position.longitude, zoom);
+  let best = routeIndex, bestDistance = Infinity;
+  for (let i = Math.max(0, routeIndex - 5); i < Math.min(world.length, routeIndex + 120); i++) {
+    const d = Math.hypot(world[i]![0] - here[0], world[i]![1] - here[1]);
+    if (d < bestDistance) { bestDistance = d; best = i; }
+  }
+  routeIndex = best;
+}
+
+function mapBearing(): number {
+  if (position && position.speed >= BEARING_MIN_SPEED_MPS && position.bearing >= 0) return position.bearing;
+  return headHeadingDeg ?? lastBearingDeg;
+}
+
+function streetMap(): StreetMap | null {
+  const here = position ?? (lastFix ? { latitude: lastFix.latitude, longitude: lastFix.longitude } : null);
+  if (!here) return null;
+  const zoom = travelZoom();
+  const center = worldPixel(here.latitude, here.longitude, zoom);
+  const world = routeInWorld(zoom);
+  const route = world.length >= 2 && !rerouting
+    ? { behind: world.slice(Math.max(0, routeIndex - 60), routeIndex + 1).reverse(), ahead: world.slice(routeIndex + 1, routeIndex + 400) }
+    : null;
+  return {
+    zoom,
+    center,
+    bearingDeg: mapBearing(),
+    tile: (x, y) => tiles.tile(zoom, x, y),
+    route,
+    destination: world.length >= 2 ? world[world.length - 1]! : null,
+    faint: rerouting,
+  };
+}
+
+function guidanceView(): GuidanceView {
+  if (phase === "arrived") return { kind: "arrived", name: target?.title ?? "", side: arrivedSide };
+  if (phase === "starting") return { kind: "waiting", label: target ? "Buscando ruta" : "Buscando" };
+  if (rerouting) return { kind: "rerouting" };
+  const step: NavStep | undefined = lastNav?.step;
+  if (!lastNav || !step) return { kind: "waiting", label: "Ubicándote" };
+  const meters = Math.max(0, lastNav.stepMeters);
+  return {
+    kind: "guiding",
+    maneuver: step.maneuver,
+    roundabout: step.roundabout,
+    meters,
+    road: step.road || step.simpleRoad || step.instruction,
+    near: meters <= NEAR_METERS,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Head heading (glasses compass), for heading-up while standing or walking slowly
+
 function reconcileCompass(): void {
-  const wanted =
-    window !== null && window.foreground && screenOn && (phase === "navigating" || phase === "map") && mapMode === "follow";
+  const wanted = window !== null && window.foreground && screenOn && phase === "guiding";
   if (wanted === compassActive) return;
   compassActive = wanted;
   if (wanted) {
@@ -659,21 +693,13 @@ function reconcileCompass(): void {
 }
 
 function handleCompassEvent(event: CompassEvent): void {
-  if (!compassActive || event.command !== COMPASS_CHANGED || event.headingDegrees < 0) return;
-  // Wearer-fit offset from the Compass app's calibration, then declination
-  // from our own GPS fix: the map is always true-north referenced.
-  const magnetic = calibrateHeading(event.headingDegrees);
-  const correction = currentDeclination();
-  if (correction === null) return; // Keep the travel-direction arrow until true north is known.
-  const heading = normalizeHeading(magnetic + correction);
+  if (!compassActive || event.command !== COMPASS_CHANGED || event.headingDegrees < 0 || !position) return;
+  const declination = magneticDeclinationDegrees(position.latitude, position.longitude);
+  if (declination === null) return;
+  const heading = normalizeHeading(calibrateHeading(event.headingDegrees) + declination);
   if (headHeadingDeg !== null && angularDistance(heading, headHeadingDeg) < HEADING_STEP_DEG) return;
   headHeadingDeg = heading;
-  render();
-}
-
-/** Declination at the last fix; it only varies over tens of kilometres, so cache per coarse position. */
-function currentDeclination(): number | null {
-  return lastFix ? magneticDeclinationDegrees(lastFix.latitude, lastFix.longitude) : null;
+  if (!position || position.speed < BEARING_MIN_SPEED_MPS) render();
 }
 
 function angularDistance(a: number, b: number): number {
@@ -681,588 +707,66 @@ function angularDistance(a: number, b: number): number {
   return Math.min(delta, 360 - delta);
 }
 
-function ensureTickTimer(): void {
-  const shouldRun = phase === "navigating" || phase === "map";
-  if (shouldRun && tickTimer === null) {
-    tickTimer = setInterval(() => {
-      maybeRefreshMap();
-      render(); // ETA/minute updates; fingerprint dedup keeps the wire quiet.
-    }, 2_000);
-  } else if (!shouldRun && tickTimer !== null) {
-    clearInterval(tickTimer);
-    tickTimer = null;
-  }
+/** The phone's own GPS only feeds the idle list (distances, search bias); the SDK tracks trips. */
+function reconcileTracking(): void {
+  const wanted = window !== null && window.foreground && (phase === "idle" || phase === "search");
+  if (wanted && !tracker.isRunning()) tracker.start(5_000);
+  else if (!wanted && tracker.isRunning()) tracker.stop();
 }
 
 // ---------------------------------------------------------------------------
-// Map pane
+// Lists
 
-function resetMapState(): void {
-  routeGeneration++;
-  mapImage = null;
-  mapFetchedKey = "";
-  mapInFlight = false;
-  mapLastFetchAtMs = 0;
-  mapLastFetchCenter = null;
-  mapNextRetryAtMs = 0;
-  mapLastError = "";
+function idleRows(): IdleRow[] {
+  const rows: IdleRow[] = [{ kind: "search" }];
+  for (const destination of loadSavedDestinations()) if (destination.address) rows.push({ kind: "saved", destination });
+  for (const destination of loadRecentDestinations()) rows.push({ kind: "recent", destination });
+  return rows;
 }
 
-function currentPosition(): [number, number] | null {
-  if (progress) return progress.snapped;
-  if (lastFix) return [lastFix.longitude, lastFix.latitude];
-  return null;
+function distanceLabel(destination: RecentDestination): string {
+  if (!lastFix || destination.latitude === null || destination.longitude === null) return "";
+  const [number, unit] = formatDistance(haversineMeters(lastFix.latitude, lastFix.longitude, destination.latitude, destination.longitude));
+  return `${number} ${unit}`;
 }
 
-function currentBearing(): number {
-  if (lastFix && lastFix.bearingDeg !== null && (lastFix.speedMps ?? 0) >= BEARING_MIN_SPEED_MPS) {
-    return lastFix.bearingDeg;
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const rad = Math.PI / 180;
+  const a = Math.sin(((lat2 - lat1) * rad) / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(((lon2 - lon1) * rad) / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function idleTerminalRows(rows: IdleRow[]): TerminalRow[] {
+  return rows.map((row) => {
+    if (row.kind === "search") return { label: "Buscar un lugar" };
+    if (row.kind === "saved") return { label: row.destination.name };
+    return { label: row.destination.name, value: distanceLabel(row.destination) };
+  });
+}
+
+function activateIdleRow(row: IdleRow): void {
+  if (!getGoogleMapsKey()) {
+    statusMessage = "Agrega la clave de Google Maps en el teléfono.";
+    return;
   }
-  if (lastBearingDeg) return lastBearingDeg;
-  // Fall back to the direction the route heads from here.
-  if (follower && progress) {
-    const slice = follower.routeSliceAround(progress.alongMeters, 0, 120);
-    if (slice.length >= 2) return bearingDegrees(slice[0]!, slice[slice.length - 1]!);
-  }
-  return 0;
-}
-
-function currentZoom(): number {
-  let zoom: number;
-  if (phase === "map" || profile === "walking") {
-    zoom = 16.5;
-  } else if (progress && progress.metersToNextManeuver < 250) {
-    zoom = 16.5;
-  } else if (progress && progress.metersToNextManeuver < 1000) {
-    zoom = 15.5;
-  } else {
-    zoom = 14.5;
-  }
-  return Math.max(11, Math.min(18, zoom + zoomOffset));
-}
-
-function metersPerPixel(zoom: number, latitude: number): number {
-  return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / Math.pow(2, zoom);
-}
-
-function desiredMapView(): { camera: StaticMapCamera; key: string; path: Array<[number, number]> } | null {
-  if (mapMode === "overview" && follower) {
-    return {
-      camera: { kind: "auto" },
-      key: `auto|${routeGeneration}`,
-      path: simplifyPath(follower.route.coordinates, 100),
-    };
-  }
-  const position = currentPosition();
-  if (!position) return null;
-  const zoom = currentZoom();
-  const bearing = phase === "map" ? 0 : Math.round(currentBearing() / BEARING_BUCKET_DEG) * BEARING_BUCKET_DEG;
-  const path =
-    follower && progress
-      ? simplifyPath(follower.routeSliceAround(progress.alongMeters, 250, 3000), 80)
-      : [];
-  return {
-    camera: { kind: "center", longitude: position[0], latitude: position[1], zoom, bearingDeg: bearing },
-    key: `c|${zoom.toFixed(2)}|${bearing}|${routeGeneration}`,
-    path,
-  };
-}
-
-/**
- * Refetch the map only when meaningfully stale: camera key changed (zoom /
- * bearing bucket / mode / route), moved a good fraction of the viewport, or
- * a few seconds passed while moving. Single-flight with failure backoff.
- */
-function maybeRefreshMap(): void {
-  if (phase !== "navigating" && phase !== "map") return;
-  if (!window || !window.foreground || !screenOn) return;
-  if (mapInFlight || Date.now() < mapNextRetryAtMs) return;
-  if (!isMapboxConfigured()) return;
-  const view = desiredMapView();
-  if (!view) return;
-
-  let stale = mapImage === null || view.key !== mapFetchedKey;
-  if (!stale && view.camera.kind === "center" && mapLastFetchCenter) {
-    const moved = haversineMeters(mapLastFetchCenter, [view.camera.longitude, view.camera.latitude]);
-    const size = mapDimensions();
-    const viewportMeters = Math.min(size.width, size.height) * metersPerPixel(view.camera.zoom, view.camera.latitude);
-    if (moved > viewportMeters * MOVE_REFRESH_FRACTION) stale = true;
-    else if (Date.now() - mapLastFetchAtMs > IDLE_REFRESH_MS && moved > IDLE_REFRESH_MIN_MOVE_M) stale = true;
-  }
-  if (!stale) return;
-
-  mapInFlight = true;
-  const generation = routeGeneration;
-  fetchStaticMapGray({
-    camera: view.camera,
-    ...mapDimensions(),
-    routePath: view.path.length >= 2 ? view.path : undefined,
-  })
-    .then((image) => {
-      if (generation !== routeGeneration) return; // Route/mode changed mid-fetch.
-      mapInFlight = false;
-      levelMap(image);
-      mapImage = image;
-      mapFetchedKey = view.key;
-      mapFetchedBearingDeg = view.camera.kind === "center" ? view.camera.bearingDeg : 0;
-      mapLastFetchAtMs = Date.now();
-      mapLastFetchCenter = view.camera.kind === "center" ? [view.camera.longitude, view.camera.latitude] : null;
-      mapLastError = "";
-      render();
-    })
-    .catch((error) => {
-      if (generation !== routeGeneration) return;
-      mapInFlight = false;
-      mapNextRetryAtMs = Date.now() + MAP_RETRY_BACKOFF_MS;
-      mapLastError = String((error as Error)?.message ?? error);
-      render();
-    });
-}
-
-function mapDimensions(): { width: number; height: number } {
-  return phase === "map" && window
-    ? { width: window.viewportWidth, height: Math.max(1, window.viewportHeight - 30) }
-    : { width: MAP_SIZE, height: MAP_SIZE };
-}
-
-/** Keep every Nth point (ends always included) to bound the overlay URL size. */
-function simplifyPath(path: Array<[number, number]>, maxPoints: number): Array<[number, number]> {
-  if (path.length <= maxPoints) return path;
-  const step = (path.length - 1) / (maxPoints - 1);
-  const out: Array<[number, number]> = [];
-  for (let i = 0; i < maxPoints; i++) {
-    out.push(path[Math.round(i * step)]!);
-  }
-  return out;
-}
-
-/**
- * Level the render for the lens. The dominant tone is the land fill: black
- * when the style override took, dark gray otherwise. Either way it becomes
- * the black point, and everything above it is stretched so roads survive
- * 4bpp quantization.
- */
-function levelMap(image: GrayImage): void {
-  const histogram = new Uint32Array(256);
-  for (let i = 0; i < image.pixels.length; i++) histogram[image.pixels[i]!]++;
-  let black = 0;
-  for (let value = 1; value < 256; value++) {
-    if (histogram[value]! > histogram[black]!) black = value;
-  }
-  // A bright dominant tone isn't a floor (a large plaza, a fetch that came
-  // back mostly label); flattening it would eat the roads.
-  if (black > 64) black = 0;
-  for (let i = 0; i < image.pixels.length; i++) {
-    const value = image.pixels[i]!;
-    image.pixels[i] = value <= black ? 0 : Math.min(255, Math.round((value - black) * 1.7));
+  if (row.kind === "search") beginSearch();
+  else if (row.kind === "saved") navigateToSaved(row.destination);
+  else {
+    const recent = row.destination;
+    startTrip({ placeId: recent.placeId, latitude: recent.latitude ?? 0, longitude: recent.longitude ?? 0, title: recent.name, detail: recent.place });
   }
 }
 
-// ---------------------------------------------------------------------------
-// Tools
-
-async function handleNavigateTool(name: string, args: any): Promise<ToolResult> {
-  switch (name) {
-    case "start_route": {
-      const query = String(args?.query ?? "").trim();
-      if (!query) return { ok: false, error: "start_route requires a destination query" };
-      const requested = String(args?.profile ?? "driving");
-      const routeProfile: RouteProfile =
-        requested === "walking" || requested === "cycling" ? requested : "driving";
-      try {
-        const summary = await startNavigation(query, routeProfile);
-        return { ok: true, content: summary };
-      } catch (error) {
-        return { ok: false, error: String((error as Error)?.message ?? error) };
-      }
-    }
-    case "stop_route":
-      if (phase === "idle") return { ok: true, content: "Navigation was not active." };
-      stopNavigation("Navigation stopped.");
-      render();
-      return { ok: true, content: "Navigation stopped." };
-    case "route_status":
-      return { ok: true, content: describeRouteStatus() };
-    default:
-      return { ok: false, error: `Unknown navigate tool: ${name}` };
-  }
-}
-
-function startSummary(picked: GeocodeCandidate, candidates: GeocodeCandidate[], route: Route): string {
-  const parts = [
-    `Navigating to ${picked.name}${picked.placeFormatted ? ` (${picked.placeFormatted})` : ""}: ` +
-      `${formatDistance(route.distanceMeters)}, about ${formatDurationLong(route.durationSec)}, ` +
-      `arriving ${formatClock(Date.now() + route.durationSec * 1000)}.`,
-  ];
-  const alternates = candidates.slice(1, 3);
-  if (alternates.length) {
-    parts.push(
-      `Other matches: ${alternates
-        .map((c) => `${c.name}${c.placeFormatted ? ` (${c.placeFormatted})` : ""}`)
-        .join("; ")}. Call start_route with a more specific query to pick one of these instead.`,
-    );
-  }
-  return parts.join(" ");
-}
-
-function describeRouteStatus(): string {
-  if (phase === "map") return "Showing the map around your current location. No destination set.";
-  if (phase === "arrived") return `Arrived at ${destinationName}.`;
-  if (phase !== "navigating" || !follower) return "Navigation is not active.";
-  if (!progress) return `Navigating to ${destinationName}; waiting for a GPS fix.`;
-  const step = follower.route.steps[progress.nextStepIndex]!;
-  return (
-    `Next: ${step.instruction || step.maneuverType} in ${formatDistance(progress.metersToNextManeuver)}. ` +
-    `${formatDistance(progress.remainingMeters)} and ${formatDurationLong(progress.remainingSec)} remaining; ` +
-    `ETA ${formatClock(Date.now() + progress.remainingSec * 1000)}.`
-  );
+function searchMessage(): string {
+  if (searchState === "error") return searchError;
+  if (!query) return "Escribe en el teléfono o di un lugar.";
+  if (searchState === "searching" && !suggestions.length) return "Buscando…";
+  if (!suggestions.length) return "Sin resultados.";
+  return "";
 }
 
 // ---------------------------------------------------------------------------
 // Input
-
-/**
- * The window's context menu: Stop navigation while a route is up, then the
- * display and saved-destination settings (Home, Work, custom named places), and the
- * recent-destinations preference.
- */
-function windowMenuItems(): MenuItem[] {
-  const items: MenuItem[] = [];
-  if (phase !== "idle") {
-    items.push({
-      label: phase === "map" ? "Close map" : "Stop navigation",
-      onSelect: (ctx) => {
-        ctx.stack.pop();
-        stopNavigation(phase === "map" ? "" : "Navigation stopped.");
-        render();
-      },
-    });
-  }
-  items.push(
-    enumSettingMenuItem(navigateDisplayModeSetting),
-    enumSettingMenuItem(navigateVerticalPositionSetting),
-  );
-  items.push(submenuItem("Saved destinations", (ctx) => {
-    ctx.stack.push(new WindowMenuLayer("Saved destinations", savedDestinationMenuItems()));
-  }));
-  items.push({
-    label: navigateRememberRecentSetting.label,
-    onSelect: () => {
-      const enabled = navigateRememberRecentSetting.toggle();
-      if (!enabled) clearRecentDestinations();
-      syncIdleList();
-    },
-    render: ({ image, x, y, width, selected }) => {
-      drawToggleMenuItem(
-        image,
-        smallFont,
-        x,
-        y,
-        width,
-        navigateRememberRecentSetting.label,
-        navigateRememberRecentSetting.get(),
-        selected,
-      );
-    },
-  });
-  const selectedEntry = phase === "idle" ? syncIdleList().selectedItem : null;
-  if (selectedEntry?.kind === "recent") {
-    const recent = selectedEntry.destination;
-    items.push({
-      label: `Forget ${truncateText(smallFont, recent.name, 160)}`,
-      onSelect: (ctx) => {
-        ctx.stack.pop();
-        removeRecentDestination(recent);
-        syncIdleList();
-      },
-    });
-  }
-  if (loadRecentDestinations().length) {
-    items.push({
-      label: "Clear recent destinations",
-      onSelect: (ctx) => {
-        ctx.stack.pop();
-        clearRecentDestinations();
-        syncIdleList();
-      },
-    });
-  }
-  return items;
-}
-
-/** Home, Work, each custom destination (its own action submenu), and Add. */
-function savedDestinationMenuItems(): MenuItem[] {
-  const items: MenuItem[] = [];
-  const saved = loadSavedDestinations();
-  const home = saved.find((d) => d.id === HOME_DESTINATION_ID);
-  const work = saved.find((d) => d.id === WORK_DESTINATION_ID);
-  items.push(addressMenuItem("Home", HOME_DESTINATION_ID, home?.address ?? ""));
-  items.push(addressMenuItem("Work", WORK_DESTINATION_ID, work?.address ?? ""));
-  for (const dest of saved) {
-    if (dest.builtin) continue;
-    items.push({
-      label: dest.name,
-      onSelect: (ctx) => {
-        ctx.stack.push(new WindowMenuLayer(dest.name, customDestinationMenuItems(dest)));
-      },
-      render: ({ image, x, y, width, height }) => {
-        drawAddressRow(image, x, y, width, dest.name, dest.address, true);
-        drawSubmenuIndicator(image, smallFont, x - 10, y, width + 20, height, 150);
-      },
-    });
-  }
-  items.push({
-    label: "Add destination...",
-    onSelect: (ctx) => {
-      closeMenusAnd(ctx, () => beginAddDestination());
-    },
-  });
-  return items;
-}
-
-/** A Home/Work row: shows the address, opens the address editor. */
-function addressMenuItem(label: string, id: string, address: string): MenuItem {
-  return {
-    label,
-    onSelect: (ctx) => {
-      closeMenusAnd(ctx, () => beginAddressEdit(id, label, address));
-    },
-    render: ({ image, x, y, width }) => {
-      drawAddressRow(image, x, y, width, label, address, false);
-    },
-  };
-}
-
-function customDestinationMenuItems(dest: SavedDestination): MenuItem[] {
-  return [
-    {
-      label: "Navigate there",
-      disabled: !dest.address,
-      onSelect: (ctx) => {
-        closeMenusAnd(ctx, () => {
-          void startNavigationTo({ kind: "query", query: dest.address, label: dest.name }, profile).catch(
-            () => {},
-          );
-        });
-      },
-    },
-    {
-      label: "Set address",
-      onSelect: (ctx) => {
-        closeMenusAnd(ctx, () => beginAddressEdit(dest.id, dest.name, dest.address));
-      },
-    },
-    {
-      label: "Rename",
-      onSelect: (ctx) => {
-        closeMenusAnd(ctx, () => {
-          navigateDestinationNameDraftSetting.set(dest.name);
-          beginEdit(navigateDestinationNameDraftSetting, `Rename ${dest.name}`, (name) => {
-            if (name) updateCustomDestination(dest.id, { name });
-          });
-        });
-      },
-    },
-    {
-      label: "Remove",
-      onSelect: (ctx) => {
-        closeMenusAnd(ctx, () => {
-          removeCustomDestination(dest.id);
-          syncIdleList();
-        });
-      },
-    },
-  ];
-}
-
-function drawAddressRow(
-  image: GrayImage,
-  x: number,
-  y: number,
-  width: number,
-  label: string,
-  address: string,
-  hasSubmenu: boolean,
-): void {
-  const valueWidth = Math.max(40, width - smallFont.measureText(label) - (hasSubmenu ? 28 : 12));
-  const value = truncateText(smallFont, address || "(not set)", valueWidth);
-  drawRightValueMenuItem(image, smallFont, x, y, width - (hasSubmenu ? 16 : 0), label, value);
-}
-
-/** Close the whole menu stack, then run an action that takes over the window. */
-function closeMenusAnd(ctx: LayerContext, action: () => void): void {
-  ctx.stack.clearToBase();
-  action();
-}
-
-// ---------------------------------------------------------------------------
-// Destination editing (phone text editor + voice input)
-
-/**
- * Open the phone text editor on a staging setting. The editor writes the
- * draft live (repainted via the settings listener); click here confirms.
- */
-function beginEdit(
-  setting: ConfigSettingString,
-  title: string,
-  onDone: (value: string) => void,
-  onCancel?: () => void,
-): void {
-  editing = { setting, title, onDone, onCancel };
-  post({ type: "start-text-setting-edit", settingId: setting.id });
-  render();
-}
-
-function finishEdit(confirmed: boolean): void {
-  const current = editing;
-  editing = null;
-  post({ type: "end-text-setting-edit" });
-  if (current && confirmed) current.onDone(current.setting.get());
-  else if (current) current.onCancel?.();
-  // onDone may have started the next step; only fully leave when it didn't.
-  if (!editing) {
-    navigateDestinationNameDraftSetting.set("");
-    navigateDestinationAddressDraftSetting.set("");
-    syncIdleList();
-    render();
-  }
-}
-
-function beginAddressEdit(id: string, name: string, current: string): void {
-  navigateDestinationAddressDraftSetting.set(current);
-  beginEdit(navigateDestinationAddressDraftSetting, `${name} address`, (address) => {
-    if (address) setDestinationAddress(id, address);
-  });
-}
-
-/** Two-step add: a name, then its address. An empty answer cancels. */
-function beginAddDestination(): void {
-  navigateDestinationNameDraftSetting.set("");
-  beginEdit(navigateDestinationNameDraftSetting, "New destination name", (name) => {
-    if (!name) return;
-    navigateDestinationAddressDraftSetting.set("");
-    beginEdit(navigateDestinationAddressDraftSetting, `${name} address`, (address) => {
-      if (address) addCustomDestination(name, address);
-    });
-  });
-}
-
-/**
- * Edit the Mapbox token in place: the phone editor writes the real setting
- * live, so cancelling puts back whatever was there before.
- */
-function beginTokenEdit(): void {
-  const previous = mapboxApiKeySetting.get();
-  beginEdit(
-    mapboxApiKeySetting,
-    mapboxApiKeySetting.glassesEditTitle,
-    () => {
-      statusMessage = "";
-    },
-    () => mapboxApiKeySetting.set(previous),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Idle page destination list
-
-/** Where a user gets a token: Mapbox's access-tokens page (sign-up/login first when needed). */
-const MAPBOX_TOKENS_URL = "https://account.mapbox.com/access-tokens/";
-
-/** Offered in place of the destination list until a Mapbox token is set. */
-function tokenSetupEntries(): IdleEntry[] {
-  return [
-    {
-      kind: "action",
-      label: "Open mapbox.com",
-      detail: "Get a free token in the phone browser",
-      run: () => {
-        statusMessage = openUrlOnPhone(MAPBOX_TOKENS_URL)
-          ? "Opening mapbox.com on your phone. Copy your public token (pk...) and pick Edit token."
-          : "Could not open a browser on the phone. Visit account.mapbox.com/access-tokens to get a token.";
-      },
-    },
-    {
-      kind: "action",
-      label: "Edit token",
-      detail: "Type or paste it in the phone app",
-      run: () => beginTokenEdit(),
-    },
-  ];
-}
-
-function idleEntries(): IdleEntry[] {
-  if (!isMapboxConfigured()) return tokenSetupEntries();
-  const entries: IdleEntry[] = [{
-    kind: "action",
-    label: "Map around me",
-    detail: "Follow my location",
-    run: () => { void startMap(); },
-  }];
-  entries.push(...loadSavedDestinations()
-    .filter((dest) => dest.address)
-    .map((dest): IdleEntry => ({ kind: "saved", destination: dest })));
-  for (const dest of loadRecentDestinations()) {
-    entries.push({ kind: "recent", destination: dest });
-  }
-  return entries;
-}
-
-/** Horizontal inset of the idle list's selection boxes. */
-const IDLE_LIST_X = 20;
-/** Pixels between consecutive idle rows' selection boxes. */
-const IDLE_ROW_GAP = 2;
-
-function idleList(): Menu<IdleEntry> {
-  idleMenu ??= new Menu<IdleEntry>({
-    wrap: false,
-    rowGap: IDLE_ROW_GAP,
-    highlight: { radius: 6 },
-    getHeight: () => listRowHeight(smallFont),
-    draw: drawIdleRow,
-  });
-  return idleMenu;
-}
-
-/** Refresh the idle list from idleEntries(); the selection keeps its index, clamped into range. */
-function syncIdleList(): Menu<IdleEntry> {
-  const list = idleList();
-  list.setItems(idleEntries());
-  return list;
-}
-
-function navigateToIdleEntry(entry: IdleEntry): void {
-  if (entry.kind === "action") {
-    entry.run();
-    return;
-  }
-  const target: NavTarget =
-    entry.kind === "saved"
-      ? { kind: "query", query: entry.destination.address, label: entry.destination.name }
-      : {
-          kind: "place",
-          name: entry.destination.name,
-          place: entry.destination.place,
-          longitude: entry.destination.longitude,
-          latitude: entry.destination.latitude,
-        };
-  void startNavigationTo(target, profile).catch(() => {});
-}
-
-function windowMenu(win: NavWindow): WindowMenu {
-  if (!win.menu) {
-    win.menu = new WindowMenu({
-      windowId: win.windowId,
-      post,
-      title: () => win.title,
-      items: () => windowMenuItems(),
-      size: { width: win.viewportWidth, height: win.viewportHeight },
-      paintBase: () => paintContent(win),
-      isFocused: () => win.focused,
-    });
-  }
-  return win.menu;
-}
 
 function handleInput(win: NavWindow, event: InputEvent, frameId: number): void {
   if (win.menu?.isOpen()) {
@@ -1273,14 +777,11 @@ function handleInput(win: NavWindow, event: InputEvent, frameId: number): void {
     return;
   }
   if (editing) {
-    if (event.type === "click") {
-      finishEdit(true);
-    } else if (event.type === "double-click") {
-      finishEdit(false);
-    } else {
+    if (event.type !== "click" && event.type !== "double-click") {
       frameTimings.finishFrame(frameId, "discarded: navigate edit ignored input");
       return;
     }
+    finishEdit(event.type === "click");
     renderAndSubmit(win, frameId);
     return;
   }
@@ -1289,50 +790,235 @@ function handleInput(win: NavWindow, event: InputEvent, frameId: number): void {
     renderAndSubmit(win, frameId);
     return;
   }
-  if (event.type === "double-click") {
+  if (event.type === "double-click" && phase !== "search") {
     frameTimings.finishFrame(frameId, "discarded: navigate yielded focus");
     post({ type: "yield-focus", windowId: win.windowId });
     return;
   }
-  if (event.type === "click") {
-    if (phase === "navigating") {
-      mapMode = mapMode === "follow" ? "overview" : "follow";
-      resetMapState();
-      maybeRefreshMap();
-    } else if (phase === "arrived" || phase === "map") {
-      stopNavigation("");
-    } else if (phase === "idle") {
-      const entry = syncIdleList().selectedItem;
-      if (!entry) {
-        frameTimings.finishFrame(frameId, "discarded: navigate ignored click");
-        return;
+  if (!applyInput(event)) {
+    frameTimings.finishFrame(frameId, "discarded: navigate ignored input");
+    return;
+  }
+  renderAndSubmit(win, frameId);
+}
+
+/** Returns whether the event changed anything. */
+function applyInput(event: InputEvent): boolean {
+  const scroll = event.type === "scroll-down" ? 1 : event.type === "scroll-up" ? -1 : 0;
+  switch (phase) {
+    case "idle": {
+      const rows = idleRows();
+      if (scroll) {
+        idleSelected = stepSelection(idleTerminalRows(rows), Math.min(idleSelected, rows.length - 1), scroll);
+        return true;
       }
-      navigateToIdleEntry(entry);
-    } else {
-      frameTimings.finishFrame(frameId, "discarded: navigate ignored click");
-      return;
+      const row = rows[Math.min(idleSelected, rows.length - 1)];
+      if (event.type !== "click" || !row) return false;
+      activateIdleRow(row);
+      return true;
     }
-    renderAndSubmit(win, frameId);
-    return;
+    case "search":
+      if (scroll && suggestions.length) {
+        searchSelected = Math.max(0, Math.min(suggestions.length - 1, searchSelected + scroll));
+      } else if (event.type === "click" && suggestions[searchSelected]) {
+        pickSuggestion(suggestions[searchSelected]!);
+      } else if (event.type === "double-click") {
+        endSearch();
+        phase = "idle";
+        reconcileTracking();
+      } else {
+        return false;
+      }
+      return true;
+    case "arrived":
+      if (event.type !== "click") return false;
+      stopTrip("");
+      return true;
+    default:
+      return false;
   }
-  if (event.type === "scroll-up" || event.type === "scroll-down") {
-    if ((phase === "navigating" || phase === "map") && mapMode === "follow") {
-      zoomOffset = Math.max(-3, Math.min(2, zoomOffset + (event.type === "scroll-up" ? 0.5 : -0.5)));
-      maybeRefreshMap();
-      renderAndSubmit(win, frameId);
-    } else if (phase === "idle" && idleEntries().length > 1) {
-      syncIdleList().moveSelection(event.type === "scroll-down" ? 1 : -1);
-      renderAndSubmit(win, frameId);
-    } else {
-      frameTimings.finishFrame(frameId, "discarded: navigate ignored scroll");
-    }
-    return;
+}
+
+// ---------------------------------------------------------------------------
+// Window menu: stop, travel mode, display settings, saved and recent destinations
+
+function windowMenuItems(): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (phase === "starting" || phase === "guiding" || phase === "arrived") {
+    items.push({
+      label: "Detener navegación",
+      onSelect: (ctx) => {
+        ctx.stack.pop();
+        stopTrip("");
+        render();
+      },
+    });
   }
-  frameTimings.finishFrame(frameId, "discarded: navigate ignored input");
+  items.push(
+    enumSettingMenuItem(navigateTravelModeSetting),
+    enumSettingMenuItem(navigateDisplayModeSetting),
+    enumSettingMenuItem(navigateVerticalPositionSetting),
+    submenuItem("Destinos guardados", (ctx) => {
+      ctx.stack.push(new WindowMenuLayer("Destinos guardados", savedDestinationMenuItems()));
+    }),
+    {
+      label: navigateRememberRecentSetting.label,
+      onSelect: () => {
+        if (!navigateRememberRecentSetting.toggle()) clearRecentDestinations();
+      },
+      render: ({ image, x, y, width, selected }) => {
+        drawToggleMenuItem(image, smallFont, x, y, width, navigateRememberRecentSetting.label, navigateRememberRecentSetting.get(), selected);
+      },
+    },
+  );
+  const rows = phase === "idle" ? idleRows() : [];
+  const selected = rows[Math.min(idleSelected, rows.length - 1)];
+  if (selected?.kind === "recent") {
+    const recent = selected.destination;
+    items.push({
+      label: `Olvidar ${truncateText(smallFont, recent.name, 160)}`,
+      onSelect: (ctx) => {
+        ctx.stack.pop();
+        removeRecentDestination(recent);
+      },
+    });
+  }
+  if (loadRecentDestinations().length) {
+    items.push({
+      label: "Borrar recientes",
+      onSelect: (ctx) => {
+        ctx.stack.pop();
+        clearRecentDestinations();
+      },
+    });
+  }
+  return items;
+}
+
+function savedDestinationMenuItems(): MenuItem[] {
+  const saved = loadSavedDestinations();
+  const items: MenuItem[] = [
+    addressMenuItem("Casa", HOME_DESTINATION_ID, saved.find((d) => d.id === HOME_DESTINATION_ID)?.address ?? ""),
+    addressMenuItem("Trabajo", WORK_DESTINATION_ID, saved.find((d) => d.id === WORK_DESTINATION_ID)?.address ?? ""),
+  ];
+  for (const dest of saved) {
+    if (dest.builtin) continue;
+    items.push({
+      label: dest.name,
+      onSelect: (ctx) => ctx.stack.push(new WindowMenuLayer(dest.name, customDestinationMenuItems(dest))),
+      render: ({ image, x, y, width, height }) => {
+        drawAddressRow(image, x, y, width, dest.name, dest.address, true);
+        drawSubmenuIndicator(image, smallFont, x - 10, y, width + 20, height, 150);
+      },
+    });
+  }
+  items.push({ label: "Agregar destino…", onSelect: (ctx) => closeMenusAnd(ctx, () => beginAddDestination()) });
+  return items;
+}
+
+function addressMenuItem(label: string, id: string, address: string): MenuItem {
+  return {
+    label,
+    onSelect: (ctx) => closeMenusAnd(ctx, () => beginAddressEdit(id, label, address)),
+    render: ({ image, x, y, width }) => drawAddressRow(image, x, y, width, label, address, false),
+  };
+}
+
+function customDestinationMenuItems(dest: SavedDestination): MenuItem[] {
+  return [
+    {
+      label: "Ir ahí",
+      disabled: !dest.address,
+      onSelect: (ctx) => closeMenusAnd(ctx, () => navigateToSaved(dest)),
+    },
+    { label: "Cambiar dirección", onSelect: (ctx) => closeMenusAnd(ctx, () => beginAddressEdit(dest.id, dest.name, dest.address)) },
+    {
+      label: "Renombrar",
+      onSelect: (ctx) => closeMenusAnd(ctx, () => {
+        navigateDestinationNameDraftSetting.set(dest.name);
+        beginEdit(navigateDestinationNameDraftSetting, `Renombrar ${dest.name}`, (name) => {
+          if (name) updateCustomDestination(dest.id, { name });
+        });
+      }),
+    },
+    { label: "Eliminar", onSelect: (ctx) => closeMenusAnd(ctx, () => removeCustomDestination(dest.id)) },
+  ];
+}
+
+function drawAddressRow(image: GrayImage, x: number, y: number, width: number, label: string, address: string, hasSubmenu: boolean): void {
+  const valueWidth = Math.max(40, width - smallFont.measureText(label) - (hasSubmenu ? 28 : 12));
+  const value = truncateText(smallFont, address || "(sin dirección)", valueWidth);
+  drawRightValueMenuItem(image, smallFont, x, y, width - (hasSubmenu ? 16 : 0), label, value);
+}
+
+function closeMenusAnd(ctx: LayerContext, action: () => void): void {
+  ctx.stack.clearToBase();
+  action();
+}
+
+function beginEdit(setting: ConfigSettingString, title: string, onDone: (value: string) => void): void {
+  editing = { setting, title, onDone };
+  post({ type: "start-text-setting-edit", settingId: setting.id });
+  render();
+}
+
+function finishEdit(confirmed: boolean): void {
+  const current = editing;
+  editing = null;
+  post({ type: "end-text-setting-edit" });
+  if (current && confirmed) current.onDone(current.setting.get());
+  if (!editing) {
+    navigateDestinationNameDraftSetting.set("");
+    navigateDestinationAddressDraftSetting.set("");
+    render();
+  }
+}
+
+function beginAddressEdit(id: string, name: string, current: string): void {
+  navigateDestinationAddressDraftSetting.set(current);
+  beginEdit(navigateDestinationAddressDraftSetting, `Dirección de ${name}`, (address) => {
+    if (address) setDestinationAddress(id, address);
+  });
+}
+
+function beginAddDestination(): void {
+  navigateDestinationNameDraftSetting.set("");
+  beginEdit(navigateDestinationNameDraftSetting, "Nombre del destino", (name) => {
+    if (!name) return;
+    navigateDestinationAddressDraftSetting.set("");
+    beginEdit(navigateDestinationAddressDraftSetting, `Dirección de ${name}`, (address) => {
+      if (address) addCustomDestination(name, address);
+    });
+  });
+}
+
+function windowMenu(win: NavWindow): WindowMenu {
+  win.menu ??= new WindowMenu({
+    windowId: win.windowId,
+    post,
+    title: () => win.title,
+    items: () => windowMenuItems(),
+    size: { width: win.viewportWidth, height: win.viewportHeight },
+    paintBase: () => paintContent(win),
+    isFocused: () => win.focused,
+  });
+  return win.menu;
 }
 
 // ---------------------------------------------------------------------------
 // Painting
+
+function fonts(): GuidanceFonts {
+  const face = terminalFace();
+  if (!guidanceFonts || guidanceFonts.face !== face) {
+    const number = TtfFont.load(numberFontPath, 40);
+    const unit = TtfFont.load(numberFontPath, 22);
+    const tiny = TtfFont.load(numberFontPath, 12);
+    if (!number || !unit || !tiny) throw new Error("Navigate fonts unavailable");
+    guidanceFonts = { face, number, unit, tiny };
+  }
+  return guidanceFonts;
+}
 
 function paint(win: NavWindow): Plane[] {
   return windowMenu(win).paint();
@@ -1340,298 +1026,61 @@ function paint(win: NavWindow): Plane[] {
 
 function paintContent(win: NavWindow): GrayImage {
   const image = new GrayImage(win.viewportWidth, win.viewportHeight, 0);
+  const f = fonts();
   if (editing) {
-    paintEdit(image, editing);
-  } else if (phase === "map") {
-    paintMap(image);
-  } else if (phase === "idle" || phase === "acquiring" || phase === "routing") {
-    paintIdle(image, win);
-  } else {
-    paintNavigating(image, win);
+    paintTerminalList(image, f.face, {
+      rows: [],
+      selected: -1,
+      message: editing.setting.get() || "Escribe en el teléfono.",
+      footer: { left: `· ${editing.title}`, right: "" },
+    });
+    return image;
+  }
+  switch (phase) {
+    case "idle": {
+      const rows = idleRows();
+      idleSelected = Math.min(idleSelected, rows.length - 1);
+      const terminalRows = idleTerminalRows(rows);
+      idleTop = listScrollTop(terminalRows.length, idleSelected, idleTop);
+      const mode = navigateTravelModeSetting.displayValue();
+      paintTerminalList(image, f.face, {
+        rows: terminalRows,
+        selected: idleSelected,
+        message: getGoogleMapsKey() ? undefined : "Agrega la clave de Google Maps en el teléfono.",
+        footer: { left: statusMessage ? `· ${statusMessage}` : "· Navegar", right: mode },
+      }, idleTop);
+      break;
+    }
+    case "search": {
+      const rows: TerminalRow[] = suggestions.map((s) => ({ label: s.name, value: s.distanceMeters === null ? "" : formatDistance(s.distanceMeters).join(" ") }));
+      searchTop = listScrollTop(rows.length, searchSelected, searchTop);
+      const detail = suggestions[searchSelected]?.detail;
+      paintTerminalList(image, f.face, {
+        rows,
+        selected: rows.length ? searchSelected : -1,
+        message: searchMessage() || undefined,
+        footer: { left: `· ${fitLine(f.face, detail || query || "Buscar", 330)}`, right: "Google Maps" },
+      }, searchTop);
+      break;
+    }
+    default:
+      paintGuidance(image, f, guidanceView(), streetMap());
+      break;
   }
   return image;
 }
-
-/** The "type on the phone" screen for a destination name/address edit. */
-function paintEdit(image: GrayImage, edit: DestinationEdit): void {
-  const step = smallFont.lineHeight + 2;
-  image.drawText(mediumFont, 24, 16, edit.title, 245);
-  const messageY = 64;
-  const lines = wrapText(smallFont, "Type the value in the phone app, or use voice input.", image.width - 48);
-  for (let index = 0; index < lines.length; index++) {
-    image.drawText(smallFont, 24, messageY + index * step, lines[index]!, 190);
-  }
-  const value = edit.setting.get();
-  image.drawText(
-    smallFont,
-    24,
-    messageY + (lines.length + 1) * step,
-    truncateText(smallFont, value || "(empty)", image.width - 48),
-    value ? 225 : 130,
-  );
-  drawFooter(image, `${GESTURE_CLICK} done   ${GESTURE_DOUBLE_CLICK} cancel`);
-}
-
-function paintIdle(image: GrayImage, win: NavWindow): void {
-  image.drawText(mediumFont, 24, 16, "Navigate", 245);
-  const busy = phase !== "idle";
-  const entries = busy ? [] : idleEntries();
-  const configured = isMapboxConfigured();
-  const hint = !configured
-    ? "Mapbox token missing. Get a free public token at mapbox.com, then enter it here or in the phone's API keys."
-    : entries.length
-      ? "View the map or pick a destination below. Use Voice input (system menu, long-press) to say a destination."
-      : "Ask the voice assistant to navigate somewhere, or pick Voice input from the system menu (long-press) to say a destination. Save Home, Work and other places from the app menu.";
-  const hintLines = wrapText(smallFont, hint, image.width - 48);
-  const hintStep = smallFont.lineHeight + 2;
-  for (let index = 0; index < hintLines.length; index++) {
-    image.drawText(smallFont, 24, 52 + index * hintStep, hintLines[index]!, 170);
-  }
-  let y = 52 + hintLines.length * hintStep + 6;
-  if (statusMessage) {
-    const statusLines = wrapText(smallFont, statusMessage, image.width - 48);
-    for (let index = 0; index < statusLines.length; index++) {
-      image.drawText(smallFont, 24, y + index * hintStep, statusLines[index]!, busy ? 220 : 190);
-    }
-    y += statusLines.length * hintStep + 6;
-  }
-  if (entries.length) {
-    paintIdleList(image, win, entries, y);
-    drawFooter(
-      image,
-      `${GESTURE_SCROLL} select   ${GESTURE_CLICK} ${configured ? "go" : "choose"}   ${GESTURE_SHORT_THEN_LONG_PRESS} app menu   ${GESTURE_DOUBLE_CLICK} back`,
-    );
-  } else {
-    drawFooter(image, `${GESTURE_SHORT_THEN_LONG_PRESS} app menu   ${GESTURE_DOUBLE_CLICK} back`);
-  }
-}
-
-/** Map action, saved destinations, then recent places, one selectable row each. */
-function paintIdleList(image: GrayImage, win: NavWindow, entries: IdleEntry[], top: number): void {
-  const rowHeight = listRowHeight(smallFont);
-  const listBottom = image.height - 30;
-  const visibleRows = Math.max(1, Math.floor((listBottom - top) / rowHeight));
-  const rowWidth = image.width - 40 - (entries.length > visibleRows ? 10 : 0);
-  const list = idleList();
-  list.setItems(entries);
-  list.paint(image, { x: IDLE_LIST_X, y: top, width: rowWidth, height: visibleRows * rowHeight - IDLE_ROW_GAP }, win.focused);
-  list.drawScrollbar(image, IDLE_LIST_X + rowWidth + 4, top, visibleRows * rowHeight - 2);
-}
-
-/** Two columns: the entry's name, then its detail (action hint, address or place). */
-function drawIdleRow({ image, item: entry, x, y, width, selected }: MenuDrawArgs<IdleEntry>): void {
-  const labelWidth = Math.floor(width * 0.4);
-  const textX = x + 6;
-  const textY = y + LIST_ROW_TEXT_INSET;
-  let label: string;
-  let detail: string;
-  if (entry.kind === "action") {
-    label = entry.label;
-    detail = entry.detail;
-  } else if (entry.kind === "saved") {
-    label = entry.destination.name;
-    detail = entry.destination.address;
-  } else {
-    label = entry.destination.name;
-    detail = entry.destination.place ? `${entry.destination.place}  (recent)` : "(recent)";
-  }
-  image.drawText(smallFont, textX, textY, truncateText(smallFont, label, labelWidth), selected ? 245 : 210);
-  const detailX = textX + labelWidth + 8;
-  image.drawText(smallFont, detailX, textY, truncateText(smallFont, detail, x + width - 6 - detailX), selected ? 170 : 130);
-}
-
-function paintNavigating(image: GrayImage, win: NavWindow): void {
-  // Map pane (left).
-  if (mapImage) {
-    image.bitBlt(mapImage, 0, 0);
-    if (mapMode === "follow") {
-      // Head heading relative to the map's up (its render bearing); no
-      // compass reading yet means "up", i.e. the direction of travel.
-      const angle = headHeadingDeg === null ? 0 : headHeadingDeg - mapFetchedBearingDeg;
-      drawChevron(image, MAP_SIZE / 2, MAP_SIZE / 2, angle);
-    }
-  } else {
-    image.drawRect(0, 0, MAP_SIZE, MAP_SIZE, 60);
-    const text = mapLastError ? "Map unavailable" : "Loading map...";
-    image.drawText(smallFont, 24, MAP_SIZE / 2 - 8, text, 120);
-  }
-
-  // Guidance panel (right) — its own region so text deltas never overlap the map's.
-  const panelWidth = win.viewportWidth - PANEL_X;
-  if (phase === "arrived") {
-    drawManeuverGlyph(image, PANEL_X + 8, 14, 56, "arrive", "", 245);
-    image.drawText(mediumFont, PANEL_X + 76, 26, "Arrived", 245);
-    image.drawTextWrapped({
-      font: smallFont,
-      x: PANEL_X + 8,
-      y: 84,
-      width: panelWidth - 16,
-      text: destinationName,
-      value: 200,
-    });
-    drawFooter(image, `${GESTURE_CLICK} done   ${GESTURE_DOUBLE_CLICK} back`);
-    return;
-  }
-
-  const step = follower && progress ? follower.route.steps[progress.nextStepIndex] : null;
-  if (step && progress) {
-    drawManeuverGlyph(image, PANEL_X + 8, 14, 56, step.maneuverType, step.maneuverModifier, 245);
-    if (step.exit !== null && (step.maneuverType === "roundabout" || step.maneuverType === "rotary")) {
-      image.drawText(smallFont, PANEL_X + 30, 46, String(step.exit), 245);
-    }
-    image.drawText(largeFont, PANEL_X + 76, 24, formatDistanceShort(progress.metersToNextManeuver), 250);
-    image.drawTextWrapped({
-      font: mediumFont,
-      x: PANEL_X + 8,
-      y: 84,
-      width: panelWidth - 16,
-      text: step.instruction || step.name || step.maneuverType,
-      value: 220,
-    });
-    const eta = `${formatDistance(progress.remainingMeters)} · ${formatDurationShort(progress.remainingSec)} · ${formatClock(
-      Date.now() + progress.remainingSec * 1000,
-    )}`;
-    image.drawText(smallFont, PANEL_X + 8, win.viewportHeight - 62, eta, 170);
-  } else {
-    image.drawTextWrapped({
-      font: mediumFont,
-      x: PANEL_X + 8,
-      y: 24,
-      width: panelWidth - 16,
-      text: `Waiting for GPS...`,
-      value: 200,
-    });
-  }
-  if (statusMessage) {
-    image.drawText(smallFont, PANEL_X + 8, win.viewportHeight - 44, statusMessage, 200);
-  }
-  const modeHint = mapMode === "follow" ? "overview" : "follow";
-  drawFooter(image, `${GESTURE_SCROLL} zoom   ${GESTURE_CLICK} ${modeHint}   ${GESTURE_DOUBLE_CLICK} back`, PANEL_X + 8);
-}
-
-function paintMap(image: GrayImage): void {
-  const { width, height } = mapDimensions();
-  if (mapImage) {
-    image.bitBlt(mapImage, 0, 0);
-    drawChevron(image, width / 2, height / 2, headHeadingDeg ?? 0);
-  } else {
-    image.drawText(smallFont, 24, height / 2 - 8, mapLastError ? "Map unavailable; retrying..." : "Loading map...", 170);
-  }
-  if (statusMessage) {
-    image.fillRect(0, 0, width, smallFont.lineHeight + 8, 0);
-    image.drawText(smallFont, 16, 4, truncateText(smallFont, statusMessage, width - 32), 200);
-  }
-  drawFooter(image, `${GESTURE_SCROLL} zoom   ${GESTURE_CLICK} destinations   ${GESTURE_DOUBLE_CLICK} back`);
-}
-
-/**
- * Position chevron, fixed at the map center and rotated `angleDeg` clockwise
- * from straight up (the map's render bearing) to the wearer's head heading.
- */
-function drawChevron(image: GrayImage, cx: number, cy: number, angleDeg: number): void {
-  const radians = (angleDeg * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  const triangle = (points: Array<[number, number]>, value: number): void => {
-    const [a, b, c] = points.map(([x, y]): [number, number] => [cx + x * cos - y * sin, cy + x * sin + y * cos]);
-    fillTriangle(image, a![0], a![1], b![0], b![1], c![0], c![1], value);
-  };
-  // Black halo first so it reads over bright roads.
-  triangle([[0, -11], [-9, 9], [9, 9]], 0);
-  triangle([[0, -8], [-6, 6], [6, 6]], 255);
-}
-
-function fillTriangle(image: GrayImage, x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, value: number): void {
-  const minY = Math.max(0, Math.floor(Math.min(y0, y1, y2)));
-  const maxY = Math.min(image.height - 1, Math.ceil(Math.max(y0, y1, y2)));
-  for (let y = minY; y <= maxY; y++) {
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    const edges: Array<[[number, number], [number, number]]> = [
-      [[x0, y0], [x1, y1]],
-      [[x1, y1], [x2, y2]],
-      [[x2, y2], [x0, y0]],
-    ];
-    for (const [[ax, ay], [bx, by]] of edges) {
-      if ((ay <= y && by >= y) || (by <= y && ay >= y)) {
-        if (Math.abs(by - ay) < 0.0001) {
-          minX = Math.min(minX, ax, bx);
-          maxX = Math.max(maxX, ax, bx);
-        } else {
-          const t = (y - ay) / (by - ay);
-          const x = ax + t * (bx - ax);
-          minX = Math.min(minX, x);
-          maxX = Math.max(maxX, x);
-        }
-      }
-    }
-    if (minX <= maxX) {
-      image.fillRect(Math.round(minX), y, Math.round(maxX - minX) + 1, 1, value);
-    }
-  }
-}
-
-function drawFooter(image: GrayImage, text: string, x = 16): void {
-  image.drawText(smallFont, x, image.height - 22, text, 115);
-}
-
-// ---------------------------------------------------------------------------
-// Formatting (imperial; matches the rest of the UI)
-
-function formatDistanceShort(meters: number): string {
-  const feet = meters * 3.28084;
-  if (feet < 900) return `${Math.max(0, Math.round(feet / 50) * 50)} ft`;
-  return `${(feet / 5280).toFixed(1)} mi`;
-}
-
-function formatDistance(meters: number): string {
-  const feet = meters * 3.28084;
-  if (feet < 1000) return `${Math.max(0, Math.round(feet / 50) * 50)} ft`;
-  const miles = feet / 5280;
-  return miles >= 10 ? `${Math.round(miles)} mi` : `${miles.toFixed(1)} mi`;
-}
-
-function formatDurationShort(seconds: number): string {
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${Math.max(1, minutes)} min`;
-  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}`;
-}
-
-function formatDurationLong(seconds: number): string {
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${Math.max(1, minutes)} minutes`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
-}
-
-function formatClock(timestampMs: number): string {
-  const date = new Date(timestampMs);
-  let hours = date.getHours();
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const meridiem = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12;
-  if (hours === 0) hours = 12;
-  return `${hours}:${minutes} ${meridiem}`;
-}
-
-// ---------------------------------------------------------------------------
-// Render plumbing
 
 function render(): void {
   if (window) renderAndSubmit(window, 0);
 }
 
 function renderAndSubmit(win: NavWindow, inputFrameId: number): void {
-  // Every state change funnels through here, so it doubles as the point where
-  // the compass claim tracks foreground/phase/mode.
   reconcileCompass();
   if (!win.foreground && inputFrameId === 0) return;
   const frameId = inputFrameId > 0 ? inputFrameId : frameTimings.startFrame(`render:${win.windowId}`);
   try {
     const paintStartedAtMs = Date.now();
-    const planes = frameTimings.span(frameId, "paint", () =>
-      frameTimings.runWithFrame(frameId, () => paint(win)),
-    );
+    const planes = frameTimings.span(frameId, "paint", () => frameTimings.runWithFrame(frameId, () => paint(win)));
     const paintMs = Date.now() - paintStartedAtMs;
     const fingerprint = planesFingerprint(planes);
     if (fingerprint === win.lastSubmittedFingerprint) {

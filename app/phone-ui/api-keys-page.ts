@@ -15,6 +15,7 @@ const definitions: { service: ApiService; label: string; group: string; setting:
   { service: "openrouter", label: "OpenRouter", group: "Facts", setting: settings.openRouterApiKeySetting },
   { service: "perplexity", label: "Perplexity", group: "Search · Converse", setting: settings.perplexityApiKeySetting },
   { service: "brave", label: "Brave (fallback)", group: "Search · Converse", setting: settings.braveApiKeySetting },
+  { service: "google", label: "Google Maps", group: "Navigate", setting: settings.googleMapsApiKeySetting },
   ...([
     ["parallel", "Parallel", settings.parallelApiKeySetting], ["anthropic", "Anthropic", settings.anthropicApiKeySetting],
     ["openai", "OpenAI", settings.openAiApiKeySetting],

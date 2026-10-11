@@ -19,6 +19,11 @@ dependencies {
   // app's captions (translation models download on demand, per language).
   implementation 'com.google.mlkit:language-id:17.0.6'
   implementation 'com.google.mlkit:translate:17.0.3'
+  // Navigate: Google routing and turn-by-turn guidance without a map view
+  // (FaceclawGoogleNav). 7.6 adds NavigationApi.setApiKey, so the key can
+  // come from the phone's settings; 7.7+ needs a newer AGP than NativeScript's.
+  implementation 'com.google.android.libraries.navigation:navigation:7.6.1'
+  coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs_nio:2.0.3'
 }
 
 def faceclawSherpaOnnxVersion = "1.13.0"
@@ -256,8 +261,8 @@ def faceclawVersionCode = {
 }()
 
 android {
-  compileSdkVersion 35
-  buildToolsVersion "35"
+  compileSdkVersion 36
+  buildToolsVersion "36"
   // ndkVersion ""
 
   sourceSets.main {
@@ -282,6 +287,10 @@ android {
     versionName faceclawVersionName
     
     generatedDensities = []
+  }
+
+  compileOptions {
+    coreLibraryDesugaringEnabled true
   }
 
   aaptOptions {

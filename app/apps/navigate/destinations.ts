@@ -24,14 +24,19 @@ export type SavedDestination = {
   builtin: boolean;
 };
 
-/** A place the user actually navigated to, already geocoded. */
+/** A place the user actually navigated to. */
 export type RecentDestination = {
   name: string;
   place: string;
-  longitude: number;
-  latitude: number;
+  /** Google place id; kept indefinitely. */
+  placeId: string;
+  /** Coordinates from the Navigation SDK, dropped after 30 days (Google terms 12.3). */
+  longitude: number | null;
+  latitude: number | null;
   atMs: number;
 };
+
+const COORDINATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const MAX_RECENT = 8;
 const MAX_CUSTOM = 20;
@@ -40,9 +45,9 @@ const MAX_CUSTOM = 20;
 export function loadSavedDestinations(): SavedDestination[] {
   const out: SavedDestination[] = [];
   const home = navigateHomeAddressSetting.get();
-  if (home) out.push({ id: HOME_DESTINATION_ID, name: "Home", address: home, builtin: true });
+  if (home) out.push({ id: HOME_DESTINATION_ID, name: "Casa", address: home, builtin: true });
   const work = navigateWorkAddressSetting.get();
-  if (work) out.push({ id: WORK_DESTINATION_ID, name: "Work", address: work, builtin: true });
+  if (work) out.push({ id: WORK_DESTINATION_ID, name: "Trabajo", address: work, builtin: true });
   out.push(...loadCustomDestinations());
   return out;
 }
@@ -114,15 +119,20 @@ export function loadRecentDestinations(): RecentDestination[] {
     if (!entry || typeof entry !== "object") continue;
     const record = entry as Record<string, unknown>;
     const name = typeof record.name === "string" ? record.name : "";
-    const longitude = Number(record.longitude);
-    const latitude = Number(record.latitude);
-    if (!name || !Number.isFinite(longitude) || !Number.isFinite(latitude)) continue;
+    const placeId = typeof record.placeId === "string" ? record.placeId : "";
+    const atMs = Number(record.atMs) || 0;
+    const fresh = Date.now() - atMs < COORDINATE_TTL_MS;
+    const longitude = fresh && record.longitude != null ? Number(record.longitude) : NaN;
+    const latitude = fresh && record.latitude != null ? Number(record.latitude) : NaN;
+    const located = Number.isFinite(longitude) && Number.isFinite(latitude);
+    if (!name || (!placeId && !located)) continue;
     out.push({
       name,
       place: typeof record.place === "string" ? record.place : "",
-      longitude,
-      latitude,
-      atMs: Number(record.atMs) || 0,
+      placeId,
+      longitude: located ? longitude : null,
+      latitude: located ? latitude : null,
+      atMs,
     });
   }
   return out;
@@ -145,16 +155,10 @@ export function clearRecentDestinations(): void {
   navigateRecentDestinationsSetting.set("[]");
 }
 
-function isSamePlace(
-  a: { name: string; place: string; longitude: number; latitude: number },
-  b: { name: string; place: string; longitude: number; latitude: number },
-): boolean {
-  // Within ~10 m, or the same name at the same formatted place: a repeat
+function isSamePlace(a: Omit<RecentDestination, "atMs">, b: Omit<RecentDestination, "atMs">): boolean {
+  // The same place id, or the same name at the same formatted place: a repeat
   // visit, not a new entry. (Two branches of one chain stay distinct.)
-  return (
-    (a.name === b.name && a.place === b.place) ||
-    (Math.abs(a.longitude - b.longitude) < 0.0001 && Math.abs(a.latitude - b.latitude) < 0.0001)
-  );
+  return (Boolean(a.placeId) && a.placeId === b.placeId) || (a.name === b.name && a.place === b.place);
 }
 
 function parseJsonArray(text: string): unknown[] {
