@@ -10,6 +10,7 @@ const ICON_GAP = 5;
 const TOP_ROW = 12;
 const BOTTOM_ROW = 248;
 const DIM = 0.4;
+const DETAIL_GAP = 8;
 
 // Original 5x7 numerals: open counters, a diagonal 2/7, equal pitch.
 const DIGITS = [
@@ -24,23 +25,42 @@ const DIGITS = [
   ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
   ["01110", "10001", "10001", "01111", "00001", "00001", "01110"],
 ];
-const DOT = 7;
-const PITCH = 10;
-const DIGIT_PITCH = 65;
+const DOT = 6;
+const PITCH = 8;
+const DIGIT_WIDTH = 4 * PITCH + DOT;
 const DIGIT_HEIGHT = 6 * PITCH + DOT;
-const PAIR_GAP = 13;
-export const CLOCK_LEFT = 50;
-export const CLOCK_TOP = 70;
-export const CLOCK_BOTTOM = CLOCK_TOP + 2 * DIGIT_HEIGHT + PAIR_GAP;
+const DIGIT_PITCH = DIGIT_WIDTH + 8;
+const COLON = 6;
+const COLON_GAP = 10;
+const CLOCK_WIDTH = 2 * (DIGIT_PITCH + DIGIT_WIDTH) + 2 * COLON_GAP + COLON;
+const BAR_GAP = 14;
+const BAR_HEIGHT = 2;
+const LINE_GAP = 14;
+export const CLOCK_LEFT = Math.round((COLUMN_WIDTH - CLOCK_WIDTH) / 2);
+export const CLOCK_TOP = 93;
+/** Bottom of the clock block including its bar; the next-event line starts LINE_GAP below. */
+export const CLOCK_BOTTOM = CLOCK_TOP + DIGIT_HEIGHT + BAR_GAP + BAR_HEIGHT;
+const DIM_VALUE = 153;
+const BAR_TRACK = 17;
+const BAR_FILL = 85;
 
-function digits(image: GrayImage, pair: string, y: number) {
+function digits(image: GrayImage, pair: string, left: number) {
   Array.from(pair).forEach((digit, i) => {
     const rows = DIGITS[Number(digit)];
     if (!rows) return;
     rows.forEach((row, dy) => Array.from(row).forEach((on, dx) => {
-      if (on === "1") image.fillRoundedRect(CLOCK_LEFT + i * DIGIT_PITCH + dx * PITCH, y + dy * PITCH, DOT, DOT, 255, 3);
+      if (on === "1") image.fillRoundedRect(left + i * DIGIT_PITCH + dx * PITCH, CLOCK_TOP + dy * PITCH, DOT, DOT, 255, 3);
     }));
   });
+}
+
+/** HH:MM on one row with a dim two-dot colon, like a station board. */
+function clock(image: GrayImage, hours: string, minutes: string) {
+  digits(image, hours, CLOCK_LEFT);
+  const colon = CLOCK_LEFT + DIGIT_PITCH + DIGIT_WIDTH + COLON_GAP;
+  image.fillRoundedRect(colon, CLOCK_TOP + 2 * PITCH, COLON, COLON, DIM_VALUE, 3);
+  image.fillRoundedRect(colon, CLOCK_TOP + 4 * PITCH, COLON, COLON, DIM_VALUE, 3);
+  digits(image, minutes, colon + COLON + COLON_GAP);
 }
 
 /** The Lucide battery outline with its body filled to the level; dim and empty while unknown. */
@@ -54,15 +74,26 @@ function gauge(level: number | null): GrayImage | null {
   return filled;
 }
 
+// Same as home-painter's fitted(); a value import from there would be circular.
+function fit(face: HomeFace, label: string, width: number): string {
+  label = label.replace(/[\r\n\t]/g, " ");
+  if (face.measureLine(label) <= width) return label;
+  const chars = Array.from(label);
+  while (chars.length && face.measureLine(chars.join("").trimEnd() + "…") > width) chars.pop();
+  return chars.join("").trimEnd() + "…";
+}
+
 export function paintHomeColumn(state: HomeColumn, face: HomeFace): GrayImage {
   const image = new GrayImage(COLUMN_WIDTH, 288);
   const iconDy = Math.round((face.lineHeight - ICON) / 2);
   const draw = (icon: GrayImage | null, x: number, y: number) => { if (icon) image.drawImage(icon, x, y); };
-  const complication = (x: number, y: number, name: IconName, text: string, align: "left" | "right" = "left") => {
-    const width = ICON + ICON_GAP + face.measureLine(text);
+  const complication = (x: number, y: number, name: IconName, text: string, align: "left" | "right" = "left", detail?: string) => {
+    const detailWidth = detail ? DETAIL_GAP + face.measureLine(detail) : 0;
+    const width = ICON + ICON_GAP + face.measureLine(text) + detailWidth;
     const left = align === "left" ? x : x - width;
     draw(renderIcon(name, ICON), left, y + iconDy);
     face.drawText(image, left + ICON + ICON_GAP, y, text, 255);
+    if (detail) face.drawText(image, left + width - detailWidth + DETAIL_GAP, y, detail, DIM_VALUE);
   };
   complication(0, TOP_ROW, "calendar", state.day);
   for (const [x, name, level] of [[COLUMN_WIDTH - 98, "circle", state.battery.ring], [COLUMN_WIDTH - 44, "glasses", state.battery.glasses]] as const) {
@@ -70,9 +101,19 @@ export function paintHomeColumn(state: HomeColumn, face: HomeFace): GrayImage {
     draw(level === null && icon ? icon.dimmed(DIM) : icon, x, TOP_ROW + iconDy);
     draw(gauge(level), x + ICON + 3, TOP_ROW + iconDy);
   }
-  digits(image, state.hours, CLOCK_TOP);
-  digits(image, state.minutes, CLOCK_TOP + DIGIT_HEIGHT + PAIR_GAP);
-  if (state.weather) complication(0, BOTTOM_ROW, state.weather.icon, state.weather.label);
+  clock(image, state.hours, state.minutes);
+  if (state.next) {
+    const barY = CLOCK_TOP + DIGIT_HEIGHT + BAR_GAP;
+    image.fillRect(CLOCK_LEFT, barY, CLOCK_WIDTH, BAR_HEIGHT, BAR_TRACK);
+    const filled = Math.round(CLOCK_WIDTH * state.next.progress);
+    if (filled) image.fillRect(CLOCK_LEFT, barY, filled, BAR_HEIGHT, BAR_FILL);
+    const y = CLOCK_BOTTOM + LINE_GAP;
+    const timeWidth = face.measureLine(state.next.time);
+    face.drawText(image, CLOCK_LEFT, y, state.next.time, 255);
+    const titleLeft = CLOCK_LEFT + timeWidth + DETAIL_GAP;
+    face.drawText(image, titleLeft, y, fit(face, state.next.title, CLOCK_LEFT + CLOCK_WIDTH - titleLeft), DIM_VALUE);
+  }
+  if (state.weather) complication(0, BOTTOM_ROW, state.weather.icon, state.weather.label, "left", state.weather.detail);
   if (state.needs > 0) complication(COLUMN_WIDTH, BOTTOM_ROW, "square-terminal", String(state.needs), "right");
   return image.withDrawsBaked();
 }

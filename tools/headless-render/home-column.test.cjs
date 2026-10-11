@@ -66,7 +66,8 @@ test('six scenes: rows and clock never touch, both complication rows keep a gap,
     assert.ok(Math.min(...rows) >= 12, `${name}: top margin`);
     assert.ok(Math.max(...rows) < 276, `${name}: bottom margin`);
     for (const y of rows) {
-      assert.ok(y < 40 || (y >= CLOCK_TOP && y < CLOCK_BOTTOM) || y >= 248, `${name}: ink between rows at y=${y}`);
+      const nextLine = y >= CLOCK_BOTTOM + 14 && y < CLOCK_BOTTOM + 14 + face.lineHeight;
+      assert.ok(y < 40 || (y >= CLOCK_TOP && y < CLOCK_BOTTOM) || nextLine || y >= 248, `${name}: ink between rows at y=${y}`);
     }
     // Top row: the day text ends before the ring gauge; bottom row: weather ends well before the needs count.
     const top = runs(inkColumns(baked, 0, COLUMN_WIDTH, 12, 40));
@@ -74,9 +75,10 @@ test('six scenes: rows and clock never touch, both complication rows keep a gap,
     const bottom = runs(inkColumns(baked, 0, COLUMN_WIDTH, 248, 276));
     assert.ok(bottom.some(([, end], i) => bottom[i + 1] && bottom[i + 1][0] - end >= 40), `${name}: weather/needs gap ${JSON.stringify(bottom)}`);
     // Clock: the hour's first digit at the expected origin (0 has a left stroke at row 3, 2 has not), no ink in the left margin.
-    assert.equal(baked.getPixel(CLOCK_LEFT + 3, CLOCK_TOP + 33), hh[0] === '0' ? 255 : 0, `${name}: digit ${hh[0]} left stroke`);
-    assert.equal(baked.getPixel(CLOCK_LEFT + 23, CLOCK_TOP + 33), 0, `${name}: digit ${hh[0]} open centre`);
-    assert.equal(inkColumns(baked, 0, 40, CLOCK_TOP, CLOCK_BOTTOM).length, 0, `${name}: clock left margin`);
+    assert.equal(baked.getPixel(CLOCK_LEFT + 3, CLOCK_TOP + 27), hh[0] === '0' ? 255 : 0, `${name}: digit ${hh[0]} left stroke`);
+    assert.equal(baked.getPixel(CLOCK_LEFT + 19, CLOCK_TOP + 27), 0, `${name}: digit ${hh[0]} open centre`);
+    assert.equal(inkColumns(baked, 0, CLOCK_LEFT, CLOCK_TOP, CLOCK_BOTTOM).length, 0, `${name}: clock left margin`);
+    assert.equal(inkColumns(baked, COLUMN_WIDTH - CLOCK_LEFT, COLUMN_WIDTH, CLOCK_TOP, CLOCK_BOTTOM).length, 0, `${name}: clock right margin`);
     // Dots and card exactly where the app keeps them; nothing right of the card or between column and dots.
     for (let y = 0; y < 288; y++) for (let x = COLUMN_WIDTH; x < 218; x++) assert.equal(baked.getPixel(x, y), 0, `${name}: gutter ${x},${y}`);
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(baked.getPixel(x, y), 0);

@@ -107,6 +107,32 @@ test('the column state pads the clock, abbreviates the day in English and defaul
   assert.equal(homeColumnState(new Date(2026, 0, 1, 0, 0), undefined, null, null).day, 'Thu 1');
 });
 
+test('the column shows the next timed event within a day under the clock, its bar filling over the last hour', () => {
+  const now = new Date(2026, 9, 10, 9, 41);
+  const at = (h, m, d = 10) => new Date(2026, 9, d, h, m).getTime();
+  const event = (title, startMs, extra = {}) => ({ title, startMs, endMs: startMs + 30 * 60_000, allDay: false, ...extra });
+  const next = events => homeColumnState(now, undefined, null, null, calendarCardState(true, events, now.getTime())).next;
+  const daily = next([event('Daily con el equipo', at(10, 30))]);
+  assert.deepEqual([daily.time, daily.title], ['10:30', 'Daily con el equipo']);
+  assert.ok(Math.abs(daily.progress - 11 / 60) < 1e-9, String(daily.progress));
+  assert.equal(next([event('Planning', at(11, 41))]).progress, 0);
+  assert.equal(next([event('Standup', at(9, 30)), event('Review', at(14, 0))]).title, 'Review', 'an event already under way is skipped');
+  assert.equal(next([event('Holiday', at(0, 0), { allDay: true, endMs: at(0, 0, 11) })]), null);
+  assert.deepEqual({ ...next([event('Dentista', at(9, 0, 11))]) }, { time: 'Sun 09:00', title: 'Dentista', progress: 0 });
+  assert.equal(next([event('Far away', at(10, 0, 11))]), null, 'more than a day out');
+  assert.equal(homeColumnState(now, undefined, null, null).next, null);
+});
+
+test('rain within six hours replaces the weather complication with its chance and hour', () => {
+  const now = new Date(2026, 9, 10, 9, 41);
+  const hour = h => new Date(2026, 9, 10, h, 0).getTime();
+  const reading = precipitation => ({ temperatureC: 27.4, code: 3, isDay: true, atMs: now.getTime(), precipitation });
+  assert.deepEqual({ ...homeColumnState(now, undefined, reading([{ atMs: hour(9), percent: 20 }, { atMs: hour(15), percent: 60 }]), null).weather },
+    { icon: 'umbrella', label: '60%', detail: '15:00' });
+  assert.equal(homeColumnState(now, undefined, reading([{ atMs: hour(9), percent: 80 }]), null).weather.detail, 'now');
+  assert.deepEqual({ ...homeColumnState(now, undefined, reading([{ atMs: hour(9), percent: 30 }]), null).weather }, { icon: 'cloud', label: '27°' });
+});
+
 test('the column hides Paseo needs without a pairing and maps weather codes onto a few Lucide icons', () => {
   const now = new Date(2026, 9, 10, 9, 41);
   assert.equal(homeColumnState(now, undefined, null, { configured: false, status: '', updates: [], needs: 3, working: 0 }).needs, 0);

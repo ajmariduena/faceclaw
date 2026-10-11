@@ -144,6 +144,22 @@ test('the column shows weather and Paseo needs only when there is a value, insid
   assert.deepEqual(textDraws.filter(draw => draw.width === 212).map(draw => draw.text), ['Sat 10', '27°']);
 });
 
+test('the column puts the next event under the clock (time white, title dim and cut) and rain with its hour in the weather slot', () => {
+  const daily = { title: 'Daily con el equipo de soporte', startMs: new Date(2026, 9, 10, 10, 30).getTime(), endMs: new Date(2026, 9, 10, 11, 0).getTime(), allDay: false };
+  const weather = { temperatureC: 27.4, code: 3, isDay: true, atMs: NOW.getTime(), precipitation: [{ atMs: new Date(2026, 9, 10, 15, 0).getTime(), percent: 60 }] };
+  textDraws = [];
+  const image = paintHome(0, snapshot({ calendar: calendarCardState(true, [daily], NOW.getTime()), weather }), face).withDrawsBaked();
+  const column = textDraws.filter(draw => draw.width === 212);
+  assert.deepEqual(column.map(draw => [draw.text.replace(/…$/, '...'), draw.value]).slice(1),
+    [['10:30', 255], [column[2].text.replace(/…$/, '...'), 153], ['60%', 255], ['15:00', 153]]);
+  assert.ok(column[2].text.endsWith('…') && 'Daily con el equipo de soporte'.startsWith(column[2].text.slice(0, -1)), column[2].text);
+  assert.equal(column[1].y, column[2].y);
+  assert.ok(column[1].y > 160 && column[1].y + font.lineHeight < 248, 'the line sits between the clock and the bottom row');
+  let bar = 0;
+  for (let x = 0; x < 212; x++) if (image.getPixel(x, 161)) bar++;
+  assert.ok(bar > 150, `the countdown track spans the clock (${bar} px)`);
+});
+
 test('long titles are clipped to the card and never overflow', () => {
   textDraws = [];
   const long = 'Reunión larguísima de planificación trimestral con todo el equipo de producto y diseño';

@@ -1,7 +1,7 @@
 import type { CalendarEvent, CalendarReadState } from "../../native/calendar-types";
 import type { IconName } from "../../graphics/icons";
 import type { PaseoGlanceSnapshot } from "../paseo/paseo-glance";
-import { weatherIcon, weatherLabel, type HomeWeatherReading } from "./home-weather";
+import { rainAhead, weatherIcon, weatherLabel, type HomeWeatherReading } from "./home-weather";
 
 export const HOME_WINDOW_ID = "home";
 export const HOME_SURFACE_ID = "window:home";
@@ -89,29 +89,52 @@ export function emptyCardStatus(card: HomeCardId): string {
 
 export type HomeBattery = { ring: number | null; glasses: number | null };
 
-/** The left column: a big dot-matrix clock between two rows of complications. */
+/** The column's station-board line looks this far ahead, and its bar fills over the last hour before the event. */
+export const NEXT_EVENT_HORIZON_MS = 24 * 60 * 60_000;
+export const NEXT_EVENT_COUNTDOWN_MS = 60 * 60_000;
+
+/** The left column: a one-row dot-matrix clock between two rows of complications. */
 export type HomeColumn = {
   hours: string;
   minutes: string;
   /** "Sat 10" */
   day: string;
   battery: HomeBattery;
-  /** null hides the complication (no reading yet, or a stale one). */
-  weather: { icon: IconName; label: string } | null;
+  /** null hides the complication (no reading yet, or a stale one). `detail` is drawn dim after the label. */
+  weather: { icon: IconName; label: string; detail?: string } | null;
   /** Paseo agents waiting on the user; 0 (or no pairing) hides the complication. */
   needs: number;
+  /** The next timed event within a day, under the clock; `progress` is 0 until its last hour, then fills to 1. */
+  next: { time: string; title: string; progress: number } | null;
 };
+
+function nextEvent(calendar: HomeCalendar | undefined, nowMs: number): HomeColumn["next"] {
+  const event = calendar?.events.find(e => !e.allDay && e.startMs > nowMs && e.startMs - nowMs <= NEXT_EVENT_HORIZON_MS);
+  if (!event) return null;
+  const time = startOfDay(event.startMs) === startOfDay(nowMs)
+    ? clockTime(event.startMs)
+    : `${WEEKDAY_SHORT[new Date(event.startMs).getDay()]} ${clockTime(event.startMs)}`;
+  const progress = Math.max(0, Math.min(1, 1 - (event.startMs - nowMs) / NEXT_EVENT_COUNTDOWN_MS));
+  return { time, title: event.title, progress };
+}
+
+function weatherComplication(weather: HomeWeatherReading, nowMs: number): NonNullable<HomeColumn["weather"]> {
+  const rain = rainAhead(weather, nowMs);
+  if (rain) return { icon: "umbrella", label: `${Math.round(rain.percent)}%`, detail: rain.atMs <= nowMs ? "now" : clockTime(rain.atMs) };
+  return { icon: weatherIcon(weather.code, weather.isDay), label: weatherLabel(weather) };
+}
 
 export function homeColumnState(
   now: Date, battery: HomeBattery | undefined, weather: HomeWeatherReading | null | undefined,
-  paseo: PaseoGlanceSnapshot | null | undefined,
+  paseo: PaseoGlanceSnapshot | null | undefined, calendar?: HomeCalendar,
 ): HomeColumn {
   return {
     hours: String(now.getHours()).padStart(2, "0"),
     minutes: String(now.getMinutes()).padStart(2, "0"),
     day: `${WEEKDAY_SHORT[now.getDay()]} ${now.getDate()}`,
     battery: battery ?? { ring: null, glasses: null },
-    weather: weather ? { icon: weatherIcon(weather.code, weather.isDay), label: weatherLabel(weather) } : null,
+    weather: weather ? weatherComplication(weather, now.getTime()) : null,
     needs: paseo?.configured ? paseo.needs : 0,
+    next: nextEvent(calendar, now.getTime()),
   };
 }

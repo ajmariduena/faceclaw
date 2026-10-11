@@ -126,6 +126,8 @@ export const ICON_SVGS = {
     '<svg viewBox="0 0 24 24" fill="none"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" /><path d="M16 14v6" /><path d="M8 14v6" /><path d="M12 16v6" /></svg>',
   "cloud-lightning":
     '<svg viewBox="0 0 24 24" fill="none"><path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973" /><path d="m13 12-3 5h4l-3 5" /></svg>',
+  umbrella:
+    '<svg viewBox="0 0 24 24" fill="none"><path d="M22 12a10.06 10.06 1 0 0-20 0Z" /><path d="M12 12v8a2 2 0 0 0 4 0" /><path d="M12 2v1" /></svg>',
 } as const;
 
 export type IconName = keyof typeof ICON_SVGS;

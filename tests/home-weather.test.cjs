@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
-const { HomeWeather, openMeteoUrl, parseOpenMeteo, weatherIcon, weatherLabel, HOME_WEATHER_REFRESH_MS, HOME_WEATHER_RETRY_MS, HOME_WEATHER_STALE_MS } =
+const { HomeWeather, openMeteoUrl, parseOpenMeteo, rainAhead, weatherIcon, weatherLabel, HOME_WEATHER_REFRESH_MS, HOME_WEATHER_RETRY_MS, HOME_WEATHER_STALE_MS } =
   loader({ setTimeout, clearTimeout })('app/apps/home/home-weather.ts');
 
 // The body api.open-meteo.com returned for Guayaquil on 2026-10-10 (trimmed).
@@ -27,7 +27,7 @@ function fake({ permitted = true, body = LIVE, fail = false, cache = new Map() }
 }
 
 test('Open-Meteo URL, body parsing and the WMO code to icon table', () => {
-  assert.equal(openMeteoUrl(-2.17, -79.92), 'https://api.open-meteo.com/v1/forecast?latitude=-2.1700&longitude=-79.9200&current=temperature_2m,weather_code,is_day');
+  assert.equal(openMeteoUrl(-2.17, -79.92), 'https://api.open-meteo.com/v1/forecast?latitude=-2.1700&longitude=-79.9200&current=temperature_2m,weather_code,is_day&hourly=precipitation_probability&forecast_hours=12&timeformat=unixtime');
   assert.deepEqual({ ...parseOpenMeteo(LIVE, 123) }, { temperatureC: 30.3, code: 3, isDay: true, atMs: 123 });
   assert.deepEqual({ ...parseOpenMeteo({ current: { temperature_2m: -1.6, weather_code: 71, is_day: 0 } }, 5) }, { temperatureC: -1.6, code: 71, isDay: false, atMs: 5 });
   assert.equal(parseOpenMeteo({ current: { temperature_2m: 'n/a', weather_code: 3 } }, 1), null);
@@ -44,6 +44,23 @@ test('Open-Meteo URL, body parsing and the WMO code to icon table', () => {
     assert.equal(weatherIcon(Number(code), true), day, `${code} day`);
     assert.equal(weatherIcon(Number(code), false), night, `${code} night`);
   }
+});
+
+test('the hourly chance of rain parses from unix seconds, drops missing hours, and rain ahead is the first 50 % hour within six hours', () => {
+  const T0 = 1_791_723_600;
+  const body = { current: { temperature_2m: 27.3, weather_code: 3, is_day: 1 },
+    hourly: { time: [T0, T0 + 3600, T0 + 7200, T0 + 10800, T0 + 25200], precipitation_probability: [45, null, 56, 87, 90] } };
+  const reading = parseOpenMeteo(body, T0 * 1000 + 900_000);
+  assert.deepEqual(reading.precipitation.map(slot => ({ ...slot })), [
+    { atMs: T0 * 1000, percent: 45 }, { atMs: (T0 + 7200) * 1000, percent: 56 }, { atMs: (T0 + 10800) * 1000, percent: 87 }, { atMs: (T0 + 25200) * 1000, percent: 90 },
+  ]);
+  const now = T0 * 1000 + 900_000;
+  assert.deepEqual({ ...rainAhead(reading, now) }, { atMs: (T0 + 7200) * 1000, percent: 56 });
+  assert.deepEqual({ ...rainAhead(reading, (T0 + 7200) * 1000 + 30 * 60_000) }, { atMs: (T0 + 7200) * 1000, percent: 56 }, 'the current hour counts');
+  assert.equal(rainAhead({ ...reading, precipitation: reading.precipitation.slice(0, 1) }, now), null, 'below 50 %');
+  assert.equal(rainAhead({ ...reading, precipitation: reading.precipitation.slice(3) }, now), null, 'more than six hours out');
+  assert.equal(rainAhead({ temperatureC: 20, code: 3, isDay: true, atMs: 0 }, now), null, 'readings cached before the forecast existed');
+  assert.equal(parseOpenMeteo({ current: { temperature_2m: 20, weather_code: 3 } }, 1).precipitation, undefined);
 });
 
 test('refresh fetches once per 30 minutes, publishes the reading, and never without location permission', async () => {

@@ -1,6 +1,6 @@
 /**
- * The home column's weather complication: Open-Meteo's current temperature
- * and WMO weather code for the phone's location, refreshed at most every 30
+ * The home column's weather complication: Open-Meteo's current temperature,
+ * WMO weather code and the next hours' chance of rain for the phone's location, refreshed at most every 30
  * minutes, cached in the settings store, and silent about every failure (the
  * complication stays hidden until there is a value). Celsius, no API key.
  * No NativeScript imports: the native boundaries arrive as `HomeWeatherDeps`.
@@ -14,6 +14,8 @@ export type HomeWeatherReading = {
   isDay: boolean;
   /** When the reading was fetched, epoch ms. */
   atMs: number;
+  /** Hourly chance of precipitation from the current hour on; absent in readings cached before it existed. */
+  precipitation?: { atMs: number; percent: number }[];
 };
 
 export type HomeWeatherDeps = {
@@ -32,9 +34,14 @@ export const HOME_WEATHER_STALE_MS = 3 * 60 * 60_000;
 const FETCH_TIMEOUT_MS = 20_000;
 const CACHE_KEY = "home.weather";
 const CACHE_VERSION = 1;
+const FORECAST_HOURS = 12;
+/** Rain is worth a mention from this chance on, within this many hours. */
+export const RAIN_PERCENT = 50;
+export const RAIN_LOOKAHEAD_MS = 6 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
 
 export function openMeteoUrl(latitude: number, longitude: number): string {
-  return `https://api.open-meteo.com/v1/forecast?latitude=${latitude.toFixed(4)}&longitude=${longitude.toFixed(4)}&current=temperature_2m,weather_code,is_day`;
+  return `https://api.open-meteo.com/v1/forecast?latitude=${latitude.toFixed(4)}&longitude=${longitude.toFixed(4)}&current=temperature_2m,weather_code,is_day&hourly=precipitation_probability&forecast_hours=${FORECAST_HOURS}&timeformat=unixtime`;
 }
 
 /** The reading in an Open-Meteo `/v1/forecast?current=…` body, or null when it lacks one. */
@@ -44,7 +51,21 @@ export function parseOpenMeteo(body: unknown, nowMs: number): HomeWeatherReading
   const temperatureC = Number(current.temperature_2m);
   const code = Number(current.weather_code);
   if (!Number.isFinite(temperatureC) || !Number.isInteger(code)) return null;
-  return { temperatureC, code, isDay: current.is_day === undefined ? true : Number(current.is_day) === 1, atMs: nowMs };
+  const reading: HomeWeatherReading = { temperatureC, code, isDay: current.is_day === undefined ? true : Number(current.is_day) === 1, atMs: nowMs };
+  const hourly = (body as { hourly?: { time?: unknown; precipitation_probability?: unknown } }).hourly;
+  if (Array.isArray(hourly?.time) && Array.isArray(hourly.precipitation_probability)) {
+    const percents = hourly.precipitation_probability as unknown[];
+    // Number(null) is 0, so missing hours are dropped before the conversion rather than read as dry.
+    reading.precipitation = (hourly.time as unknown[])
+      .flatMap((time, i) => percents[i] === null || percents[i] === undefined ? [] : [{ atMs: Number(time) * 1000, percent: Number(percents[i]) }])
+      .filter(slot => Number.isFinite(slot.atMs) && Number.isFinite(slot.percent));
+  }
+  return reading;
+}
+
+/** The first hour, from the current one to six hours out, with at least a 50 % chance of rain. */
+export function rainAhead(reading: HomeWeatherReading, nowMs: number): { atMs: number; percent: number } | null {
+  return reading.precipitation?.find(slot => slot.atMs + HOUR_MS > nowMs && slot.atMs <= nowMs + RAIN_LOOKAHEAD_MS && slot.percent >= RAIN_PERCENT) ?? null;
 }
 
 /** WMO code groups (https://open-meteo.com/en/docs#weather_variable_documentation) on the column's icons. */

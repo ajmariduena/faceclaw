@@ -203,7 +203,7 @@ test('weather is fetched from Open-Meteo only with location permission, at most 
   h.advance(30_000);
   await flush(); await flush();
   assert.equal(h.fetched.length, 1);
-  assert.match(h.fetched[0], /^https:\/\/api\.open-meteo\.com\/v1\/forecast\?latitude=-2\.1700&longitude=-79\.9200&current=temperature_2m,weather_code,is_day$/);
+  assert.match(h.fetched[0], /^https:\/\/api\.open-meteo\.com\/v1\/forecast\?latitude=-2\.1700&longitude=-79\.9200&current=temperature_2m,weather_code,is_day&hourly=precipitation_probability&forecast_hours=12&timeformat=unixtime$/);
   assert.equal(h.counts().renders, 3, 'the reading repaints the home');
   assert.deepEqual({ ...h.paint().data.weather }, { temperatureC: 30.3, code: 3, isDay: true, atMs: new Date(2026, 9, 10, 10, 6).getTime() });
   h.advance(29 * 60_000);

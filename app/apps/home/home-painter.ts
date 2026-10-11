@@ -151,7 +151,7 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
     : card.id === "paseo" ? glanceEmptyStatus(data.paseo)
     : card.id === "bots" ? data.bots?.status ?? emptyCardStatus(card.id) : emptyCardStatus(card.id));
 
-  image.bitBlt(paintHomeColumn(homeColumnState(data.now, data.battery, data.weather, data.paseo), face), 0, 0);
+  image.bitBlt(paintHomeColumn(homeColumnState(data.now, data.battery, data.weather, data.paseo, data.calendar), face), 0, 0);
   image.bitBlt(panel.withDrawsBaked(), 230, 14);
   for (let i = 0; i < HOME_CARDS.length; i++) image.fillRect(218, HOME_DOTS_TOP + i * 11, i === selected ? 4 : 2, 3, i === selected ? 255 : 85);
   return image.withDrawsBaked();
