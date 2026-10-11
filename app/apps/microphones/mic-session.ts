@@ -2,7 +2,7 @@ import { Utils } from "@nativescript/core";
 
 import { addCompassListener, setCompassEnabled } from "../../native/compass";
 import { encodeBase64, toJavaBytes } from "../../native/cloud-stt";
-import { toUint8Array } from "../../util/array-util";
+import { javaBytesToUint8Array } from "../../native/java-direct-buffer";
 import { voiceControlBridge } from "../../native/voice-control";
 import { voiceActivity } from "../../ui/shell/voice-activity";
 import { onSettingsStoreChanged } from "../../native/settings-store";
@@ -538,7 +538,7 @@ class MicSession {
     ]);
     this.forwardingProxy = new com.faceclaw.app.FaceclawAudioPacketListener({
       onAudioPacket: (data: any, arm: string, _arrivalMs: number) => {
-        this.handleExtendedPacket(toUint8Array(data), String(arm));
+        this.handleExtendedPacket(javaBytesToUint8Array(data), String(arm));
       },
     });
     if (!communicator.startG2AudioForwarding(this.forwardingProxy)) return false;

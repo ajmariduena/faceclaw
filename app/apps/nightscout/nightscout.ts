@@ -23,7 +23,6 @@ import { type MenuItem } from "../../ui/menu";
 import { openSettingsSubMenu } from "../../ui/dashboard/settings-panel";
 import { lineStep } from "../../ui/metrics";
 
-const nightscoutLargeFont = getDefaultLargeFont();
 export const NIGHTSCOUT_STALE_MS = 15 * 60 * 1000;
 const NIGHTSCOUT_GRAPH_WINDOW_MS = 2 * 60 * 60 * 1000;
 const NIGHTSCOUT_GRAPH_TIME_QUANTUM_MS = 60 * 1000;
@@ -328,6 +327,7 @@ export class NightscoutLayer implements Layer {
     const latest = nightscout.latest;
     const glucoseText = `${latest.sgv}`;
     const glucoseX = 22;
+    const nightscoutLargeFont = getDefaultLargeFont();
     const glucoseWidth = nightscoutLargeFont.measureText(glucoseText);
     // Glucose value vertically centered between the title and the graph.
     const titleBottom = 16 + font.lineHeight;

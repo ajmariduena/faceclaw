@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
 
-const load = loader({ encodeURIComponent, Promise, Error }, {});
+const load = loader({ encodeURIComponent, Promise, Error, setTimeout, clearTimeout }, {});
 const { lookupFact, parseFactLine } = load('app/apps/converse/converse-facts.ts');
 const KEYS = { typesafe: '', cerebras: '', openRouter: 'or-key', perplexity: 'px-key', brave: 'br-key' };
 
@@ -52,6 +52,29 @@ test('Brave answers when Perplexity fails', async () => {
   });
   const fact = await lookupFact('Who is the CEO of Anthropic these days?', 'en', KEYS, post);
   assert.equal(fact.source, 'anthropic.com');
+});
+
+test('Brave starts when Perplexity is slow and the first answer wins', async () => {
+  const { post, calls } = fakePost({
+    'https://openrouter.ai/api/alpha/decisions': () => ({ status: 200, json: { answers: { lookup: { noul: 0.9 } } } }),
+    'https://api.perplexity.ai/search': () => new Promise((resolve) => setTimeout(() => resolve(PERPLEXITY), 2400)),
+    'https://api.search.brave.com/': () => ({ status: 200, json: { web: { results: [{ title: 'Anthropic', url: 'https://www.anthropic.com/company', description: 'CEO Dario Amodei' }] } } }),
+    'https://openrouter.ai/api/v1/chat/completions': () => writer('Anthropic | Dario Amodei is the CEO of Anthropic. | 1'),
+  });
+  const started = Date.now();
+  const fact = await lookupFact('Who is the CEO of Anthropic these days?', 'en', KEYS, post);
+  assert.equal(fact.source, 'anthropic.com');
+  assert.ok(Date.now() - started < 2000, 'did not wait for the slow Perplexity answer');
+  assert.ok(calls.some((call) => call.url.startsWith('https://api.search.brave.com/')));
+});
+
+test('a lookup overtaken by a later fact skips the writer', async () => {
+  const { post, calls } = fakePost({
+    'https://openrouter.ai/api/alpha/decisions': () => ({ status: 200, json: { answers: { lookup: { noul: 0.93 } } } }),
+    'https://api.perplexity.ai/search': () => PERPLEXITY,
+  });
+  assert.equal(await lookupFact('¿Qué altura tiene el Chimborazo?', 'es', KEYS, post, { earlier: [], shown: [], isStale: () => true }), null);
+  assert.ok(!calls.some((call) => call.url.includes('chat/completions')));
 });
 
 test('the writer saying nothing relevant shows nothing', () => {

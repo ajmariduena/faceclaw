@@ -189,6 +189,14 @@ let screenError = "";
 /** Glance lines per message id (summaries are per message, so one cache serves every agent). */
 const summaries = new Map<string, string>();
 const summariesPending = new Set<string>();
+const MAX_SUMMARIES = 500;
+
+/** The worker lives all day while a daemon is paired, so keep only the newest lines. */
+function rememberSummary(id: string, line: string): void {
+  summaries.delete(id);
+  summaries.set(id, line);
+  if (summaries.size > MAX_SUMMARIES) summaries.delete(summaries.keys().next().value!);
+}
 /** Latest assistant line per agent for the home card, with the agent update it was fetched for. */
 const glanceLines = new Map<string, { updatedAt: string; line: string }>();
 const glanceFetching = new Set<string>();
@@ -386,6 +394,7 @@ function stopClient(): void {
   attentionBaselined = false;
   knownStatus.clear();
   glanceLines.clear();
+  summaries.clear();
   schedulePublish();
 }
 
@@ -641,7 +650,7 @@ function onGlanceSummary(payload: any): void {
   for (const item of payload.items) {
     const line = typeof item?.line === "string" ? item.line.trim() : "";
     if (typeof item?.id !== "string" || !line) continue;
-    summaries.set(item.id, line);
+    rememberSummary(item.id, line);
     if (item.role === "assistant" && !item.id.startsWith("permission:")) {
       glanceLines.set(agentId, { updatedAt: agents.get(agentId)?.updatedAt ?? "", line });
     }
@@ -658,7 +667,7 @@ async function summarize(agentId: string, entries: readonly ChatEntry[]): Promis
   for (const item of items) summariesPending.add(item.id);
   try {
     for (const line of await current.summarizeForGlance(items, agentId)) {
-      if (typeof line?.line === "string" && line.line.trim()) summaries.set(line.id, line.line.trim());
+      if (typeof line?.line === "string" && line.line.trim()) rememberSummary(line.id, line.line.trim());
     }
   } catch (error) {
     console.warn(`paseo: glance summary failed: ${errorMessage(error)}`);

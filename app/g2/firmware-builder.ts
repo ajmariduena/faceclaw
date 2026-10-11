@@ -22,7 +22,7 @@ import {
   isEvenHubFontAsset,
   isStockUiFontAsset,
 } from "./firmware-fonts";
-import { fetchWithUserAgent } from "../util/http";
+import { downloadBinary } from "../native/binary-http";
 import { bytesToHex, hexToBytes as hexToBytesLenient } from "../util/hex-util";
 import { EvenHubFont } from "../graphics/evenhub-font";
 import { StockUiFont } from "../graphics/stock-ui-font";
@@ -174,16 +174,19 @@ async function downloadAndVerifyBase(report: (progress: FirmwareProgress) => voi
 }
 
 async function downloadFirmware(): Promise<ArrayBuffer> {
-  let response: Response;
+  let response: Awaited<ReturnType<typeof downloadBinary>>;
   try {
-    response = await fetchWithUserAgent(FIRMWARE_URL);
+    response = await downloadBinary(FIRMWARE_URL, 120_000);
   } catch (error) {
     throw new FirmwareBuildError(`Could not reach Even's firmware CDN: ${(error as Error)?.message ?? error}`);
   }
-  if (!response.ok) {
+  if (response.status < 200 || response.status >= 300) {
     throw new FirmwareBuildError(`Firmware download failed (HTTP ${response.status}).`);
   }
-  return response.arrayBuffer();
+  const { bytes } = response;
+  return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? (bytes.buffer as ArrayBuffer)
+    : (bytes.slice().buffer as ArrayBuffer);
 }
 
 function persistEvenHubFonts(base: ArrayBuffer): void {

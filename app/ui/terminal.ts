@@ -8,6 +8,7 @@
  * draws what the glasses show.
  */
 import type { GrayImage } from "../graphics/image";
+import { fitLine } from "../graphics/terminal-painter";
 
 export type Face = {
   readonly lineHeight: number;
@@ -31,13 +32,7 @@ export function applyTextLayout(pitch: number): void {
   LIST_CAPACITY = Math.floor((FOOTER_TOP - CONTENT_TOP) / pitch);
 }
 
-export function fitLine(face: Face, text: string, width: number): string {
-  const clean = text.replace(/[\r\n\t]/g, " ");
-  if (face.measureLine(clean) <= width) return clean;
-  const chars = Array.from(clean);
-  while (chars.length && face.measureLine(`${chars.join("").trimEnd()}…`) > width) chars.pop();
-  return `${chars.join("").trimEnd()}…`;
-}
+export { fitLine };
 
 export function paintFrame(image: GrayImage): void {
   image.drawRoundedRect(4, 4, 568, 280, 255, 8);

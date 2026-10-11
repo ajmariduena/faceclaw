@@ -6,7 +6,7 @@ import { SpeechPauseDetector } from "./speech-pause";
 import { ElevenLabsSttClient } from "./elevenlabs-stt";
 import { OpenAiRealtimeSttClient } from "./openai-stt";
 import { SonioxSttClient } from "./soniox-stt";
-import { toUint8Array } from "../util/array-util";
+import { javaBytesToUint8Array } from "./java-direct-buffer";
 
 declare const com: any;
 
@@ -506,9 +506,11 @@ export class FaceclawVoiceControlBridge {
         this.nativeCaptureResolvers.delete(captureId);
       },
       onPcm: (pcm: any) => {
-        const bytes = toUint8Array(pcm);
+        const pauses = !this.cloudClient && this.captureHolders.has("continuous");
+        if (!this.cloudClient && !pauses && this.rawPcmListeners.size === 0) return;
+        const bytes = javaBytesToUint8Array(pcm);
         this.cloudClient?.acceptPcm(bytes);
-        if (!this.cloudClient && this.captureHolders.has("continuous") && this.speechPause.accept(bytes)) {
+        if (pauses && this.speechPause.accept(bytes)) {
           for (const listener of this.speechPauseListeners) listener();
         }
         if (this.rawPcmListeners.size > 0) {

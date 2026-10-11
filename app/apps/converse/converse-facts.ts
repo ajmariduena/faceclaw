@@ -12,13 +12,22 @@ export type FactKeys = { typesafe: string; cerebras: string; openRouter: string;
 export type Post = (url: string, headers: Record<string, string>, body: string | null, timeoutMs: number) => Promise<{ status: number; json: unknown }>;
 type SearchResult = { title: string; url: string; snippet: string };
 /** What was said before this sentence, oldest first, and the facts already on screen. */
-export type FactContext = { earlier: readonly string[]; shown: readonly string[]; /** ISO country of the phone, for names that exist in several places. */ region?: string };
+export type FactContext = {
+  earlier: readonly string[];
+  shown: readonly string[];
+  /** ISO country of the phone, for names that exist in several places. */
+  region?: string;
+  /** True once a later sentence's fact is on screen, so this one would be dropped: skip the write. */
+  isStale?: () => boolean;
+};
 
 const LOOKUP_THRESHOLD = 0.5;
 const MIN_WORDS = 3;
 const MAX_FACT_CHARS = 90;
 const CONTEXT_SENTENCES = 6;
 const MAX_RESULTS = 8;
+/** Brave starts when Perplexity has not answered by then; the first non-empty list wins. */
+const SEARCH_HEDGE_MS = 1000;
 
 export async function lookupFact(sentence: string, language: string, keys: FactKeys, post: Post, context: FactContext = { earlier: [], shown: [] }): Promise<Fact | null> {
   if (sentence.trim().split(/\s+/).length < MIN_WORDS) return null;
@@ -29,7 +38,7 @@ export async function lookupFact(sentence: string, language: string, keys: FactK
   const p = await decide(sentence, earlier, keys, post).catch(() => 0);
   if (p < LOOKUP_THRESHOLD) return null;
   const results = await searching;
-  if (!results.length) return null;
+  if (!results.length || context.isStale?.()) return null;
   return write(sentence, language, results, { ...context, earlier }, keys, post);
 }
 
@@ -70,22 +79,45 @@ async function decide(sentence: string, earlier: readonly string[], keys: FactKe
   return Number((json as { answers?: { lookup?: { noul?: number } } }).answers?.lookup?.noul ?? 0);
 }
 
-/** Perplexity Fast Search; Brave when it fails or is not set up. */
+/** Perplexity Fast Search; Brave when it fails, is slow or is not set up. */
 async function search(sentence: string, region: string | undefined, keys: FactKeys, post: Post): Promise<SearchResult[]> {
-  if (keys.perplexity) {
-    try {
-      const { status, json } = await post("https://api.perplexity.ai/search", { Authorization: `Bearer ${keys.perplexity}`, "Content-Type": "application/json" },
-        JSON.stringify({ query: sentence, search_type: "fast", max_results: 5, ...(region ? { country: region } : {}) }), 2500);
-      const results = (json as { results?: { title?: string; url?: string; snippet?: string }[] }).results ?? [];
-      if (status === 200 && results.length) return results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: (r.snippet ?? "").slice(0, 500) }));
-    } catch { /* falls through to Brave */ }
-  }
-  if (!keys.brave) return [];
+  const brave = () => (keys.brave ? braveSearch(sentence, keys.brave, post).catch(() => [] as SearchResult[]) : Promise.resolve([] as SearchResult[]));
+  if (!keys.perplexity) return brave();
+  const primary = perplexitySearch(sentence, region, keys.perplexity, post).catch(() => [] as SearchResult[]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const slow = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), SEARCH_HEDGE_MS); });
+  const first = await Promise.race([primary, slow]);
+  clearTimeout(timer);
+  if (first?.length) return first;
+  if (first) return brave();
+  return firstNonEmpty([primary, brave()]);
+}
+
+async function perplexitySearch(sentence: string, region: string | undefined, key: string, post: Post): Promise<SearchResult[]> {
+  const { status, json } = await post("https://api.perplexity.ai/search", { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    JSON.stringify({ query: sentence, search_type: "fast", max_results: 5, ...(region ? { country: region } : {}) }), 2500);
+  const results = (json as { results?: { title?: string; url?: string; snippet?: string }[] }).results ?? [];
+  return status === 200 ? results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: (r.snippet ?? "").slice(0, 500) })) : [];
+}
+
+async function braveSearch(sentence: string, key: string, post: Post): Promise<SearchResult[]> {
   const { status, json } = await post(`https://api.search.brave.com/res/v1/web/search?count=5&q=${encodeURIComponent(sentence)}`,
-    { "X-Subscription-Token": keys.brave, Accept: "application/json" }, null, 2000);
+    { "X-Subscription-Token": key, Accept: "application/json" }, null, 2000);
   if (status !== 200) return [];
   const results = (json as { web?: { results?: { title?: string; url?: string; description?: string }[] } }).web?.results ?? [];
   return results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: r.description ?? "" }));
+}
+
+function firstNonEmpty(lists: Promise<SearchResult[]>[]): Promise<SearchResult[]> {
+  return new Promise((resolve) => {
+    let pending = lists.length;
+    for (const list of lists) {
+      void list.then((results) => {
+        if (results.length) resolve(results);
+        else if (--pending === 0) resolve([]);
+      });
+    }
+  });
 }
 
 async function write(sentence: string, language: string, results: SearchResult[], context: FactContext, keys: FactKeys, post: Post): Promise<Fact | null> {

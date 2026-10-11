@@ -141,10 +141,10 @@ test('pinned stock firmware reproduces the custom image, extracts fonts, and pas
     '@nativescript/core': { File: { exists: fs.existsSync, fromPath: file => ({ readTextSync: () => fs.readFileSync(file, 'utf8') }) },
       knownFolders: { documents: () => ({ path: temp, getFile: name => ({ writeTextSync: text => fs.writeFileSync(path.join(temp, name), text) }) }) } },
     './firmware/cfw-patches': patches, './firmware-fonts': fonts,
-    '../util/http': { fetchWithUserAgent: async (url) => {
+    '../native/binary-http': { downloadBinary: async (url) => {
       const md5 = crypto.createHash('md5').update(base).digest('hex');
       assert.equal(url, `https://cdn.evenreal.co/firmware/${md5}.bin`);
-      return { ok: true, arrayBuffer: async () => Uint8Array.from(base).buffer };
+      return { status: 200, bytes: Uint8Array.from(base), contentLength: base.length };
     } },
     '../util/hex-util': require('../.test-build/app/util/hex-util.js'), '../graphics/evenhub-font': { EvenHubFont: { invalidate() {} } },
     '../native/firmware-files': { firmwareSha256: hash, writeFirmwareFile: (file, buffer) => fs.writeFileSync(file, new Uint8Array(buffer)) },

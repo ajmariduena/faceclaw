@@ -117,7 +117,7 @@ export class ConverseSession {
   private heard(sentence: string, keys: FactKeys): void {
     if (!sentence) return;
     const index = ++this.heardCount;
-    const context = { earlier: [...this.transcript], shown: [...this.shownFacts] };
+    const context = { earlier: [...this.transcript], shown: [...this.shownFacts], isStale: () => index < this.shownIndex };
     this.transcript.push(sentence);
     if (this.transcript.length > KEPT_SENTENCES) this.transcript.shift();
     void this.lookup(sentence, this.language, keys, context).then((fact) => {

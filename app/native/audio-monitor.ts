@@ -5,6 +5,7 @@
  * EvenHub mic enable, or a CFW mic_control CONFIGURE) turned the mics on.
  */
 import { toUint8Array } from "../util/array-util";
+import { javaBytesToUint8Array } from "./java-direct-buffer";
 
 declare const com: any;
 declare const global: any;
@@ -51,7 +52,7 @@ export function addAudioMonitorListeners(
   if (!communicator) return () => {};
   const packetProxy = new com.faceclaw.app.FaceclawAudioPacketListener({
     onAudioPacket: (data: any, arm: string, arrivalMs: number) => {
-      onPacket(toUint8Array(data), toArm(arm), Number(arrivalMs));
+      onPacket(javaBytesToUint8Array(data), toArm(arm), Number(arrivalMs));
     },
   });
   const statusProxy = new com.faceclaw.app.FaceclawMicStatusListener({

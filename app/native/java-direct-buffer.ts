@@ -74,17 +74,39 @@ export class JavaDirectBuffer {
    * the next load() on this instance.
    */
   load(bytes: Uint8Array): JavaByteBufferLike {
-    if (!this.javaBuffer || !this.view || this.view.length < bytes.length) {
-      const wanted = Math.max(bytes.length, this.initialCapacity, 1);
+    const { javaBuffer, view } = this.reserve(bytes.length);
+    view.set(bytes);
+    javaBuffer.clear();
+    javaBuffer.limit(bytes.length);
+    return javaBuffer;
+  }
+
+  /** A copy of a Java byte[], moved with one bulk put instead of one bridge call per byte. */
+  copyFromJava(javaBytes: any): Uint8Array {
+    const length = Number(javaBytes?.length ?? 0);
+    if (!length) return new Uint8Array(0);
+    const { javaBuffer, view } = this.reserve(length);
+    javaBuffer.clear();
+    (javaBuffer as any).put(javaBytes);
+    return view.slice(0, length);
+  }
+
+  /** A new Java byte[] holding `bytes`, filled with one bulk get. */
+  copyToJavaArray(bytes: Uint8Array): any {
+    const javaBytes = (Array as any).create("byte", bytes.length);
+    if (bytes.length) (this.load(bytes) as any).get(javaBytes);
+    return javaBytes;
+  }
+
+  private reserve(length: number): { javaBuffer: JavaByteBufferLike; view: Uint8Array } {
+    if (!this.javaBuffer || !this.view || this.view.length < length) {
+      const wanted = Math.max(length, this.initialCapacity, 1);
       const capacity = Math.ceil(wanted / CAPACITY_STEP_BYTES) * CAPACITY_STEP_BYTES;
       this.javaBuffer = this.backend.allocateDirect(capacity);
       this.view = this.backend.viewOf(this.javaBuffer);
       this.allocations++;
     }
-    this.view.set(bytes);
-    this.javaBuffer.clear();
-    this.javaBuffer.limit(bytes.length);
-    return this.javaBuffer;
+    return { javaBuffer: this.javaBuffer, view: this.view };
   }
 
   /** As load(), for an optional ArrayBuffer (e.g. a frame's draw list); null stays null. */
@@ -109,4 +131,18 @@ export function copyToJavaByteBuffer(
   backend.viewOf(javaBuffer).set(bytes);
   javaBuffer.limit(bytes.length);
   return javaBuffer;
+}
+
+let byteScratch: JavaDirectBuffer | null = null;
+
+/** Java byte[] → Uint8Array in bulk (audio packets, sensor reports): one scratch buffer per isolate. */
+export function javaBytesToUint8Array(javaBytes: any): Uint8Array {
+  byteScratch ??= new JavaDirectBuffer(4096);
+  return byteScratch.copyFromJava(javaBytes);
+}
+
+/** Uint8Array → Java byte[] in bulk, e.g. for WebSocket.sendBinary. */
+export function uint8ArrayToJavaBytes(bytes: Uint8Array): any {
+  byteScratch ??= new JavaDirectBuffer(4096);
+  return byteScratch.copyToJavaArray(bytes);
 }

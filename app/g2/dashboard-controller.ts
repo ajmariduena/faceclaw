@@ -2642,17 +2642,24 @@ class DashboardController {
     const { image, draws } = frameTimings.span(frameId, "flatten", () => flattenPlanesWithDraws(planes));
     const buffer = frameTimings.span(frameId, "to8bpp", () => image.to8bppBuffer());
     const preparedDraws = frameTimings.span(frameId, "prepareFrameDraws", () => prepareFrameDraws(draws));
-    await frameTimings.spanAsync(frameId, "submit", () =>
-      display.submitSurfaceFrame(
-        surfaceId,
-        buffer,
-        { x: 0, y: 0, width: image.width, height: image.height },
-        fingerprint,
-        paintMs,
-        frameId,
-        preparedDraws,
-      ),
-    );
+    try {
+      await frameTimings.spanAsync(frameId, "submit", () =>
+        display.submitSurfaceFrame(
+          surfaceId,
+          buffer,
+          { x: 0, y: 0, width: image.width, height: image.height },
+          fingerprint,
+          paintMs,
+          frameId,
+          preparedDraws,
+        ),
+      );
+    } catch (error) {
+      // At connect the display is published before its window surfaces are
+      // registered; configuring them renders each window again.
+      if (!String(error).includes(`unknown surface ${surfaceId}`)) throw error;
+      frameTimings.finishFrame(frameId, "discarded: surface not registered yet");
+    }
   }
 
   /** Flip a window surface's compositor visibility; fire-and-forget. */
