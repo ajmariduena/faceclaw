@@ -40,7 +40,7 @@ Latencia objetivo: unos 1,5–2,5 s desde que termina la frase hasta que aparece
 
 ## Decisiones abiertas
 - Dónde corre el «cerebro» (detectar, buscar, redactar): directo desde el teléfono (las claves quedan en el teléfono) o a través del daemon de Paseo en la Mac por el relay (las claves se quedan en la Mac, pero depende de la Mac).
-- Qué búsqueda usar (Parallel, Brave o Perplexity) y qué modelo en Cerebras.
+- ~~Qué búsqueda usar~~ Decidido el 11 oct: Perplexity Fast Search (`search_type: "fast"`), con Brave de respaldo si falla o tarda.
 - Si mostrar también la traducción en la misma pantalla o dejarla solo para Traducir.
 - Privacidad: avisar o tener un modo «solo notas» sin enviar audio.
 
