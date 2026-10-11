@@ -1,3 +1,4 @@
+import { LoudnessTimeline } from "./audio-loudness";
 import { CLOUD_STT_SAMPLE_RATE, CloudSttClient, CloudSttOptions, toJavaBytes } from "./cloud-stt";
 import { TimedTranscript } from "./transcript-format";
 
@@ -29,6 +30,10 @@ export type SonioxToken = {
   language?: string;
   source_language?: string;
   speaker?: string;
+  start_ms?: number;
+  end_ms?: number;
+  /** dBFS of the audio under the token, when the client measures loudness. */
+  loudness?: number;
 };
 
 export type SonioxSttOptions = CloudSttOptions & {
@@ -38,6 +43,8 @@ export type SonioxSttOptions = CloudSttOptions & {
   languageHints?: string[];
   /** Every response's tokens as received, for callers that need translation_status. */
   onTokens?: (tokens: SonioxToken[]) => void;
+  /** Annotate spoken tokens with `loudness`. */
+  measureLoudness?: boolean;
 };
 
 export class SonioxSttClient implements CloudSttClient {
@@ -52,8 +59,11 @@ export class SonioxSttClient implements CloudSttClient {
   // Concatenation of all final tokens so far.
   private finalText = "";
   private formatted = new TimedTranscript();
+  private readonly loudness: LoudnessTimeline | null;
 
-  constructor(private readonly options: SonioxSttOptions) {}
+  constructor(private readonly options: SonioxSttOptions) {
+    this.loudness = options.measureLoudness ? new LoudnessTimeline() : null;
+  }
 
   start(): void {
     if (this.closed || this.ws) return;
@@ -155,6 +165,8 @@ export class SonioxSttClient implements CloudSttClient {
     try {
       if (this.ws?.sendBinary(toJavaBytes(pcm)) === false) {
         this.options.onDisconnected?.("Soniox audio send failed.");
+      } else {
+        this.loudness?.accept(pcm);
       }
     } catch (error) {
       this.options.onDisconnected?.(`Soniox send failed: ${String(error)}`);
@@ -184,7 +196,12 @@ export class SonioxSttClient implements CloudSttClient {
       else this.options.onError(error);
       return;
     }
-    const tokens = Array.isArray(message?.tokens) ? message.tokens : [];
+    const tokens: SonioxToken[] = Array.isArray(message?.tokens) ? message.tokens : [];
+    if (this.loudness) {
+      for (const token of tokens) {
+        if (typeof token?.start_ms === "number" && typeof token.end_ms === "number") token.loudness = this.loudness.loudnessDb(token.start_ms, token.end_ms);
+      }
+    }
     if (tokens.length) this.options.onTokens?.(tokens);
     let nonFinal = "";
     let preview: TimedTranscript | null = null;

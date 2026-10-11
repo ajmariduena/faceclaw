@@ -3,7 +3,8 @@
  * layers, session, painter) and the extracted stock font, with only the
  * Soniox socket, mic bridge and clock stubbed. Writes out/translate-app-*.png:
  * live, paused, the leave dialog, connecting, a long monologue, scrolled
- * back, speech outside the pair, the missing key and a rejected key.
+ * back, speech outside the pair, the wearer left out, the missing key and a
+ * rejected key.
  *
  *   node --test tools/headless-render/translate-app.test.cjs
  */
@@ -78,18 +79,21 @@ function converse(socket) {
   socket.send([...original('Great, and is it open on', 'en'), ...live(original(' Sundays?', 'en')), ...translation('Genial, ¿y abre los', 'es', 'en'), ...live(translation(' domingos?', 'es', 'en'))]);
 }
 
-test('live: only the utterance being translated, white with its gray tail; no frame, footer or history', async () => {
+test('live: what was said dim over its translation, the exchange before dimmer; no frame or footer', async () => {
   const app = await open();
   app.socket().open();
   converse(app.socket());
   app.advance(42_000);
-  const { image, draws } = app.shot('translate-app-live');
-  assert.deepEqual(draws.map((d) => [d.text, d.value]), [['Genial, ¿y abre los', 255], [' domingos?', 187]]);
+  const { draws } = app.shot('translate-app-live');
+  assert.deepEqual(draws.map((d) => [d.text, d.value]), [
+    ['Great, and is it open on Sundays?', 153],
+    ['Genial, ¿y abre los', 255],
+    [' domingos?', 187],
+    ['Sí, está a dos cuadras, al lado del mercado.', 70],
+    ["Yes, it's two blocks away, next to the market.", 120],
+  ]);
+  assert.deepEqual(draws.map((d) => d.y), [14, 41, 41, 86, 113]);
   assert.equal(draws[0].x, 22);
-  assert.equal(draws[0].y + 27, 236, 'sits on the content bottom');
-  let ink = 0;
-  for (let y = 0; y < 288; y++) for (let x = 0; x < 576; x++) if (image.getPixel(x, y) && y < draws[0].y) ink++;
-  assert.equal(ink, 0, 'nothing drawn above the translation');
 });
 
 test('paused, connecting and the leave dialog', async () => {
@@ -124,10 +128,13 @@ test('a long monologue keeps its newest lines; scrolling back shows earlier exch
   app.socket().send([...original(speech, 'es'), ...translation("Look, the station is close, but on Sundays the schedule changes: they open at eight and the last train leaves at nine at night, so if you're traveling late you should buy the ticket beforehand and arrive early because there's always a line at the ticket office.", 'en', 'es')]);
   app.advance(75_000);
   const long = app.shot('translate-app-long');
-  assert.equal(long.draws.length, 3, 'three lines at most');
-  assert.ok(long.draws.every((d) => d.value === 255));
-  assert.ok(long.draws[0].text.startsWith('…'));
-  assert.ok(long.draws.at(-1).text.endsWith('ticket office.'));
+  const said = long.draws.filter((d) => d.value === 153);
+  const translated = long.draws.filter((d) => d.value === 255);
+  assert.equal(said.length, 2, 'the original keeps its last two lines');
+  assert.equal(translated.length, 3, 'the translation its last three');
+  assert.ok(said[0].text.startsWith('…') && translated[0].text.startsWith('…'));
+  assert.ok(translated.at(-1).text.endsWith('ticket office.'));
+  assert.equal(long.draws.filter((d) => d.value === 70).length, 1, 'one line of the exchange before still fits');
   app.input('scroll-up');
   app.input('scroll-up');
   const back = app.shot('translate-app-scrolled');
@@ -142,6 +149,14 @@ test('speech outside the pair is shown as said; missing and rejected keys', asyn
   app.socket().send([{ text: 'Bonjour', is_final: true, language: 'fr', translation_status: 'none' }, { text: ' à tous', is_final: true, language: 'fr', translation_status: 'none' }]);
   const other = app.shot('translate-app-other-language');
   assert.ok(other.draws.some((d) => d.text === 'Bonjour à tous' && d.value === 255));
+
+  const wearer = await open();
+  wearer.socket().open();
+  const voiced = (tokens, speaker, loudness) => tokens.map((token) => ({ ...token, speaker, loudness }));
+  wearer.socket().send([...voiced(original('Hi! Do you know where the train station is?', 'en'), '1', -36), ...translation('¡Hola! ¿Sabes dónde está la estación de tren?', 'es', 'en'), END]);
+  wearer.socket().send([...voiced(original('Yes, it is two blocks away, next to the market.', 'en'), '2', -17), ...translation('Sí, está a dos cuadras, al lado del mercado.', 'es', 'en'), END]);
+  const left = wearer.shot('translate-app-wearer');
+  assert.deepEqual(left.draws.map((d) => d.text), ['Hi! Do you know where the train station is?', '¡Hola! ¿Sabes dónde está la estación de tren?'], 'the wearer answering is not shown');
 
   const missing = await open({ apiKey: '' });
   const shot = missing.shot('translate-app-missing-key');

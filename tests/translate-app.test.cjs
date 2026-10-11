@@ -42,9 +42,7 @@ test('opens straight into a two-way ES/EN Soniox translation fed by the glasses 
   for (const message of fixture.slice(0, 3)) app.socket().send(message.tokens);
   app.advance(42_000);
   const draws = app.paint();
-  assert.ok(draws.some((d) => d.text === 'Hello, how are you?' && d.value === 255));
-  assert.ok(!draws.some((d) => d.text.includes('¿cómo estás?')), 'the original stays hidden once translated');
-  assert.deepEqual(draws.map((d) => d.text), ['Hello, how are you?'], 'nothing but the translation while translating');
+  assert.deepEqual(draws.map((d) => [d.text, d.value, d.y]), [['Hola, ¿cómo estás?', 153, 14], ['Hello, how are you?', 255, 41]], 'what was said dim, its translation white underneath, nothing else');
 });
 
 test('tap pauses (ending the Soniox session, mic released) and resumes into a new session', () => {
@@ -181,12 +179,12 @@ test('a dropped connection reconnects and starts a new segment', () => {
   app.socket().open();
   app.socket().send([{ text: 'Sí', is_final: true, language: 'es', translation_status: 'original' }]);
   const draws = app.paint();
-  assert.ok(draws.some((d) => d.text === 'Sí') && !draws.some((d) => d.text === 'Hola,'), 'the new segment replaces the old one');
+  assert.deepEqual(draws.map((d) => [d.text, d.value]), [['Sí', 153], ['Hola,', 70]], 'the new segment on top, the old one dimmer below');
   app.input('scroll-up');
-  assert.ok(app.paint().some((d) => d.text === 'Hola,'), 'scrolling back shows the earlier one');
+  assert.ok(app.paint().some((d) => d.text === 'Hola,' && d.y === 14), 'scrolling back shows the earlier one on top');
 });
 
-test('only the utterance being translated, no frame or footer; the non-final tail is gray', () => {
+test('the newest exchange and the one before it, no frame or footer; the non-final tail is gray', () => {
   const app = open();
   app.socket().open();
   for (const message of fixture.slice(0, 5)) app.socket().send(message.tokens);
@@ -196,8 +194,8 @@ test('only the utterance being translated, no frame or footer; the non-final tai
     { text: 'le', is_final: false, language: 'es', source_language: 'en', translation_status: 'translation' },
   ]);
   const draws = app.paint();
-  assert.deepEqual(draws.map((d) => [d.text, d.value]), [['Va', 255], ['le', 187]]);
-  assert.equal(draws[1].x, draws[0].x + 20);
+  assert.deepEqual(draws.map((d) => [d.text, d.value]), [['Ok', 153], ['Va', 255], ['le', 187], ['Qué bueno.', 70]]);
+  assert.equal(draws[2].x, draws[1].x + 20);
 });
 
 test('a burst of Soniox responses repaints at most every 120 ms, the first at once', () => {
@@ -213,4 +211,30 @@ test('a burst of Soniox responses repaints at most every 120 ms, the first at on
   assert.equal(app.renders(), before + 2, 'one trailing render for the burst');
   app.advance(5_000);
   assert.equal(app.renders(), before + 2, 'nothing repaints on a clock');
+});
+
+test('the wearer is told apart by loudness and only the others are shown', () => {
+  const app = open();
+  app.socket().open();
+  const words = (speaker, loudness, texts, language) => texts.map((text, index) => ({ text: index ? ` ${text}` : text, is_final: true, speaker, language, loudness, translation_status: 'original' }));
+  app.socket().send(words('1', -18, ['Hi,', 'how', 'are', 'you?'], 'en'));
+  assert.ok(app.paint().some((d) => d.text === 'Hi, how are you?'), 'one voice so far: nothing to compare it with');
+  app.socket().send([
+    { text: '<end>', is_final: true },
+    ...words('2', -36, ['Fine,', 'and', 'you', 'there?'], 'en'),
+    { text: 'Bien, ¿y tú?', is_final: true, language: 'es', source_language: 'en', translation_status: 'translation' },
+  ]);
+  let draws = app.paint();
+  assert.deepEqual(draws.map((d) => d.text), ['Fine, and you there?', 'Bien, ¿y tú?'], 'the louder voice is the wearer, gone once the other is heard');
+  app.socket().send([{ text: '<end>', is_final: true }, ...words('1', -17, ['Good,', 'thanks', 'a', 'lot.'], 'en')]);
+  assert.deepEqual(app.paint().map((d) => d.text), draws.map((d) => d.text), 'what the wearer says next never shows');
+
+  app.input('click');
+  app.input('click');
+  app.socket().open();
+  app.socket().send(words('1', -19, ['So', 'what', 'now', 'then?'], 'en'));
+  draws = app.paint();
+  assert.ok(!draws.some((d) => d.text.includes('So what')), 'a new session knows the wearer level from the last one');
+  app.socket().send([{ text: '<end>', is_final: true }, ...words('2', -35, ['We', 'go', 'home', 'now.'], 'en')]);
+  assert.ok(app.paint().some((d) => d.text === 'We go home now.' && d.y === 14));
 });
