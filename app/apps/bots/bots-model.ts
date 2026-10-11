@@ -2,6 +2,7 @@
 import { formatAge } from "../paseo/paseo-model";
 import { KEY_REJECTED, OFFLINE, type BotState } from "../../assistant/grokbot/grokbot-hub";
 import type { ChatLine } from "../../graphics/terminal-painter";
+import type { BotFace } from "./bot-mark";
 
 /** What the glasses call the one Grok Bot session they talk to, whatever its name in Cursor. */
 export const BOT_TITLE = "Grok Bot";
@@ -57,22 +58,23 @@ export function chatEmptyMessage(bot: BotState, hub: BotsHubView): string {
   return `Ask ${BOT_TITLE} anything`;
 }
 
-export type BotsGlanceUpdate = { bot: string; who: string; line: string };
-export type BotsGlance = { updates: BotsGlanceUpdate[]; status: string };
-
-export const BOTS_GLANCE_UPDATES = 2;
+/** The home card: the bot's face, its last reply (or, while it works, what it is working on, dim) and how old that is; `status` when there is no line. */
+export type BotsGlance = { face: BotFace; line: string; lineDim: boolean; age: string; status: string };
 
 export function botsGlance(hub: BotsHubView, nowMs: number): BotsGlance {
-  if (!hub.configured) return { updates: [], status: "Setup required" };
-  if (hub.error === KEY_REJECTED) return { updates: [], status: KEY_REJECTED };
-  const rank = (bot: BotState) => bot.unread ? 0 : bot.working ? 1 : 2;
-  const updates = hub.list().filter(bot => bot.latest)
-    .sort((a, b) => rank(a) - rank(b) || b.latest!.createdAtMs - a.latest!.createdAtMs)
-    .slice(0, BOTS_GLANCE_UPDATES)
-    .map(bot => {
-      const latest = bot.latest!;
-      const when = bot.working ? workingLabel(nowMs - bot.workingSince) : formatAge(latest.createdAtMs || nowMs, nowMs);
-      return { bot: bot.name, who: when, line: latest.role === "user" ? `You: ${latest.text}` : plainText(latest.text) };
-    });
-  return { updates, status: hub.error === OFFLINE && !updates.length ? OFFLINE : `Ask ${BOT_TITLE} anything` };
+  const empty = (status: string): BotsGlance => ({ face: "idle", line: "", lineDim: false, age: "", status });
+  if (!hub.configured) return empty("Setup required");
+  if (hub.error === KEY_REJECTED) return empty(KEY_REJECTED);
+  const bot = hub.list().find(candidate => candidate.name === hub.defaultBot);
+  const status = hub.error === OFFLINE ? OFFLINE : `Ask ${BOT_TITLE} anything`;
+  if (!bot) return empty(status);
+  const face: BotFace = bot.unread ? "unread" : bot.working ? "working" : "idle";
+  if (bot.working && bot.latest) {
+    const latest = bot.latest;
+    return { face, line: latest.role === "user" ? latest.text : plainText(latest.text), lineDim: true,
+      age: workingLabel(nowMs - bot.workingSince), status };
+  }
+  const reply = bot.latestBot;
+  if (!reply) return { ...empty(status), face };
+  return { face, line: plainText(reply.text), lineDim: false, age: formatAge(reply.createdAtMs || nowMs, nowMs), status };
 }

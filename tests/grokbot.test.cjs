@@ -254,22 +254,21 @@ test('a just-created session means the name matched no bot: "new empty bot" unti
   assert.equal(typo.newEmpty, false);
 });
 
-test('the home card glance: unread first, then working, then the latest; empty and setup states', async () => {
-  const h = harness({ names: 'Glasses, Research, Inbox' });
+test('the home card glance: the bot face, its last reply and age; working shows the question dim; empty and setup states', async () => {
+  const h = harness({ names: 'Glasses' });
   h.hub.start();
   await new Promise(setImmediate);
-  eq({ ...model.botsGlance(h.hub, NOW) }, { updates: [], status: 'Ask Grok Bot anything' });
-  const [glasses, research, inbox] = h.hub.list();
-  glasses.messages.push({ role: 'bot', text: 'Sale 06:20 desde GYE.', createdAtMs: NOW - 60 * 60_000, seq: 2 });
-  research.messages.push({ role: 'user', text: 'Compara Google y Mapbox', createdAtMs: NOW - 5 * 60_000, seq: 4 });
-  Object.assign(research, { working: true, workingSince: NOW - 4 * 60_000 });
-  inbox.messages.push({ role: 'bot', text: '3 urgentes: Fly pide respuesta hoy.', createdAtMs: NOW - 2 * 60 * 60_000, seq: 9 });
-  inbox.unread = 1;
-  const glance = model.botsGlance(h.hub, NOW);
-  eq(glance.updates.map(update => [update.who, update.line]), [
-    ['2 h', '3 urgentes: Fly pide respuesta hoy.'],
-    ['working 4 min', 'You: Compara Google y Mapbox'],
-  ]);
+  eq({ ...model.botsGlance(h.hub, NOW) }, { face: 'idle', line: '', lineDim: false, age: '', status: 'Ask Grok Bot anything' });
+  const glasses = h.hub.bot('Glasses');
+  glasses.messages.push({ role: 'bot', text: 'Sale **06:20** desde GYE.', createdAtMs: NOW - 60 * 60_000, seq: 2 });
+  eq({ ...model.botsGlance(h.hub, NOW) }, { face: 'idle', line: 'Sale 06:20 desde GYE.', lineDim: false, age: '1 h', status: 'Ask Grok Bot anything' });
+  glasses.unread = 1;
+  assert.equal(model.botsGlance(h.hub, NOW).face, 'unread');
+  glasses.unread = 0;
+  glasses.messages.push({ role: 'user', text: 'Compara Google y Mapbox', createdAtMs: NOW - 5 * 60_000, seq: 4 });
+  Object.assign(glasses, { working: true, workingSince: NOW - 4 * 60_000 });
+  const working = model.botsGlance(h.hub, NOW);
+  eq([working.face, working.line, working.lineDim, working.age], ['working', 'Compara Google y Mapbox', true, 'working 4 min']);
   assert.equal(model.elapsedClock(12_000), '0:12');
   assert.equal(model.elapsedClock(16 * 60_000 + 5000), '16:05');
 });

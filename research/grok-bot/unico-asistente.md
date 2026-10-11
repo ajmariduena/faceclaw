@@ -15,6 +15,12 @@ Pedido: Bots ya no elige entre varios bots, así que pasa a llamarse Grok Bot y 
 - `close-assistant` se mantiene por compatibilidad y solo confirma.
 - La acción `assistant` de la API local (puerto 8791) también envía a Grok Bot.
 
+## Tarjeta del inicio (aprobada el mismo día)
+- Muestra el personaje del bot «Glasses» de Grok Bot, sólido y en blanco: la píldora inclinada con dos ojos en ranura, trazada desde la pantalla Character de la app (`app/apps/bots/bot-mark.ts`).
+- Debajo va su última respuesta centrada (hasta tres líneas) y la edad en tenue. No lleva título: el personaje hace de nombre.
+- Los ojos cambian según el estado: en reposo como en la app; trabajando se corren hacia arriba a la derecha y la línea muestra en tenue lo que le pediste; con una respuesta nueva se alargan.
+- Las versiones en puntos y solo contorno se descartaron porque se veían deformes.
+
 ## Teléfono
 - La sección «Assistant» de ajustes desapareció. El modelo en el teléfono (Qwen), que usa Microphones, pasó a «Voice».
 - En Claves API, el grupo de OpenRouter se llama «Facts». El nombre de la sesión de Grok Bot («Glasses») solo aparece en Advanced, como «Grok Bot session».

@@ -6,6 +6,7 @@ import { dotNumberWidth, paintDotNumber, paintHomeColumn } from "./column-painte
 import type { HomeWeatherReading } from "./home-weather";
 import { glanceCounts, glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import type { BotsGlance } from "../bots/bots-model";
+import { BOT_MARK_WIDTH, botMark } from "../bots/bot-mark";
 
 export type HomeFace = {
   readonly lineHeight: number;
@@ -32,6 +33,7 @@ export const HOME_DOTS_TOP = 115;
 const DIM = 153;
 const FAINT = 85;
 const CARD_TEXT_WIDTH = 278;
+const BOT_LINE_WIDTH = 270;
 
 function icon(image: GrayImage, name: IconName, x: number, y: number, size = 24) {
   const rendered = renderIcon(name, size);
@@ -121,24 +123,18 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
       face.drawText(panel, Math.round(cx - width / 2), y + 46, line, n ? DIM : FAINT);
       if (needsYou) panel.fillRoundedRect(Math.round(cx + width / 2) + 6, y + 46 + Math.round(face.lineHeight / 2) - 3, 6, 6, 255, 3);
     });
-  } else if (card.id === "bots" && data.bots?.updates.length) {
-    const pitch = Math.max(27, face.lineHeight + 4);
-    const fits = (y: number) => y + face.lineHeight <= 254;
-    header();
-    let y = 62;
-    for (const update of data.bots.updates) {
-      if (!fits(y + pitch)) break;
-      text(20, y, update.who, DIM);
-      y += pitch;
-      const lines = wrapped(face, update.line, CARD_TEXT_WIDTH, 3);
-      if (lines.length > 2) { lines.length = 2; lines[1] = `${lines[1]}…`; }
-      for (const line of lines) {
-        if (!fits(y)) break;
-        text(20, y, line);
-        y += pitch;
-      }
-      y += 14;
-    }
+  } else if (card.id === "bots") {
+    // The bot's own mark, its face following its state, over its last reply.
+    const bots = data.bots;
+    panel.bitBlt(botMark(bots?.face ?? "idle"), Math.round((318 - BOT_MARK_WIDTH) / 2), 14);
+    if (bots?.line) {
+      const pitch = Math.max(27, face.lineHeight + 4);
+      const lines = wrapped(face, bots.line, BOT_LINE_WIDTH, 4);
+      if (lines.length > 3) { lines.length = 3; lines[2] = fitted(face, `${lines[2]}…`, BOT_LINE_WIDTH); }
+      const top = 124 + Math.round((3 - lines.length) * pitch / 2);
+      lines.forEach((line, i) => centered(top + i * pitch, line, bots.lineDim ? DIM : 255));
+      centered(222, bots.age, DIM);
+    } else centered(150, bots?.status ?? emptyCardStatus(card.id), DIM);
   } else if (card.id === "translate") {
     glance(() => {
       const left = "ES ", right = " EN";
@@ -150,8 +146,7 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
   } else if (card.id === "converse") {
     glance(() => centered(136, "Live facts · ES/EN"), data.converseReady ? "Ready" : "Setup required");
   } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id)
-    : card.id === "paseo" ? glanceEmptyStatus(data.paseo)
-    : card.id === "bots" ? data.bots?.status ?? emptyCardStatus(card.id) : emptyCardStatus(card.id));
+    : card.id === "paseo" ? glanceEmptyStatus(data.paseo) : emptyCardStatus(card.id));
 
   image.bitBlt(paintHomeColumn(homeColumnState(data.now, data.battery, data.weather, data.paseo, data.calendar), face), 0, 0);
   image.bitBlt(panel.withDrawsBaked(), 230, 14);
