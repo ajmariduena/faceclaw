@@ -85,3 +85,8 @@ test('timer.set opens Timers', async () => {
   load('app/assistant/timer-tools.ts').registerTimerTools(async app => { launched.push(app); }, registry);
   assert.equal(handlers.get('timer.set')({ minutes: 10 }).ok, true); assert.deepEqual(launched, ['timer']);
 });
+
+test('Grok Bot in front holds off the screen timeout', async () => {
+  const h = chatEnv(); await h.ready;
+  assert.equal(h.options().keepsScreenOn(), true);
+});

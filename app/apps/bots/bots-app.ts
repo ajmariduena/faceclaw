@@ -202,6 +202,7 @@ function createBotsWindow(options: InProcessAppOptions): InProcessWindow {
     appId: "bots", windowId: BOTS_WINDOW_ID, title: BOT_TITLE, iconLetter: "G", icon: "sparkles", closeable: true,
     baseLayer: layer,
     isVoiceCapturing: () => layer.draft.active,
+    keepsScreenOn: () => true,
     onSystemMenuOpened: () => layer.draft.cancel(),
     onAppMenuOpened: () => layer.draft.cancel(),
     setScreenOn: (on) => { if (!on) layer.draft.cancel(); layer.setScreenOn(on); },
