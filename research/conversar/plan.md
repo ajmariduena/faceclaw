@@ -24,6 +24,14 @@ Latencia objetivo: unos 1,5–2,5 s desde que termina la frase hasta que aparece
 - **Falta medir:** cuánto tarda Soniox en entregar la frase final, el envío a las gafas y la calidad de los datos (vienen de las fuentes y pueden estar mal).
 - Ejemplos reales: «Guayaquil tiene alrededor de 3 007 696 habitantes.», «Sí, la independencia de Guayaquil se celebró el 9 de octubre de 1820.»
 
+## Medición de punta a punta (11 oct, `tools/conversar-probe/e2e.mjs`)
+- Conversación sintética de 8 frases en español e inglés (voces de macOS) mandada a Soniox `stt-rt-v5` en tiempo real, con detección de fin de frase. En cada frase cerrada se corre decidir → buscar → redactar. Se hicieron 3 corridas desde la Mac.
+- **Soniox:** la frase final llega unos 380 ms (mediana; 250–560 ms) después de la última palabra. La última palabra y el fin de frase llegan juntos, así que adelantarse al fin de frase no ahorra nada. Transcribió bien las 8 frases, solo cambió la puntuación.
+- **Decidir, buscar y redactar:** entre 0,9 y 1,4 s. Parallel `fast` tarda unos 800–900 ms de mediana y marca el ritmo. Brave tardó unos 460 ms y esta vez no dio 429.
+- **Del fin de la frase a la línea con el dato:** unos 1,55–1,75 s de mediana (rango 1,2–2,1 s). Jev acertó en las 8 frases: dijo sí a las 5 con datos y no a las 3 de charla.
+- **Envío a las gafas** (frame-timings del Nubia en uso real): de render a pantalla, unos 200 ms de mediana y 290 ms en el p90.
+- **Total estimado, desde que la persona termina de hablar hasta ver el dato:** unos 1,8–2,0 s con Parallel. Con Brave serían unos 1,4–1,6 s (estimación). Falta medirlo con red móvil y con audio real con ruido.
+
 ## Decisiones abiertas
 - Dónde corre el «cerebro» (detectar, buscar, redactar): directo desde el teléfono (las claves quedan en el teléfono) o a través del daemon de Paseo en la Mac por el relay (las claves se quedan en la Mac, pero depende de la Mac).
 - Qué búsqueda usar (Parallel, Brave o Perplexity) y qué modelo en Cerebras.
