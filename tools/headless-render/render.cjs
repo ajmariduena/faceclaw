@@ -62,8 +62,13 @@ function createRenderContext() {
   const { createNativeAdapter } = require('./native-adapter.cjs');
   const adapter = createNativeAdapter(root);
   let homeGraphics;
+  // EVEN_FONT=1 draws the UI in the extracted system font (node stock-font.cjs <firmware>); otherwise the Roboto stand-in.
+  const documents = process.env.EVEN_FONT === '1' ? path.join(__dirname, 'out/local-fonts') : path.join(__dirname, 'out/no-fonts');
   const homeLoad = loader({ global: { isAndroid: true, isIOS: false }, Date: calendarScenes.FixedDate, Uint32Array, Int32Array, DataView, ArrayBuffer }, {
-    '@nativescript/core': { knownFolders: {} },
+    '@nativescript/core': {
+      knownFolders: { documents: () => ({ path: documents }) },
+      File: { exists: fs.existsSync, fromPath: (file) => ({ readTextSync: () => fs.readFileSync(file, 'utf8') }) },
+    },
     '../native/font-renderer': { fontRenderer: adapter.fontRenderer },
     '../native/settings-store': { getStringSetting: (_key, fallback) => fallback, onSettingsStoreChanged: () => {} },
     './installed-fonts': { ensurePreinstalledFonts() {}, installedFontPath: () => adapter.fontPath },
@@ -107,7 +112,7 @@ async function renderHome(homeMode = mode, selectedOverride) {
   const clockFont = TtfFont.load(adapter.fontPath, 64);
   const small = uiFonts.getDefaultSmallFont();
   const medium = uiFonts.getDefaultMediumFont();
-  assert.ok(rowFont && clockFont && small.atlasKey.startsWith('ttf:Roboto-Light'));
+  assert.ok(rowFont && clockFont && small.atlasKey);
   const image = new homeGraphics.GrayImage(rect.width, rect.height);
   const drawText = (face, x, y, text, value, width) => {
     assert.ok(face.measureText(text) <= width, `Text does not fit: ${text}`);

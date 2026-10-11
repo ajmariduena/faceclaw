@@ -8,6 +8,8 @@
  */
 
 export const EVENHUB_RUNTIME_FONT_FILENAME = "evenhub-firmware-20.json";
+/** Stock's system font (menus, notifications, dialogs), drawn with its own advances and kerning. */
+export const STOCK_UI_FONT_FILENAME = "even-system-29.json";
 
 const MAIN_APP_NAME = "ota/s200_firmware_ota.bin";
 const MAIN_APP_LOAD_ADDRESS = 0x00438000;
@@ -34,6 +36,15 @@ const FONT_SPECS: FontSpec[] = [
   { descriptor: 0x007b68c0, lineHeight: 20, baseLine: 2 },
 ];
 
+// The system font's chain, same rebase caveat as FONT_SPECS (12/9 cmaps, then
+// the shared symbol font). Only the first spec's metrics are used.
+//   2.3.0.24: 0x007b69ec, 0x007b6a00, 0x007b68c0
+const STOCK_UI_FONT_SPECS: FontSpec[] = [
+  { descriptor: 0x007b69ec, lineHeight: 29, baseLine: 6 },
+  { descriptor: 0x007b6a00, lineHeight: 29, baseLine: 6 },
+  { descriptor: 0x007b68c0, lineHeight: 20, baseLine: 2 },
+];
+
 type ExtractedGlyph = {
   boxW: number;
   boxH: number;
@@ -49,6 +60,26 @@ export type EvenHubFontAsset = {
   bitmapBase64: string;
 };
 
+/**
+ * glyphs: [boxW, boxH, ofsX, ofsY, bitmapOffset, bitmapLen, advance in 1/16 px,
+ * kerning table index or -1, left class, right class]. kerning[i].values holds
+ * the left×right class-pair values in 1/16 px (LVGL kern_classes format).
+ */
+export type StockUiFontAsset = {
+  lineHeight: number;
+  baseline: number;
+  glyphs: Record<string, number[]>;
+  kerning: { rightClasses: number; values: number[] }[];
+  bitmapBase64: string;
+};
+
+export function isStockUiFontAsset(value: unknown): value is StockUiFontAsset {
+  const asset = value as Partial<StockUiFontAsset> | null;
+  return !!asset && Number.isFinite(asset.lineHeight) && Number.isFinite(asset.baseline) &&
+    !!asset.glyphs && typeof asset.glyphs === "object" && Object.keys(asset.glyphs).length >= 300 &&
+    Array.isArray(asset.kerning) && typeof asset.bitmapBase64 === "string" && asset.bitmapBase64.length > 0;
+}
+
 /** Reject missing, truncated, or otherwise unusable persisted font assets. */
 export function isEvenHubFontAsset(value: unknown): value is EvenHubFontAsset {
   const asset = value as Partial<EvenHubFontAsset> | null;
@@ -59,18 +90,7 @@ export function isEvenHubFontAsset(value: unknown): value is EvenHubFontAsset {
 
 /** Extract and serialize the fonts used for EvenHub background text. */
 export function extractEvenHubFontAsset(firmware: ArrayBuffer): EvenHubFontAsset {
-  const image = new FirmwareImage(firmware);
-  const mainApp = image.findComponent(MAIN_APP_NAME);
-  if (mainApp.payloadSize <= MAIN_APP_PREAMBLE_SIZE) {
-    throw new Error("the main firmware component is missing its application payload");
-  }
-
-  const app = new AddressedImage(
-    image,
-    mainApp.payloadOffset + MAIN_APP_PREAMBLE_SIZE,
-    mainApp.payloadSize - MAIN_APP_PREAMBLE_SIZE,
-    MAIN_APP_LOAD_ADDRESS,
-  );
+  const app = mainApplication(firmware);
   const merged = new Map<number, ExtractedGlyph>();
   for (const spec of FONT_SPECS) extractFont(app, spec, merged);
 
@@ -110,9 +130,68 @@ export function extractEvenHubFontAsset(firmware: ArrayBuffer): EvenHubFontAsset
   };
 }
 
-function extractFont(app: AddressedImage, spec: FontSpec, merged: Map<number, ExtractedGlyph>): void {
-  const bitmapAddress = app.u32(spec.descriptor);
-  const glyphDescriptors = app.u32(spec.descriptor + 4);
+export function extractStockUiFontAsset(firmware: ArrayBuffer): StockUiFontAsset {
+  const app = mainApplication(firmware);
+  const records: StockUiFontAsset["glyphs"] = {};
+  const kerning: StockUiFontAsset["kerning"] = [];
+  const chunks: Uint8Array[] = [];
+  let bitmapSize = 0;
+  for (const spec of STOCK_UI_FONT_SPECS) {
+    const kern = kerningClasses(app, spec);
+    const table = kern ? kerning.push({ rightClasses: kern.rightClasses, values: kern.values }) - 1 : -1;
+    for (const [codePoint, glyphId] of fontMapping(app, spec)) {
+      const key = String(codePoint);
+      if (glyphId <= 0 || records[key]) continue;
+      const glyph = readGlyph(app, spec, glyphId);
+      const classes = kern ? [table, kern.left(glyphId), kern.right(glyphId)] : [-1, 0, 0];
+      records[key] = [glyph.boxW, glyph.boxH, glyph.ofsX, glyph.ofsY, bitmapSize, glyph.bytes.length, glyph.advance, ...classes];
+      chunks.push(glyph.bytes);
+      bitmapSize += glyph.bytes.length;
+    }
+  }
+  if (Object.keys(records).length < 300) {
+    throw new Error(`system font extraction produced only ${Object.keys(records).length} glyphs`);
+  }
+
+  const bitmap = new Uint8Array(bitmapSize);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bitmap.set(chunk, offset);
+    offset += chunk.length;
+  }
+  const layout = STOCK_UI_FONT_SPECS[0]!;
+  return { lineHeight: layout.lineHeight, baseline: layout.lineHeight - layout.baseLine, glyphs: records, kerning, bitmapBase64: base64Encode(bitmap) };
+}
+
+/** lv_font_fmt_txt_kern_classes_t, with values scaled to 1/16 px as LVGL applies them. */
+function kerningClasses(app: AddressedImage, spec: FontSpec): { rightClasses: number; values: number[]; left(glyphId: number): number; right(glyphId: number): number } | null {
+  const descriptor = app.u32(spec.descriptor + 12);
+  const scale = app.u16(spec.descriptor + 16);
+  if (!descriptor || !((app.u16(spec.descriptor + 18) >> 13) & 1)) return null;
+  const pairValues = app.u32(descriptor);
+  const leftMapping = app.u32(descriptor + 4);
+  const rightMapping = app.u32(descriptor + 8);
+  const leftClasses = app.u8(descriptor + 12);
+  const rightClasses = app.u8(descriptor + 13);
+  const values = Array.from(app.bytes(pairValues, leftClasses * rightClasses), (byte) => (((byte << 24) >> 24) * scale) >> 4);
+  return { rightClasses, values, left: (glyphId) => app.u8(leftMapping + glyphId), right: (glyphId) => app.u8(rightMapping + glyphId) };
+}
+
+function mainApplication(firmware: ArrayBuffer): AddressedImage {
+  const image = new FirmwareImage(firmware);
+  const mainApp = image.findComponent(MAIN_APP_NAME);
+  if (mainApp.payloadSize <= MAIN_APP_PREAMBLE_SIZE) {
+    throw new Error("the main firmware component is missing its application payload");
+  }
+  return new AddressedImage(
+    image,
+    mainApp.payloadOffset + MAIN_APP_PREAMBLE_SIZE,
+    mainApp.payloadSize - MAIN_APP_PREAMBLE_SIZE,
+    MAIN_APP_LOAD_ADDRESS,
+  );
+}
+
+function fontMapping(app: AddressedImage, spec: FontSpec): Map<number, number> {
   const cmapAddress = app.u32(spec.descriptor + 8);
   const packed = app.u16(spec.descriptor + 18);
   const cmapCount = packed & 0x1ff;
@@ -124,28 +203,33 @@ function extractFont(app: AddressedImage, spec: FontSpec, merged: Map<number, Ex
         `(bpp=${bitsPerPixel}, format=${bitmapFormat}, cmaps=${cmapCount})`,
     );
   }
-
   const mapping = new Map<number, number>();
   for (let index = 0; index < cmapCount; index++) {
     resolveCmap(app, cmapAddress + index * 20, mapping);
   }
+  return mapping;
+}
 
-  for (const [codePoint, glyphId] of mapping) {
+function readGlyph(app: AddressedImage, spec: FontSpec, glyphId: number): ExtractedGlyph & { advance: number } {
+  const descriptor = app.u32(spec.descriptor + 4) + glyphId * 16;
+  const boxW = app.u16(descriptor + 8);
+  const boxH = app.u16(descriptor + 10);
+  const length = boxW > 0 && boxH > 0 ? rowStride(boxW) * boxH : 0;
+  return {
+    advance: app.u32(descriptor + 4),
+    boxW,
+    boxH,
+    ofsX: app.i16(descriptor + 12),
+    ofsY: app.i16(descriptor + 14),
+    bytes: app.bytes(app.u32(spec.descriptor) + app.u32(descriptor), length),
+  };
+}
+
+function extractFont(app: AddressedImage, spec: FontSpec, merged: Map<number, ExtractedGlyph>): void {
+  for (const [codePoint, glyphId] of fontMapping(app, spec)) {
     if (glyphId <= 0 || merged.has(codePoint)) continue;
-    const descriptor = glyphDescriptors + glyphId * 16;
-    const bitmapIndex = app.u32(descriptor);
-    const boxW = app.u16(descriptor + 8);
-    const boxH = app.u16(descriptor + 10);
-    const ofsX = app.i16(descriptor + 12);
-    const ofsY = app.i16(descriptor + 14);
-    const length = boxW > 0 && boxH > 0 ? rowStride(boxW) * boxH : 0;
-    merged.set(codePoint, {
-      boxW,
-      boxH,
-      ofsX,
-      ofsY,
-      bytes: app.bytes(bitmapAddress + bitmapIndex, length),
-    });
+    const { advance: _advance, ...glyph } = readGlyph(app, spec, glyphId);
+    merged.set(codePoint, glyph);
   }
 }
 
