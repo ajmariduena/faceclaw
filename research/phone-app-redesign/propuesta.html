@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faceclaw · app del teléfono · propuesta 2</title>
+<style>
+  :root {
+    --page: #0a0a0a;
+    --bg: #000000;
+    --card: #151515;
+    --card-2: #1d1d1d;
+    --line: #262626;
+    --t1: #f2f2f2;
+    --t2: #9a9a9a;
+    --t3: #6b6b6b;
+    --track-off: #2e2e2e;
+    --knob-off: #8a8a8a;
+    --font: -apple-system, "SF Pro Text", "Roboto", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page); color: var(--t1); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+  body { padding: 40px 40px 56px; }
+  h1 { font-size: 15px; font-weight: 500; color: var(--t2); margin: 0 0 28px; letter-spacing: .01em; }
+  p, h2, h3 { margin: 0; }
+
+  .row { display: flex; gap: 32px; align-items: flex-start; }
+
+  /* Phone ------------------------------------------------------------- */
+  .phone {
+    flex: 0 0 390px; width: 390px; height: 844px; border-radius: 36px; background: var(--bg);
+    border: 1px solid #2a2a2a; overflow: hidden; display: flex; flex-direction: column; position: relative;
+  }
+  .sys { height: 32px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; font-size: 14px; font-weight: 500; color: var(--t1); }
+  .sys svg { display: block; }
+  .sys .r { display: flex; gap: 6px; align-items: center; }
+  .appbar { height: 60px; flex: 0 0 auto; display: flex; align-items: center; padding: 0 8px; }
+  .appbar .ic { width: 48px; height: 48px; display: grid; place-items: center; color: var(--t1); flex: 0 0 auto; }
+  .appbar h2 { font-size: 22px; font-weight: 400; letter-spacing: 0; flex: 1 1 auto; padding-left: 8px; }
+  .appbar h2.root { padding-left: 16px; }
+  .appbar .act { font-size: 14px; font-weight: 500; color: var(--t1); padding: 0 16px; }
+  .body { flex: 1 1 auto; overflow: hidden; padding: 0 16px; display: flex; flex-direction: column; }
+  .body > * { flex-shrink: 0; }
+  .nav { height: 24px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+  .nav i { width: 108px; height: 4px; border-radius: 2px; background: #3a3a3a; }
+
+  /* Hero -------------------------------------------------------------- */
+  .hero { display: flex; flex-direction: column; align-items: center; padding: 2px 0 8px; }
+  .hero img { display: block; width: 220px; height: auto; }
+  .hero .name { margin-top: 10px; font-size: 20px; font-weight: 500; }
+  .hero .state { margin-top: 3px; font-size: 15px; color: var(--t2); }
+
+  /* Groups and rows ---------------------------------------------------- */
+  .h { font-size: 13px; font-weight: 500; color: var(--t2); padding: 18px 16px 8px; letter-spacing: .01em; }
+  .group { background: var(--card); border-radius: 20px; overflow: hidden; }
+  .group + .group { margin-top: 12px; }
+  .item { min-height: 54px; display: flex; align-items: center; gap: 14px; padding: 0 16px 0 18px; position: relative; }
+  .item + .item::before { content: ""; position: absolute; left: 18px; right: 0; top: 0; height: 1px; background: var(--line); }
+  .item .tx { flex: 1 1 auto; min-width: 0; padding: 10px 0; }
+  .item .l { font-size: 16px; line-height: 20px; color: var(--t1); }
+  .item .s { font-size: 14px; line-height: 18px; color: var(--t2); margin-top: 2px; }
+  .item .v { font-size: 15px; color: var(--t2); flex: 0 0 auto; }
+  .item .v.mono { font-variant-numeric: tabular-nums; }
+  .item .chev { flex: 0 0 auto; color: var(--t3); display: grid; }
+  .item img.lead { width: 40px; height: 40px; object-fit: contain; flex: 0 0 auto; }
+
+  /* Switch ------------------------------------------------------------- */
+  .sw { flex: 0 0 auto; width: 52px; height: 32px; border-radius: 16px; background: var(--track-off); position: relative; border: 2px solid #3a3a3a; }
+  .sw::after { content: ""; position: absolute; top: 6px; left: 6px; width: 16px; height: 16px; border-radius: 50%; background: var(--knob-off); }
+  .sw.on { background: var(--t1); border-color: var(--t1); }
+  .sw.on::after { left: 24px; top: 2px; width: 24px; height: 24px; background: #000; }
+
+  /* Slider ------------------------------------------------------------- */
+  .slider { height: 44px; display: flex; align-items: center; padding: 0 18px 4px; }
+  .slider .tr { position: relative; flex: 1 1 auto; height: 4px; border-radius: 2px; background: var(--track-off); }
+  .slider .tr .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--t1); }
+  .slider .tr .kn { position: absolute; top: 50%; width: 20px; height: 20px; border-radius: 50%; background: var(--t1); transform: translate(-50%, -50%); }
+  .slider.dim .tr .fill, .slider.dim .tr .kn { background: #4a4a4a; }
+
+  /* Segmented ---------------------------------------------------------- */
+  .seg { display: flex; margin: 0 18px 16px; border: 1px solid #3a3a3a; border-radius: 22px; overflow: hidden; height: 40px; }
+  .seg span { flex: 1 1 0; display: grid; place-items: center; font-size: 14px; color: var(--t1); border-left: 1px solid #3a3a3a; }
+  .seg span:first-child { border-left: 0; }
+  .seg span.on { background: var(--t1); color: #000; font-weight: 500; }
+
+  /* Glasses mirror ------------------------------------------------------ */
+  .mirror { aspect-ratio: 2 / 1; background: #000; border-radius: 20px; border: 1px solid #2a2a2a; position: relative; overflow: hidden; color: #e6e6e6; font-family: var(--font); }
+  .mirror .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 26px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font-size: 11px; color: #a8a8a8; font-variant-numeric: tabular-nums; }
+  .mirror .bar .bats { display: flex; gap: 12px; }
+  .mirror .bar .bats span { display: inline-flex; align-items: center; gap: 4px; }
+  .mirror .bar .bats i { display: inline-block; width: 13px; height: 7px; border: 1px solid #9a9a9a; border-radius: 1.5px; position: relative; }
+  .mirror .bar .bats i::after { content: ""; position: absolute; left: 1px; top: 1px; bottom: 1px; width: calc(var(--p) * 9px); background: #c9c9c9; }
+  .mirror .time { position: absolute; left: 16px; top: 22px; font-size: 44px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; color: #f0f0f0; }
+  .mirror .date { position: absolute; left: 17px; top: 72px; font-size: 12px; color: #b4b4b4; }
+  .mirror .notif { position: absolute; right: 14px; top: 20px; width: 150px; border-left: 1px solid #3a3a3a; padding-left: 10px; }
+  .mirror .notif .a { font-size: 10px; color: #8d8d8d; }
+  .mirror .notif .b { font-size: 12px; color: #e6e6e6; line-height: 15px; margin-top: 3px; }
+  .mirror .apps { position: absolute; left: 16px; right: 14px; bottom: 32px; display: flex; gap: 14px; font-size: 11px; color: #8d8d8d; }
+  .mirror .apps span.on { color: #f0f0f0; border-bottom: 1px solid #f0f0f0; padding-bottom: 1px; }
+</style>
+</head>
+<body>
+<h1>Faceclaw · app del teléfono · propuesta 2</h1>
+
+<div class="row">
+
+<!-- 1 · Inicio -------------------------------------------------------- -->
+<section class="phone">
+  <div class="sys"><span>14:21</span><span class="r">
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="#f2f2f2"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5.5" width="3" height="6.5" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13" y="0" width="3" height="12" rx=".5"/></svg>
+    <svg width="24" height="12" viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="2.5" fill="none" stroke="#f2f2f2"/><rect x="2" y="2" width="13" height="8" rx="1" fill="#f2f2f2"/><rect x="22" y="3.5" width="1.5" height="5" rx=".5" fill="#f2f2f2"/></svg>
+  </span></div>
+  <div class="appbar">
+    <h2 class="root">Faceclaw</h2>
+    <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="#f2f2f2"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></div>
+  </div>
+  <div class="body">
+    <div class="hero">
+      <img src="assets/g2-b-grey-three-quarter.png" alt="">
+      <div class="name">Even Realities G2</div>
+      <div class="state">Conectadas · 62 %</div>
+    </div>
+
+    <div class="mirror">
+      <div class="time">14:21</div>
+      <div class="date">sábado 11 de octubre</div>
+      <div class="notif"><div class="a">Calendario · 15:00</div><div class="b">Revisión del diseño con Dana</div></div>
+      <div class="apps"><span class="on">Dashboard</span><span>Translate</span><span>Notes</span><span>Terminal</span></div>
+      <div class="bar"><span></span><span class="bats"><span>Phone <i style="--p:.74"></i></span><span>G2 <i style="--p:.62"></i></span><span>R1 <i style="--p:.48"></i></span></span></div>
+    </div>
+
+    <div class="group" style="margin-top:12px">
+      <div class="item"><div class="tx"><div class="l">Pantalla</div></div><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="item"><div class="tx"><div class="l">Mandos</div></div><span class="v">Reloj · Anillo</span><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="item"><div class="tx"><div class="l">Voz y asistente</div></div><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="item"><div class="tx"><div class="l">Claves API</div></div><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="item"><div class="tx"><div class="l">Conversaciones</div></div><span class="v">38</span><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="item"><div class="tx"><div class="l">Dispositivo</div></div><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="item"><div class="tx"><div class="l">Acerca de</div></div><span class="v">0.8.2</span><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+    </div>
+  </div>
+  <div class="nav"><i></i></div>
+</section>
+
+<!-- 2 · Pantalla ------------------------------------------------------ -->
+<section class="phone">
+  <div class="sys"><span>14:21</span><span class="r">
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="#f2f2f2"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5.5" width="3" height="6.5" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13" y="0" width="3" height="12" rx=".5"/></svg>
+    <svg width="24" height="12" viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="2.5" fill="none" stroke="#f2f2f2"/><rect x="2" y="2" width="13" height="8" rx="1" fill="#f2f2f2"/><rect x="22" y="3.5" width="1.5" height="5" rx=".5" fill="#f2f2f2"/></svg>
+  </span></div>
+  <div class="appbar">
+    <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f2f2f2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></div>
+    <h2>Pantalla</h2>
+  </div>
+  <div class="body">
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Brillo automático</div></div><span class="sw on"></span></div>
+      <div class="slider dim"><div class="tr"><div class="fill" style="width:58%"></div><div class="kn" style="left:58%"></div></div></div>
+      <div class="item"><div class="tx"><div class="l">Tiempo de espera</div></div><span class="v">15 s</span></div>
+      <div class="item"><div class="tx"><div class="l">Pantalla de bloqueo</div></div><span class="sw on"></span></div>
+    </div>
+
+    <div class="h">Ventana</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Tamaño</div></div></div>
+      <div class="seg"><span class="on">Banda</span><span>Alta</span><span>Completa</span></div>
+      <div class="item"><div class="tx"><div class="l">Posición vertical</div></div><span class="v">Centro</span></div>
+      <div class="item"><div class="tx"><div class="l">Profundidad</div></div><span class="v">0</span></div>
+      <div class="item"><div class="tx"><div class="l">Tamaño del texto</div></div><span class="v">Normal</span></div>
+    </div>
+
+    <div class="h">Barra de estado</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Posición</div></div><span class="v">Abajo</span></div>
+      <div class="item"><div class="tx"><div class="l">Indicadores de batería</div></div><span class="v">Densos</span></div>
+      <div class="item"><div class="tx"><div class="l">Formato de hora</div></div><span class="v">24 h</span></div>
+    </div>
+  </div>
+  <div class="nav"><i></i></div>
+</section>
+
+<!-- 3 · Mandos -------------------------------------------------------- -->
+<section class="phone">
+  <div class="sys"><span>14:21</span><span class="r">
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="#f2f2f2"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5.5" width="3" height="6.5" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13" y="0" width="3" height="12" rx=".5"/></svg>
+    <svg width="24" height="12" viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="2.5" fill="none" stroke="#f2f2f2"/><rect x="2" y="2" width="13" height="8" rx="1" fill="#f2f2f2"/><rect x="22" y="3.5" width="1.5" height="5" rx=".5" fill="#f2f2f2"/></svg>
+  </span></div>
+  <div class="appbar">
+    <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f2f2f2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></div>
+    <h2>Mandos</h2>
+  </div>
+  <div class="body">
+    <div class="h">Reloj</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Pixel Watch</div><div class="s">Conectado · 81 %</div></div></div>
+      <div class="item"><div class="tx"><div class="l">Control remoto desde el reloj</div></div><span class="sw on"></span></div>
+      <div class="item"><div class="tx"><div class="l">Puede desbloquear las gafas</div></div><span class="sw on"></span></div>
+      <div class="item"><div class="tx"><div class="l">Corona a la derecha avanza</div></div><span class="sw"></span></div>
+      <div class="item"><div class="tx"><div class="l">Reflejar el asistente en el reloj</div></div><span class="sw on"></span></div>
+    </div>
+
+    <div class="h">Anillo</div>
+    <div class="group">
+      <div class="item"><img class="lead" src="assets/r1-ring-top-45.png" alt=""><div class="tx"><div class="l">Even R1</div><div class="s">Conectado · 48 %</div></div></div>
+      <div class="item"><div class="tx"><div class="l">Conexión</div></div><span class="v">Solo a través de las gafas</span></div>
+    </div>
+
+    <div class="h">Teléfono</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Espejo táctil</div></div><span class="sw on"></span></div>
+      <div class="item"><div class="tx"><div class="l">Panel táctil</div></div><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="item"><div class="tx"><div class="l">Rotación</div></div><span class="v">Automática</span></div>
+    </div>
+  </div>
+  <div class="nav"><i></i></div>
+</section>
+
+<!-- 4 · Voz y asistente ----------------------------------------------- -->
+<section class="phone">
+  <div class="sys"><span>14:21</span><span class="r">
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="#f2f2f2"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5.5" width="3" height="6.5" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13" y="0" width="3" height="12" rx=".5"/></svg>
+    <svg width="24" height="12" viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="2.5" fill="none" stroke="#f2f2f2"/><rect x="2" y="2" width="13" height="8" rx="1" fill="#f2f2f2"/><rect x="22" y="3.5" width="1.5" height="5" rx=".5" fill="#f2f2f2"/></svg>
+  </span></div>
+  <div class="appbar">
+    <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f2f2f2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></div>
+    <h2>Voz y asistente</h2>
+  </div>
+  <div class="body">
+    <div class="h">Voz</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Transcripción</div></div><span class="v">Soniox</span></div>
+      <div class="item"><div class="tx"><div class="l">«Hey Even»</div></div><span class="v">Entrada de voz</span></div>
+      <div class="item"><div class="tx"><div class="l">Guardar grabaciones de voz</div></div><span class="sw"></span></div>
+    </div>
+
+    <div class="h">Asistente</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Backend</div></div><span class="v">En el teléfono</span></div>
+      <div class="item"><div class="tx"><div class="l">Modelo</div></div><span class="v">OpenRouter</span></div>
+      <div class="item"><div class="tx"><div class="l">Enviar sin confirmar</div></div><span class="sw"></span></div>
+      <div class="item"><div class="tx"><div class="l">Acciones proactivas del agente</div></div><span class="sw on"></span></div>
+      <div class="item"><div class="tx"><div class="l">Puente del agente</div></div><span class="v mono">192.168.1.24:8790</span><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+    </div>
+
+    <div class="h">Bots</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Nombre del bot</div></div><span class="v">Glasses</span></div>
+      <div class="item"><div class="tx"><div class="l">Despertar cuando responde un bot</div></div><span class="sw on"></span></div>
+    </div>
+  </div>
+  <div class="nav"><i></i></div>
+</section>
+
+<!-- 5 · Claves API ---------------------------------------------------- -->
+<section class="phone">
+  <div class="sys"><span>14:21</span><span class="r">
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="#f2f2f2"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5.5" width="3" height="6.5" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13" y="0" width="3" height="12" rx=".5"/></svg>
+    <svg width="24" height="12" viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="2.5" fill="none" stroke="#f2f2f2"/><rect x="2" y="2" width="13" height="8" rx="1" fill="#f2f2f2"/><rect x="22" y="3.5" width="1.5" height="5" rx=".5" fill="#f2f2f2"/></svg>
+  </span></div>
+  <div class="appbar">
+    <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f2f2f2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></div>
+    <h2>Claves API</h2>
+    <span class="act">Probar todas</span>
+  </div>
+  <div class="body">
+    <div class="h">Paseo</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Enlace de emparejamiento</div></div><span class="v">Emparejado</span></div>
+    </div>
+
+    <div class="h">Grok Bot</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Cursor</div></div><span class="v">••••••••</span></div>
+    </div>
+
+    <div class="h">Escucha · Traducir, Conversar</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Soniox</div></div><span class="v">••••••••</span></div>
+    </div>
+
+    <div class="h">Datos · Conversar</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Jev (TypeSafe)</div></div><span class="v">Sin configurar</span></div>
+      <div class="item"><div class="tx"><div class="l">Cerebras</div></div><span class="v">••••••••</span></div>
+    </div>
+
+    <div class="h">Datos y chat</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">OpenRouter</div></div><span class="v">••••••••</span></div>
+    </div>
+
+    <div class="h">Avanzado</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Anthropic</div></div><span class="v">••••••••</span></div>
+      <div class="item"><div class="tx"><div class="l">OpenAI</div></div><span class="v">Sin configurar</span></div>
+    </div>
+  </div>
+  <div class="nav"><i></i></div>
+</section>
+
+<!-- 6 · Dispositivo --------------------------------------------------- -->
+<section class="phone">
+  <div class="sys"><span>14:21</span><span class="r">
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="#f2f2f2"><rect x="0" y="8" width="3" height="4" rx=".5"/><rect x="4.5" y="5.5" width="3" height="6.5" rx=".5"/><rect x="9" y="3" width="3" height="9" rx=".5"/><rect x="13" y="0" width="3" height="12" rx=".5"/></svg>
+    <svg width="24" height="12" viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="2.5" fill="none" stroke="#f2f2f2"/><rect x="2" y="2" width="13" height="8" rx="1" fill="#f2f2f2"/><rect x="22" y="3.5" width="1.5" height="5" rx=".5" fill="#f2f2f2"/></svg>
+  </span></div>
+  <div class="appbar">
+    <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f2f2f2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></div>
+    <h2>Dispositivo</h2>
+  </div>
+  <div class="body">
+    <div class="h">Emparejamiento</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Gafas</div><div class="s">G2 B · Gris</div></div><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+      <div class="item"><div class="tx"><div class="l">Anillo R1</div><div class="s">D8:71:4C:03:2A:55</div></div><span class="chev"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></div>
+    </div>
+
+    <div class="h">Firmware</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Firmware personalizado</div></div><span class="v">Instalado</span></div>
+      <div class="item"><div class="tx"><div class="l">Fuentes G2</div></div><span class="v">Preparadas</span></div>
+    </div>
+
+    <div class="h">Permisos</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Dispositivos cercanos</div></div><span class="v">Concedido</span></div>
+      <div class="item"><div class="tx"><div class="l">Micrófono</div></div><span class="v">Concedido</span></div>
+      <div class="item"><div class="tx"><div class="l">Notificaciones</div></div><span class="v">Concedido</span></div>
+      <div class="item"><div class="tx"><div class="l">Calendario</div></div><span class="v">Denegado</span></div>
+    </div>
+
+    <div class="h">Desarrollador</div>
+    <div class="group">
+      <div class="item"><div class="tx"><div class="l">Mostrar ancho de banda BLE</div></div><span class="sw"></span></div>
+      <div class="item"><div class="tx"><div class="l">Suspender EvenHub en reposo</div></div><span class="sw"></span></div>
+    </div>
+  </div>
+  <div class="nav"><i></i></div>
+</section>
+
+</div>
+</body>
+</html>
