@@ -10,6 +10,8 @@ import { createInProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
 import { onWorkerStateChanged, readWorkerState } from "../../ui/shell/worker-state";
 import { PASEO_GLANCE_STATE_KEY, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
+import { grokBotHub } from "../../assistant/grokbot/grokbot";
+import { botsGlance } from "../bots/bots-model";
 import type { AppContext } from "../app-definition";
 import { fetchTextWithUserAgent } from "../../util/http";
 import { HomeModel, HOME_WINDOW_ID, HOME_SURFACE_ID, HOME_SLEEP_GUARD_MS, calendarCardState } from "./home-model";
@@ -63,6 +65,7 @@ export function createHomeWindow(ctx: AppContext) {
         now,
         calendar: calendarCardState(permitted, permitted ? readUpcomingEvents() : [], now.getTime(), getCalendarReadState()),
         paseo: (readWorkerState(PASEO_GLANCE_STATE_KEY) as PaseoGlanceSnapshot | undefined) ?? null,
+        bots: botsGlance(grokBotHub, now.getTime()),
         translateReady: sonioxApiKeySetting.get().trim().length > 0,
         battery: { ring: levels.ring, glasses: levels.headset },
         weather: weather.reading(),
@@ -88,6 +91,7 @@ export function createHomeWindow(ctx: AppContext) {
       unsubscribers = [
         onCalendarChanged(requestRender),
         onWorkerStateChanged(PASEO_GLANCE_STATE_KEY, requestRender),
+        grokBotHub.onChanged(requestRender),
         onAnySettingChanged(requestRender),
         shell.onBatteryLevelsChanged(requestRender),
         weather.onChange(requestRender),

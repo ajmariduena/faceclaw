@@ -1,6 +1,6 @@
 /**
  * The lean CORE screens through the production painters and the extracted
- * stock font: the five home cards with their states, More, Converse, the
+ * stock font: the six home cards with their states, More, Converse, the
  * Settings status list and Timers. Writes out/lean-core-*.png for eyeballing
  * against the approved renders (lean-ux-fable.cjs) and checks the geometry
  * those fixed: the terminal frame, the 27 px pitch, English chrome, no
@@ -114,28 +114,34 @@ const PASEO = { configured: true, status: '', needs: 1, working: 1, updates: [
   { agentId: 'a2', title: 'PR #1221 jelou-cli', bucket: 'review', activityMs: NOW.getTime() - 240_000, line: 'Listo para fusionar a producción.' },
 ] };
 
-test('home: the five cards and their states, Paseo first with five dots', async () => {
+test('home: the six cards and their states, Paseo then Bots with six dots', async () => {
   const stock = await facePromise;
   await iconsReady;
   const scenes = [
     ['home-paseo', 0, { paseo: PASEO }],
     ['home-paseo-unreachable', 0, { paseo: { configured: true, status: 'Mac unreachable', updates: [], needs: 0, working: 0 } }],
     ['home-paseo-unpaired', 0, { paseo: null }],
-    ['home-calendar', 1, { calendar: calendarCardState(true, [daily, lunch, review], NOW.getTime()) }],
-    ['home-calendar-tomorrow', 1, { calendar: calendarCardState(true, [dentist], NOW.getTime()) }],
-    ['home-calendar-empty', 1, { calendar: calendarCardState(true, [], NOW.getTime()) }],
-    ['home-translate-ready', 2, { translateReady: true }],
-    ['home-translate-setup', 2, { translateReady: false }],
-    ['home-converse', 3, {}],
-    ['home-more', 4, {}],
+    ['home-bots', 1, { bots: { status: 'Ask Glasses anything', updates: [
+      { bot: 'Glasses', who: 'Glasses · now', line: 'Hay uno a $62 el jueves 07:10 en Avianca; el tuyo cuesta $89.' },
+      { bot: 'Research', who: 'Research · working 4 min', line: 'Comparando Google y Mapbox para Navigate.' },
+    ] } }],
+    ['home-bots-empty', 1, { bots: { status: 'Ask Glasses anything', updates: [] } }],
+    ['home-bots-setup', 1, { bots: { status: 'Setup required', updates: [] } }],
+    ['home-calendar', 2, { calendar: calendarCardState(true, [daily, lunch, review], NOW.getTime()) }],
+    ['home-calendar-tomorrow', 2, { calendar: calendarCardState(true, [dentist], NOW.getTime()) }],
+    ['home-calendar-empty', 2, { calendar: calendarCardState(true, [], NOW.getTime()) }],
+    ['home-translate-ready', 3, { translateReady: true }],
+    ['home-translate-setup', 3, { translateReady: false }],
+    ['home-converse', 4, {}],
+    ['home-more', 5, {}],
   ];
   for (const [name, selected, extra] of scenes) {
     const { face, texts } = tracing(stock);
     const data = { now: NOW, calendar: calendarCardState(true, [daily], NOW.getTime()), paseo: null, battery: { ring: 60, glasses: 82 },
       weather: { temperatureC: 27.4, code: 2, isDay: true, atMs: NOW.getTime() }, ...extra };
     const image = paintHome(selected, data, face);
-    for (let i = 0; i < 5; i++) assert.equal(image.getPixel(218, 120 + i * 11), i === selected ? 255 : 85, `${name} dot ${i}`);
-    assert.equal(image.getPixel(218, 120 + 5 * 11), 0, `${name}: no sixth dot`);
+    for (let i = 0; i < 6; i++) assert.equal(image.getPixel(218, 115 + i * 11), i === selected ? 255 : 85, `${name} dot ${i}`);
+    assert.equal(image.getPixel(218, 115 + 6 * 11), 0, `${name}: no seventh dot`);
     assert.equal(image.getPixel(250, 14), 255, `${name}: card border`);
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(image.getPixel(x, y), 0);
     assert.ok(texts().includes('Sat 10'), name);

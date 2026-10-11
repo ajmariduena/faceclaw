@@ -32,6 +32,7 @@ function harness(stockAvailable = false) {
     '../../ui/shell/shell': { shell: { isScreenOn: () => true, sleep: () => sleeps++, foregroundWindow: () => ({ windowId: foreground }),
       getBatteryLevels: () => battery, onBatteryLevelsChanged: subscribe } },
     '../../ui/shell/worker-state': { readWorkerState: () => paseoState, onWorkerStateChanged: subscribe },
+    '../../assistant/grokbot/grokbot': { grokBotHub: { configured: false, error: '', defaultBot: 'Glasses', list: () => [], onChanged: subscribe } },
     './home-painter': { paintHome: (index, data, font) => { painted = { index, data, font }; return painted; } },
   });
   const { createHomeWindow } = load('app/apps/home/home-app.ts');
@@ -56,6 +57,7 @@ test('home adapter uses real snapshots, English chrome, and avoids unauthorized 
   assert.equal(painted.data.translateReady, false);
   assert.deepEqual({ ...painted.data.battery }, { ring: null, glasses: null });
   assert.equal(painted.data.weather, null);
+  assert.equal(painted.data.bots.status, 'Setup required');
   assert.equal(h.options.title, 'Home');
   h.allowCalendar();
   h.setSonioxKey(' sk-soniox ');
@@ -66,8 +68,11 @@ test('home adapter uses real snapshots, English chrome, and avoids unauthorized 
   assert.equal(harness(true).paint().font.lineHeight, 27);
 });
 
-test('home window scroll/swipe/tap and direct card touch launch the five apps; return and wake differ', async () => {
+test('home window scroll/swipe/tap and direct card touch launch the six apps; return and wake differ', async () => {
   const h = harness();
+  await h.input('click');
+  h.home.onShow(false);
+  await h.input('scroll-down');
   await h.input('click');
   h.home.onShow(false);
   await h.input('scroll-down');
@@ -80,27 +85,28 @@ test('home window scroll/swipe/tap and direct card touch launch the five apps; r
   h.home.onShow(false);
   await h.input('scroll-down');
   await h.options.baseLayer.hitTest(300, 100);
-  assert.deepEqual(h.launched, ['paseo', 'calendar', 'translate', 'converse', 'launcher']);
+  assert.deepEqual(h.launched, ['paseo', 'bots', 'calendar', 'translate', 'converse', 'launcher']);
   h.home.onShow(false);
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   h.home.onShow(true);
   assert.equal(h.paint().index, 0);
   await h.input('swipe-up');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.input('scroll-up');
-  assert.equal(h.paint().index, 3);
+  assert.equal(h.paint().index, 4);
   await h.options.baseLayer.hitTest(10, 10);
-  assert.equal(h.launched.length, 5);
+  assert.equal(h.launched.length, 6);
 });
 
 test('a card whose app is missing from the build leaves the home in place without crashing', async () => {
   const h = harness();
   await h.input('scroll-down');
   await h.input('scroll-down');
+  await h.input('scroll-down');
   await h.input('click');
   assert.deepEqual(h.launched, ['translate']);
   await h.input('scroll-down');
-  assert.equal(h.paint().index, 3);
+  assert.equal(h.paint().index, 4);
 });
 
 test('double tap on home turns the screen off, except within 700 ms of arriving home', async () => {
@@ -126,7 +132,7 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
   const h = harness();
   assert.equal(h.counts().subscriptions, 0);
   h.options.onForegroundChanged(true);
-  assert.equal(h.counts().subscriptions, 4);
+  assert.equal(h.counts().subscriptions, 5);
   assert.equal(h.timers.size, 1);
   h.options.onForegroundChanged(true);
   assert.equal(h.timers.size, 1);
@@ -134,7 +140,7 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
   assert.equal(h.counts().subscriptions, 0);
   assert.equal(h.timers.size, 0);
   h.options.setScreenOn(true);
-  assert.equal(h.counts().subscriptions, 4);
+  assert.equal(h.counts().subscriptions, 5);
   h.options.onForegroundChanged(false);
   assert.equal(h.counts().subscriptions, 0);
   h.options.onForegroundChanged(true);
@@ -145,20 +151,20 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
 
 test('Watch horizontal swipes paginate circularly without changing Ring or vertical mappings', async () => {
   const h = harness();
-  for (let index = 1; index <= 5; index++) {
+  for (let index = 1; index <= 6; index++) {
     await h.input('swipe-left');
-    assert.equal(h.paint().index, index % 5);
+    assert.equal(h.paint().index, index % 6);
   }
   await h.input('swipe-right');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.input('scroll-down');
   assert.equal(h.paint().index, 0);
   await h.input('scroll-up');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.input('swipe-down');
   assert.equal(h.paint().index, 0);
   await h.input('swipe-up');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.input('swipe-left');
   await h.input('click');
   assert.equal(h.launched.at(-1), 'paseo');
@@ -215,5 +221,5 @@ test('the Paseo card paints what the worker last published and repaints on its u
   h.setPaseo({ configured: true, status: '', updates: [{ agentId: 'a', title: 'Fix', bucket: 'done', activityMs: 1, line: 'Listo.' }], needs: 0, working: 0 });
   assert.equal(h.paint().data.paseo.updates[0].line, 'Listo.');
   h.options.onForegroundChanged(true);
-  assert.equal(h.counts().subscriptions, 4);
+  assert.equal(h.counts().subscriptions, 5);
 });

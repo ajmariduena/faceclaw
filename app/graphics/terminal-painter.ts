@@ -160,8 +160,10 @@ export type PermissionView = {
 
 export type ChatView = {
   lines: readonly ChatLine[];
-  /** Whole messages scrolled back from the newest. */
+  /** Whole messages scrolled back from the newest; rows when `full`. */
   scrollBack: number;
+  /** Every message in full, line breaks kept, scrolled by row. */
+  full?: boolean;
   footer: { left: string; right: string } | null;
   permission: PermissionView | null;
   /** Dim message when there are no lines yet. */
@@ -175,20 +177,57 @@ const MAX_LINES_PER_MESSAGE = 2;
 
 type ChatBlock = { role: ChatLine["role"]; lines: string[]; value: number; height: number };
 
+function chatLineValue(lines: readonly ChatLine[], index: number): number {
+  const line = lines[index]!;
+  const latest = index === lines.length - 1;
+  return line.action ? DIM : line.role === "user" ? (line.live || latest ? 255 : OLDER_YOU) : latest ? 255 : OLDER_REPLY;
+}
+
 function chatBlocks(face: Face, lines: readonly ChatLine[]): ChatBlock[] {
   return lines.map((line, index) => {
-    const latest = index === lines.length - 1;
-    const you = line.role === "user";
-    const wrapped = wrapCapped(face, line.text, RIGHT - LEFT - (you ? USER_INSET : 0), MAX_LINES_PER_MESSAGE);
-    const value = line.action ? DIM : you ? (line.live || latest ? 255 : OLDER_YOU) : latest ? 255 : OLDER_REPLY;
-    return { role: line.role, lines: wrapped, value, height: wrapped.length * PITCH };
+    const wrapped = wrapCapped(face, line.text, RIGHT - LEFT - (line.role === "user" ? USER_INSET : 0), MAX_LINES_PER_MESSAGE);
+    return { role: line.role, lines: wrapped, value: chatLineValue(lines, index), height: wrapped.length * PITCH };
   });
 }
 
-/** How far back the ring can scroll for this view (whole messages). */
+type ChatRow = { text: string; you: boolean; value: number; gap: number; rule: boolean };
+
+function chatRows(face: Face, lines: readonly ChatLine[]): ChatRow[] {
+  return lines.flatMap((line, index) => {
+    const you = line.role === "user";
+    const width = RIGHT - LEFT - (you ? USER_INSET : 0);
+    const wrapped = line.text.split("\n").flatMap(paragraph => wrapLines(face, paragraph, width));
+    const value = chatLineValue(lines, index);
+    return wrapped.map((text, row) => ({ text, you, value, gap: row === 0 && index > 0 ? CHAT_GAP : 0,
+      rule: row === 0 && index > 0 && index === lines.length - 1 }));
+  });
+}
+
+export function chatRowCount(face: Face, lines: readonly ChatLine[]): number {
+  return chatRows(face, lines).length;
+}
+
+/** Rows [first, end) ending `scrollBack` rows above the newest, and how far back the ring can go. */
+function windowChatRows(rows: readonly ChatRow[], height: number, scrollBack: number): { first: number; end: number; used: number; maxScrollBack: number } {
+  let fit = 0;
+  for (let used = 0; fit < rows.length; fit++) {
+    used += PITCH + (fit ? rows[fit]!.gap : 0);
+    if (used > height) break;
+  }
+  const maxScrollBack = Math.max(0, rows.length - fit);
+  const end = rows.length - Math.min(Math.max(0, scrollBack), maxScrollBack);
+  let first = end - 1;
+  let used = PITCH;
+  while (first > 0 && used + PITCH + rows[first]!.gap <= height) used += PITCH + rows[first--]!.gap;
+  return { first, end, used, maxScrollBack };
+}
+
+/** How far back the ring can scroll for this view (whole messages, or rows when `full`). */
 export function chatMaxScrollBack(face: Face, view: ChatView): number {
+  const height = chatContentBottom(face, view) - CONTENT_TOP;
+  if (view.full) return windowChatRows(chatRows(face, view.lines), height, view.scrollBack).maxScrollBack;
   const blocks = chatBlocks(face, view.lines);
-  return windowBlocks(blocks, chatContentBottom(face, view) - CONTENT_TOP, CHAT_GAP, view.scrollBack).maxScrollBack;
+  return windowBlocks(blocks, height, CHAT_GAP, view.scrollBack).maxScrollBack;
 }
 
 /** The approved permission render has no footer: the box sits at the band's bottom. */
@@ -207,7 +246,20 @@ function chatContentBottom(face: Face, view: ChatView): number {
 export function paintChat(image: GrayImage, face: Face, view: ChatView): void {
   paintFrame(image);
   const bottom = chatContentBottom(face, view);
-  if (view.lines.length) {
+  if (view.lines.length && view.full) {
+    const rows = chatRows(face, view.lines);
+    const { first, end, used } = windowChatRows(rows, bottom - CONTENT_TOP, view.scrollBack);
+    let y = bottom - used;
+    for (let index = first; index < end; index++) {
+      const row = rows[index]!;
+      if (index > first) {
+        y += row.gap;
+        if (row.rule) image.fillRect(14, y - Math.round(row.gap / 2) - 1, 548, 1, RULE_VALUE);
+      }
+      face.drawText(image, row.you ? RIGHT - face.measureLine(row.text) : LEFT, y, row.text, row.value);
+      y += PITCH;
+    }
+  } else if (view.lines.length) {
     const blocks = chatBlocks(face, view.lines);
     const { first, end } = windowBlocks(blocks, bottom - CONTENT_TOP, CHAT_GAP, view.scrollBack);
     const shown = blocks.slice(first, end);
