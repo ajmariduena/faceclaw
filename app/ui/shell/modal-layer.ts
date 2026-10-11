@@ -40,8 +40,7 @@ export function modalRect(): { x: number; y: number; width: number; height: numb
 export class ShellModalLayer implements Layer {
   private readonly stack: LayerStack;
 
-  /** `alone` paints the box on black instead of over the screen below. */
-  constructor(baseLayer: Layer, actions: LayerActions, private readonly removed?: () => void, private readonly alone = false) {
+  constructor(baseLayer: Layer, actions: LayerActions, private readonly removed?: () => void) {
     this.stack = new LayerStack(baseLayer, actions, modalInterior());
   }
 
@@ -49,8 +48,8 @@ export class ShellModalLayer implements Layer {
     this.removed?.();
   }
 
-  paint(ctx: LayerContext, paintBelow: PaintBelow): GrayImage {
-    const image = this.alone ? new GrayImage(ctx.stack.getBaseSize().width, ctx.stack.getBaseSize().height, SHELL_OPAQUE_BLACK) : paintBelow();
+  paint(_ctx: LayerContext, paintBelow: PaintBelow): GrayImage {
+    const image = paintBelow();
     // Track a display-mode switch while the modal is up, so the inner stack
     // paints at the same size the box below is drawn with.
     const interior = modalInterior();

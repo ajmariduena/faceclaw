@@ -35,7 +35,7 @@ export class WindowAlertLayer implements Layer {
 
   paint(ctx: LayerContext): GrayImage {
     const base = ctx.stack.getBaseSize();
-    const image = new GrayImage(base.width, base.height, SHELL_OPAQUE_BLACK);
+    const image = new GrayImage(base.width, base.height, 0);
     const face = terminalFace();
     const area = appViewportRect("min");
     const pitch = Math.max(27, face.lineHeight + 4);

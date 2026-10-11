@@ -427,7 +427,7 @@ class Shell {
   private activeVoiceLayer: VoiceInputLayer | null = null;
   private activeKeyboardLayer: KeyboardInputLayer | null = null;
   private readonly notificationModals = new NotificationModalQueue<ShellModalLayer>({
-    open: (notificationKey, wokeScreen) => this.pushNotificationModal(notificationKey, wokeScreen),
+    open: (notificationKey) => this.pushNotificationModal(notificationKey),
     isAvailable: (notificationKey) => {
       const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
       return !!notification && shouldShowNotificationOnGlasses(notification.packageName);
@@ -841,7 +841,7 @@ class Shell {
     this.config.requestShellRender();
   }
 
-  private pushNotificationModal(notificationKey: string, wokeScreen: boolean): ShellModalLayer {
+  private pushNotificationModal(notificationKey: string): ShellModalLayer {
     const modal: ShellModalLayer = new ShellModalLayer(
       new SingleNotificationLayer(notificationKey, {
         origin: "new-notification-modal",
@@ -849,7 +849,6 @@ class Shell {
       }),
       this.config.actions,
       () => this.notificationModals.removed(modal, this.screenOn),
-      wokeScreen,
     );
     this.stack.push(modal);
     return modal;
@@ -1741,6 +1740,7 @@ class Shell {
    * A window's alert in Even's notification box, only while the screen is
    * off: it wakes the screen to show it, and dismissing it sleeps again. A
    * newer alert replaces the open one; with the screen on otherwise, nothing.
+   * The window under it stays hidden so the alert shows alone.
    */
   showWindowAlert(alert: WindowAlert, open: (key: string) => void): void {
     if (this.windowAlert) {
@@ -1750,7 +1750,11 @@ class Shell {
       return;
     }
     if (this.screenOn) return;
+    this.foregroundWindow()?.setForeground?.(false);
     this.wake("window");
+    // The shell surface can't be opaque full-screen (64 KiB cap), so the window is hidden instead.
+    const hidden = this.foregroundWindow();
+    hidden?.setForeground?.(false);
     const entry: { layer: WindowAlertLayer; open: (key: string) => void } = {
       open,
       layer: new WindowAlertLayer(alert, {
@@ -1760,11 +1764,13 @@ class Shell {
           this.config.requestShellRender();
         },
         dismiss: () => {
-          this.stack.remove(entry.layer);
           this.sleep();
           this.config.requestShellRender();
         },
-        removed: () => { if (this.windowAlert === entry) this.windowAlert = null; },
+        removed: () => {
+          if (this.windowAlert === entry) this.windowAlert = null;
+          if (hidden && this.foregroundWindow() === hidden) hidden.setForeground?.(true);
+        },
       }),
     };
     this.windowAlert = entry;
