@@ -4,10 +4,11 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
 const path = require('node:path');
+const { loader } = require('./helpers/load-typescript.cjs');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture({ key = 'test-key' } = {}) {
-  const messages = [], timeouts = new Set(), holds = [], errors = [], searches = [], trips = [], calls = [];
+  const messages = [], timeouts = new Set(), intervals = new Set(), holds = [], errors = [], searches = [], trips = [], calls = [];
   let callbacks, compass, onNavEvent = null;
   const tracker = { running: false, isRunning() { return this.running; }, start() { this.running = true; }, stop() { this.running = false; } };
   const sensor = { LocationTracker: function (value) { callbacks = value; return tracker; }, COMPASS_CHANGED: 15,
@@ -32,6 +33,7 @@ function fixture({ key = 'test-key' } = {}) {
       navigateVerticalPositionSetting: setting('middle'),
     },
     './navigation-sensors': sensor,
+    './heading-model': loader({ Math, Number, Object })('app/apps/navigate/heading-model.ts'),
     './destinations': { findSavedDestinationByName: name => name === 'Casa' ? { id: 'home', name: 'Casa', address: 'Av. 1 y Calle 2', builtin: true } : null,
       rememberRecentDestination: entry => calls.push(['remember', entry]),
       loadSavedDestinations: () => [{ id: 'home', name: 'Casa', address: 'Av. 1 y Calle 2', builtin: true }], loadRecentDestinations: () => [] },
@@ -60,17 +62,18 @@ function fixture({ key = 'test-key' } = {}) {
   };
   const global = { postMessage: message => messages.push(message) };
   const source = fs.readFileSync(path.join(__dirname, '../app/apps/navigate/navigate-app.worker.ts'), 'utf8') +
-    '\nexports.probe = { handleNavigateTool, describeRouteStatus, state: () => ({ phase, statusMessage, headHeadingDeg, suggestions, query, target, rerouting }) };';
+    '\nexports.probe = { handleNavigateTool, describeRouteStatus, headingNow: () => heading.output(Date.now()), state: () => ({ phase, statusMessage, suggestions, query, target, rerouting }) };';
   const exports = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
     exports, global, Uint8Array, Date, Math, JSON, Promise, Error, Number, String,
     setTimeout: fn => { timeouts.add(fn); return fn; }, clearTimeout: fn => timeouts.delete(fn),
+    setInterval: fn => { intervals.add(fn); return fn; }, clearInterval: fn => intervals.delete(fn),
     console: { log() {}, warn() {}, error: error => errors.push(error) }, require: id => modules[id] ?? {},
   });
   const send = data => global.onmessage({ data });
   send({ type: 'open-window', windowId: 'navigate:main', surfaceId: 'window:navigate:main', title: 'Navigate', viewport: { width: 576, height: 288 } });
   send({ type: 'foreground', windowId: 'navigate:main', foreground: true, focused: true });
-  return { ...exports.probe, send, messages, holds, errors, tracker, searches, trips, calls,
+  return { ...exports.probe, send, messages, intervals, holds, errors, tracker, searches, trips, calls,
     nav: event => onNavEvent?.(event),
     input: type => send({ type: 'input', windowId: 'navigate:main', focused: true, frameId: 1, event: { type } }),
     runTimers: () => { const pending = [...timeouts]; timeouts.clear(); for (const callback of pending) callback(); },
@@ -93,9 +96,10 @@ test('start_route searches Google, guides with calibrated true heading and retur
 
   h.nav({ type: 'route', points: [[-2.1, -79.9], [-2.2, -79.8]] });
   assert.equal(h.calls.find(c => c[0] === 'remember')[1].placeId, 'place:Mall del Sol');
-  h.nav({ type: 'location', lat: -2.1, lng: -79.9, bearing: -1, speed: 0.5 });
+  h.nav({ type: 'location', lat: -2.1, lng: -79.9, bearing: -1, speed: 0.5, accuracy: 5, bearingAccuracy: -1 });
   h.heading(90);
-  assert.equal(h.state().headHeadingDeg, 107);
+  assert.deepEqual({ ...h.headingNow() }, { bearingDeg: 107, source: 'head', showChevron: true, compassPoor: false });
+  assert.equal(h.intervals.size, 1);
   h.nav({ type: 'nav', state: 'ENROUTE', stepMeters: 120, stepSeconds: 90, destMeters: 2400, destSeconds: 1800,
     step: { maneuver: 'TURN_RIGHT', road: 'Av. Joaquín Orrantia', simpleRoad: 'Orrantia', instruction: 'Gira a la derecha', roundabout: -1 } });
   assert.match(h.describeRouteStatus(), /Gira a la derecha in 120 m.*2\.4 km and 30 min left/);
@@ -103,6 +107,7 @@ test('start_route searches Google, guides with calibrated true heading and retur
   h.nav({ type: 'arrived', final: true });
   assert.equal(h.state().phase, 'arrived');
   assert.equal(h.holds.at(-1), false);
+  assert.equal(h.intervals.size, 0);
   assert.ok(h.calls.some(c => c[0] === 'stop'));
   h.runTimers();
   assert.equal(h.state().phase, 'idle');
@@ -118,6 +123,8 @@ test('saved destinations route through their address and are not added to recent
   h.nav({ type: 'ready' });
   assert.equal(h.trips[0].mode, 'driving');
   h.nav({ type: 'status', status: 'OK' });
+  assert.equal(h.holds.includes(true), false, 'no compass while driving');
+  assert.equal(h.intervals.size, 1);
   assert.match((await call).content, /Navigating to Casa/);
   h.nav({ type: 'route', points: [[-2.1, -79.9], [-2.2, -79.8]] });
   assert.equal(h.calls.some(c => c[0] === 'remember'), false);

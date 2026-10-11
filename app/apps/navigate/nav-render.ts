@@ -59,10 +59,14 @@ export type StreetMap = {
   route: { behind: Array<[number, number]>; ahead: Array<[number, number]> } | null;
   destination: [number, number] | null;
   faint: boolean;
+  /** Chevron when the map points where the wearer faces or moves; a dot when that is unknown. */
+  showChevron: boolean;
+  northUp: boolean;
 };
 
-export function paintGuidance(image: GrayImage, fonts: GuidanceFonts, view: GuidanceView, map: StreetMap | null): void {
+export function paintGuidance(image: GrayImage, fonts: GuidanceFonts, view: GuidanceView, map: StreetMap | null, hint: string | null = null): void {
   if (map) paintStreetMap(image, map, fonts.tiny);
+  if (hint) wrapWords(fonts.face, hint, TEXT_WIDTH, 3).forEach((line, i) => fonts.face.drawText(image, CLUSTER_X, 14 + i * 27, line, DIM));
   switch (view.kind) {
     case "guiding": {
       const glyphValue = view.near ? BRIGHT : DIM;
@@ -98,12 +102,21 @@ export function paintGuidance(image: GrayImage, fonts: GuidanceFonts, view: Guid
 
 /** A long street name takes a second line rather than losing its end. */
 function splitRoad(face: Face, road: string): string[] {
-  if (face.measureLine(road) <= TEXT_WIDTH) return [road];
-  const words = road.split(" ");
-  let first = words[0] ?? "";
-  let i = 1;
-  while (i < words.length && face.measureLine(`${first} ${words[i]}`) <= TEXT_WIDTH) first += ` ${words[i++]}`;
-  return i < words.length ? [first, words.slice(i).join(" ")] : [first];
+  return wrapWords(face, road, TEXT_WIDTH, 2);
+}
+
+/** Greedy word wrap; the last allowed line takes whatever is left (textLines fits it). */
+function wrapWords(face: Face, text: string, width: number, maxLines: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let i = 0;
+  while (i < words.length && lines.length < maxLines - 1) {
+    let line = words[i++]!;
+    while (i < words.length && face.measureLine(`${line} ${words[i]}`) <= width) line += ` ${words[i++]}`;
+    lines.push(line);
+  }
+  if (i < words.length) lines.push(fitLine(face, words.slice(i).join(" "), width));
+  return lines;
 }
 
 function textLines(image: GrayImage, face: Face, top: number, lines: Array<[string, number]>): void {
@@ -180,7 +193,9 @@ function paintStreetMap(image: GrayImage, map: StreetMap, tiny: NumberFont): voi
     const [dx, dy] = toScreen(map.destination);
     if (Math.hypot((dx - fx) / rx, (dy - fy) / ry) < 0.9) blit(image, glyph("ring:22", () => ringShapes(), 22, BRIGHT), Math.round(dx - 11), Math.round(dy - 11));
   }
-  drawChevron(image, fx, fy, 22, map.faint ? MID : BRIGHT);
+  if (map.showChevron) drawChevron(image, fx, fy, 22, map.faint ? MID : BRIGHT);
+  else drawDot(image, fx, fy, 14, map.faint ? MID : BRIGHT);
+  if (map.northUp) tiny.drawText(image, Math.round(fx - tiny.measureText("N") / 2), fy - ry + 6, "N", MID);
   const mark = "Google Maps";
   tiny.drawText(image, Math.round(image.width - 8 - tiny.measureText(mark)), image.height - 16, mark, FAINT);
 }
@@ -214,6 +229,16 @@ function drawChevron(image: GrayImage, cx: number, cy: number, size: number, val
     if (halo.pixels[py * size + px]! > 127) image.setPixel(x + px, y + py, 0);
   }
   blit(image, glyph(`chevron:${size}:${value}`, () => [chevronShape(1, value)], size, value), x, y);
+}
+
+function drawDot(image: GrayImage, cx: number, cy: number, size: number, value: number): void {
+  const circle = (r: number, v: number): Shape => ({ value: v, inside: (u, w) => Math.hypot(u - 0.5, w - 0.5) <= r });
+  const x = Math.round(cx - size / 2), y = Math.round(cy - size / 2);
+  const halo = glyph(`dot-halo:${size}`, () => [circle(0.5, BRIGHT)], size, BRIGHT);
+  for (let py = 0; py < size; py++) for (let px = 0; px < size; px++) {
+    if (halo.pixels[py * size + px]! > 127) image.setPixel(x + px, y + py, 0);
+  }
+  blit(image, glyph(`dot:${size}:${value}`, () => [circle(0.32, value)], size, value), x, y);
 }
 
 // ---------------------------------------------------------------------------

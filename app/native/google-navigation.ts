@@ -32,7 +32,8 @@ export type NavEvent =
       step?: NavStep;
       next?: NavStep;
     }
-  | { type: "location"; lat: number; lng: number; bearing: number; speed: number }
+  /** bearing, speed, accuracy (m) and bearingAccuracy (deg) are -1 when the fix lacks them. */
+  | { type: "location"; lat: number; lng: number; bearing: number; speed: number; accuracy: number; bearingAccuracy: number }
   | { type: "arrived"; final: boolean }
   | { type: "rerouting" };
 

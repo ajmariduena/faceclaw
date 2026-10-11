@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.location.Location
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 
@@ -44,7 +45,9 @@ object FaceclawGoogleNav {
                 .put("lat", location.latitude)
                 .put("lng", location.longitude)
                 .put("bearing", if (location.hasBearing()) location.bearing.toDouble() else -1.0)
-                .put("speed", if (location.hasSpeed()) location.speed.toDouble() else -1.0))
+                .put("speed", if (location.hasSpeed()) location.speed.toDouble() else -1.0)
+                .put("accuracy", if (location.hasAccuracy()) location.accuracy.toDouble() else -1.0)
+                .put("bearingAccuracy", if (Build.VERSION.SDK_INT >= 26 && location.hasBearingAccuracy()) location.bearingAccuracyDegrees.toDouble() else -1.0))
         }
 
         override fun onRawLocationUpdate(location: Location) {}

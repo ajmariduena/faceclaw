@@ -53,6 +53,7 @@ import type { ToolResult, ToolSpec } from "../../assistant/tool-registry";
 import type { InputEvent } from "../../ui/gestures";
 import {
   addCompassListener,
+  COMPASS_CALIBRATION_STARTED,
   COMPASS_CHANGED,
   handleNavigationSensorEvent,
   LocationTracker,
@@ -72,14 +73,16 @@ import {
 } from "../../native/google-maps";
 import { GoogleNavigation, type NavEvent, type NavStep, type TravelMode } from "../../native/google-navigation";
 import { calibrateHeading, normalizeHeading } from "../compass/calibration";
+import { angleDelta, compassQuality, HeadingModel, type HeadingOutput } from "./heading-model";
 import { paintGuidance, formatDistance, type GuidanceFonts, type GuidanceView, type StreetMap } from "./nav-render";
 
 declare const global: any;
 
-/** Above this speed a GPS bearing is trustworthy for heading-up. */
-const BEARING_MIN_SPEED_MPS = 2.5;
-/** The map only re-rotates to the wearer's head once it has turned this far. */
-const HEADING_STEP_DEG = 4;
+const HEADING_TICK_MS = 250;
+/** The map only repaints for a rotation once it has turned this far. */
+const RENDER_STEP_DEG = 2;
+const COMPASS_HINT_MS = 8_000;
+const COMPASS_HINT = "Brújula imprecisa. Al detenerte, mueve suavemente la cabeza en varias direcciones.";
 const COMPASS_OWNER = "navigate";
 const SEARCH_DEBOUNCE_MS = 350;
 const ARRIVED_HOLD_MS = 8_000;
@@ -185,8 +188,13 @@ let routeIndex = 0;
 let rerouting = false;
 let arrivedSide: "left" | "right" | null = null;
 let arrivedTimer: ReturnType<typeof setTimeout> | null = null;
-let position: { latitude: number; longitude: number; bearing: number; speed: number } | null = null;
-let lastBearingDeg = 0;
+let position: { latitude: number; longitude: number } | null = null;
+const heading = new HeadingModel();
+/** What the last painted frame used, to repaint only when the map would visibly change. */
+let paintedHeading: HeadingOutput | null = null;
+let headingTimer: ReturnType<typeof setInterval> | null = null;
+let compassHintUntilMs = 0;
+let compassHintShown = false;
 
 let lastFix: TrackedLocation | null = null;
 const tracker = new LocationTracker({
@@ -203,7 +211,6 @@ const tiles = new RoadTiles(() => {
 
 let compassActive = false;
 let unsubscribeCompass: (() => void) | null = null;
-let headHeadingDeg: number | null = null;
 
 function post(message: WorkerAppReply): void {
   global.postMessage(message);
@@ -421,6 +428,8 @@ function startTrip(next: Target, remember = true, mode = navigateTravelModeSetti
   routeIndex = 0;
   rerouting = false;
   arrivedSide = null;
+  position = null;
+  resetHeading();
   reconcileTracking();
   if (!googleStarted) {
     googleStarted = true;
@@ -445,6 +454,7 @@ function stopTrip(message: string): void {
   rerouting = false;
   phase = "idle";
   statusMessage = message;
+  resetHeading();
   reconcileTracking();
   reconcileCompass();
 }
@@ -511,8 +521,13 @@ function handleNavEvent(event: NavEvent): void {
       render();
       return;
     case "location":
-      position = { latitude: event.lat, longitude: event.lng, bearing: event.bearing, speed: event.speed };
-      if (event.speed >= BEARING_MIN_SPEED_MPS && event.bearing >= 0) lastBearingDeg = event.bearing;
+      position = { latitude: event.lat, longitude: event.lng };
+      heading.courseFix({
+        bearing: event.bearing,
+        speed: event.speed,
+        accuracyM: event.accuracy >= 0 ? event.accuracy : null,
+        bearingAccuracyDeg: event.bearingAccuracy >= 0 ? event.bearingAccuracy : null,
+      }, Date.now());
       advanceRouteIndex();
       if (phase === "guiding" || phase === "arrived") render();
       return;
@@ -632,10 +647,6 @@ function advanceRouteIndex(): void {
   routeIndex = best;
 }
 
-function mapBearing(): number {
-  if (position && position.speed >= BEARING_MIN_SPEED_MPS && position.bearing >= 0) return position.bearing;
-  return headHeadingDeg ?? lastBearingDeg;
-}
 
 function streetMap(): StreetMap | null {
   const here = position ?? (lastFix ? { latitude: lastFix.latitude, longitude: lastFix.longitude } : null);
@@ -646,10 +657,14 @@ function streetMap(): StreetMap | null {
   const route = world.length >= 2 && !rerouting
     ? { behind: world.slice(Math.max(0, routeIndex - 60), routeIndex + 1).reverse(), ahead: world.slice(routeIndex + 1, routeIndex + 400) }
     : null;
+  const facing = heading.output(Date.now());
+  paintedHeading = facing;
   return {
     zoom,
     center,
-    bearingDeg: mapBearing(),
+    bearingDeg: facing.bearingDeg,
+    showChevron: facing.showChevron,
+    northUp: facing.source === "north",
     tile: (x, y) => tiles.tile(zoom, x, y),
     route,
     destination: world.length >= 2 ? world[world.length - 1]! : null,
@@ -675,36 +690,72 @@ function guidanceView(): GuidanceView {
 }
 
 // ---------------------------------------------------------------------------
-// Head heading (glasses compass), for heading-up while standing or walking slowly
+// Heading: glasses compass on foot, GPS course in a vehicle (heading-model.ts)
+
+function resetHeading(): void {
+  heading.reset(tripMode === "walking" ? "walking" : "vehicle");
+  paintedHeading = null;
+  compassHintUntilMs = 0;
+  compassHintShown = false;
+}
 
 function reconcileCompass(): void {
-  const wanted = window !== null && window.foreground && screenOn && phase === "guiding";
-  if (wanted === compassActive) return;
-  compassActive = wanted;
-  if (wanted) {
-    unsubscribeCompass = addCompassListener(handleCompassEvent);
-    setCompassEnabled(true, COMPASS_OWNER);
-  } else {
-    setCompassEnabled(false, COMPASS_OWNER);
-    unsubscribeCompass?.();
-    unsubscribeCompass = null;
-    headHeadingDeg = null;
+  const visible = window !== null && window.foreground && screenOn && phase === "guiding";
+  const wanted = visible && tripMode === "walking";
+  if (wanted !== compassActive) {
+    compassActive = wanted;
+    if (wanted) {
+      unsubscribeCompass = addCompassListener(handleCompassEvent);
+      setCompassEnabled(true, COMPASS_OWNER);
+    } else {
+      setCompassEnabled(false, COMPASS_OWNER);
+      unsubscribeCompass?.();
+      unsubscribeCompass = null;
+      heading.headLost(Date.now());
+    }
+  }
+  if (visible && !headingTimer) headingTimer = setInterval(headingTick, HEADING_TICK_MS);
+  else if (!visible && headingTimer) {
+    clearInterval(headingTimer);
+    headingTimer = null;
   }
 }
 
 function handleCompassEvent(event: CompassEvent): void {
-  if (!compassActive || event.command !== COMPASS_CHANGED || event.headingDegrees < 0 || !position) return;
+  if (!compassActive) return;
+  const now = Date.now();
+  if (event.command === COMPASS_CALIBRATION_STARTED) {
+    heading.headLost(now);
+    return;
+  }
+  if (event.command !== COMPASS_CHANGED || event.headingDegrees < 0 || !position) return;
   const declination = magneticDeclinationDegrees(position.latitude, position.longitude);
   if (declination === null) return;
-  const heading = normalizeHeading(calibrateHeading(event.headingDegrees) + declination);
-  if (headHeadingDeg !== null && angularDistance(heading, headHeadingDeg) < HEADING_STEP_DEG) return;
-  headHeadingDeg = heading;
-  if (!position || position.speed < BEARING_MIN_SPEED_MPS) render();
+  heading.headSample(normalizeHeading(calibrateHeading(event.headingDegrees) + declination), compassQuality(event.diagnostics), now);
 }
 
-function angularDistance(a: number, b: number): number {
-  const delta = Math.abs(normalizeHeading(a) - normalizeHeading(b));
-  return Math.min(delta, 360 - delta);
+/** Expires stale sources and eases rotation even when no sensor event arrives. */
+function headingTick(): void {
+  const now = Date.now();
+  const next = heading.output(now);
+  if (next.compassPoor && !compassHintShown) {
+    compassHintShown = true;
+    compassHintUntilMs = now + COMPASS_HINT_MS;
+  } else if (!next.compassPoor) {
+    compassHintShown = false;
+  }
+  const previous = paintedHeading;
+  const hintChanged = compassHintUntilMs > 0 && now >= compassHintUntilMs;
+  if (hintChanged) compassHintUntilMs = 0;
+  if (!previous || hintChanged || (next.compassPoor && compassHintUntilMs > now && !previous.compassPoor)
+    || next.source !== previous.source || next.showChevron !== previous.showChevron
+    || Math.abs(angleDelta(previous.bearingDeg, next.bearingDeg)) >= RENDER_STEP_DEG) {
+    render();
+  }
+}
+
+function compassHint(): string | null {
+  return compassHintUntilMs > Date.now() ? COMPASS_HINT : null;
 }
 
 /** The phone's own GPS only feeds the idle list (distances, search bias); the SDK tracks trips. */
@@ -1064,7 +1115,7 @@ function paintContent(win: NavWindow): GrayImage {
       break;
     }
     default:
-      paintGuidance(image, f, guidanceView(), streetMap());
+      paintGuidance(image, f, guidanceView(), streetMap(), phase === "guiding" ? compassHint() : null);
       break;
   }
   return image;
