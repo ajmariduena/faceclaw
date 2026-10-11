@@ -18,3 +18,17 @@ Lo investigaron dos subagentes: uno revisó el código y el otro las fuentes de 
 1. Usar la fuente del firmware de 20 px en toda la interfaz, en lugar de Roboto Light 16, y avisar en vez de caer en silencio a Roboto si no está extraída.
 2. Dejar el contenido de las apps en profundidad 0 y dar una profundidad pequeña solo a menús y notificaciones, como hace el original.
 3. Probar en las gafas una profundidad global moderada (-16) para ver si se percibe más grande sin la doble imagen.
+
+## Análisis del firmware 2.3.0.24 (11 oct, subagente con capstone y unicorn)
+- **Escala:** el original no escala nada. Dibuja a 576×288 y copia la imagen 1:1 al framebuffer de 640×480, solo con un desplazamiento (copiador en `0x470aa0`). El parche de Faceclaw hace el mismo `memcpy`. Confirmado.
+- **Fuentes del original:** el contenido (Conversate, dashboard, Translate) usa la fuente de 27 px entre líneas, con mayúsculas de 16 px; es la que Faceclaw ya extrae. Los menús, las notificaciones, los diálogos y Even AI usan otra fuente más grande, de 29 px entre líneas, con mayúsculas de 17 px y 13 px de avance (descriptores `0x7b69ec`/`0x7b6a00`). El reloj usa fuentes de dígitos de 62, 32 y 30 px. Confirmado.
+- **Trazo:** las letras del original son píxeles sólidos a brillo máximo, sin antialiasing. Faceclaw dibuja menús y Ajustes en Roboto Light 16 con antialiasing: las mayúsculas miden unos 11 px y los bordes quedan en grises bajos, que en la guía de onda se ven tenues. Esta es la causa más probable de que se vea «más pequeño y menos pulido» (inferido).
+- **Profundidad:** el original desplaza como máximo ±8 px por lente; el valor por defecto de Faceclaw (48) desplaza ±24 px.
+- **Altura:** el original tiene 13 posiciones verticales (y de 192 a 0 en pasos de 16); Faceclaw fija y=96.
+
+## Cambios propuestos, todos del lado de la app
+1. Extraer también la fuente de sistema (línea de 29 px) en `app/g2/firmware-fonts.ts` y usarla en menús, notificaciones, diálogos y Ajustes.
+2. Quitar Roboto Light 16 como fuente por defecto (`app/graphics/ui-fonts.ts:76`); si hace falta una TTF de respaldo, que sea de al menos 16 px de mayúscula y sin antialiasing.
+3. Extraer las fuentes de dígitos del reloj para el home.
+4. Profundidad por defecto 0 y un rango de ±16, como el original.
+Las direcciones son de la versión 2.3.0.24 y cambian con cada firmware.
