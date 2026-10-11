@@ -54,6 +54,20 @@ function digits(image: GrayImage, pair: string, left: number) {
   });
 }
 
+/** A count in the clock's numerals at a smaller pitch, with square dots. */
+export function paintDotNumber(image: GrayImage, n: number, x: number, y: number, pitch: number, value: number) {
+  const dot = Math.ceil(pitch * 0.75);
+  Array.from(String(n)).forEach((digit, i) => {
+    DIGITS[Number(digit)]?.forEach((row, dy) => Array.from(row).forEach((on, dx) => {
+      if (on === "1") image.fillRect(x + i * 7 * pitch + dx * pitch, y + dy * pitch, dot, dot, value);
+    }));
+  });
+}
+
+export function dotNumberWidth(n: number, pitch: number): number {
+  return (String(n).length - 1) * 7 * pitch + 4 * pitch + Math.ceil(pitch * 0.75);
+}
+
 /** HH:MM on one row with a dim two-dot colon, like a station board. */
 function clock(image: GrayImage, hours: string, minutes: string) {
   digits(image, hours, CLOCK_LEFT);

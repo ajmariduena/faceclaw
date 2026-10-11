@@ -2,9 +2,9 @@ import * as graphics from "../../graphics/image";
 import type { GrayImage } from "../../graphics/image";
 import { HOME_CARDS, homeColumnState, emptyCardStatus, clockTime, type HomeBattery, type HomeCalendar } from "./home-model";
 import { renderIcon, type IconName } from "../../graphics/icons";
-import { paintHomeColumn } from "./column-painter";
+import { dotNumberWidth, paintDotNumber, paintHomeColumn } from "./column-painter";
 import type { HomeWeatherReading } from "./home-weather";
-import { glanceEmptyStatus, glanceVerdict, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
+import { glanceCounts, glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import type { BotsGlance } from "../bots/bots-model";
 
 export type HomeFace = {
@@ -28,6 +28,7 @@ export type HomeSnapshot = {
 
 export const HOME_DOTS_TOP = 115;
 const DIM = 153;
+const FAINT = 85;
 const CARD_TEXT_WIDTH = 278;
 
 function icon(image: GrayImage, name: IconName, x: number, y: number, size = 24) {
@@ -103,22 +104,21 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
         text(20, y + 54, time, DIM);
       } else text(20, y + 27, time, DIM);
     });
-  } else if (card.id === "paseo" && glanceVerdict(data.paseo, data.now.getTime())) {
-    // Verdict, the agent behind it (title dim, line white), and the ledger pinned to the last row.
-    const paseo = glanceVerdict(data.paseo, data.now.getTime())!;
-    const pitch = Math.max(27, face.lineHeight + 4);
-    const rows: number[] = [];
-    for (let y = 62; y + face.lineHeight <= 254; y += pitch) rows.push(y);
+  } else if (card.id === "paseo" && glanceCounts(data.paseo)) {
+    // Four counts in a 2×2 grid; the dot after Review means an agent is waiting on an answer.
+    const counts = glanceCounts(data.paseo)!;
     header();
-    text(20, rows[0]!, paseo.verdict);
-    if (paseo.lead) {
-      text(20, rows[1]!, paseo.lead.title, DIM);
-      const max = Math.min(2, rows.length - 3);
-      const lines = wrapped(face, paseo.lead.line, CARD_TEXT_WIDTH, max + 1);
-      if (lines.length > max) { lines.length = max; lines[max - 1] = `${lines[max - 1]}…`; }
-      lines.forEach((line, i) => text(20, rows[2 + i]!, line));
-    } else if (paseo.note) text(20, rows[1]!, paseo.note, DIM);
-    if (paseo.ledger) text(20, rows[rows.length - 1]!, paseo.ledger, DIM);
+    if (counts.stale) face.drawText(panel, 298 - face.measureLine("Offline"), 16, "Offline", DIM);
+    const cells: [string, number, boolean][] = [["Review", counts.review, counts.needsYou > 0], ["Working", counts.working, false],
+      ["Background", counts.background, false], ["Done", counts.done, false]];
+    cells.forEach(([label, n, needsYou], i) => {
+      const cx = 20 + (i % 2) * 139 + 70, y = 66 + Math.floor(i / 2) * 96;
+      paintDotNumber(panel, n, Math.round(cx - dotNumberWidth(n, 5) / 2), y, 5, n ? (counts.stale ? DIM : 255) : FAINT);
+      const line = fitted(face, label, 139);
+      const width = face.measureLine(line);
+      face.drawText(panel, Math.round(cx - width / 2), y + 46, line, n ? DIM : FAINT);
+      if (needsYou) panel.fillRoundedRect(Math.round(cx + width / 2) + 6, y + 46 + Math.round(face.lineHeight / 2) - 3, 6, 6, 255, 3);
+    });
   } else if (card.id === "bots" && data.bots?.updates.length) {
     const pitch = Math.max(27, face.lineHeight + 4);
     const fits = (y: number) => y + face.lineHeight <= 254;

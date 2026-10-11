@@ -41,10 +41,9 @@ import { WindowMenu, WindowMenuLayer } from "../../ui/window-menu";
 import type { WorkerAppMessage, WorkerAppReply } from "../../ui/shell/worker-window";
 import type { InputEvent } from "../../ui/gestures";
 import { errorMessage, PaseoDaemonClient, type GlanceItem } from "./paseo-client";
-import { buildGlanceSnapshot, glanceUrgentAgent, PASEO_GLANCE_STATE_KEY, type BucketCounts } from "./paseo-glance";
+import { buildGlanceSnapshot, PASEO_GLANCE_STATE_KEY, type BucketCounts } from "./paseo-glance";
 import {
   agentBucket,
-  agentTitle,
   sessionWorkspaceName,
   BUCKET_LABELS,
   chatEntries,
@@ -53,6 +52,7 @@ import {
   formatClock,
   isListedAgent,
   formatDuration,
+  messageText,
   plainText,
   sectionAgents,
   sectionCounts,
@@ -113,6 +113,7 @@ const PUBLISH_COALESCE_MS = 1_500;
 /** How long a transient status ("Sent", an error) stays in the footer. */
 const NOTICE_MS = 5_000;
 const TIMELINE_TAIL = 40;
+const SCROLL_ROWS = 3;
 const GLANCE_TAIL = 8;
 const DICTATION_FORMAT = "audio/pcm;rate=16000;bits=16";
 /** Mic packets buffered before the daemon acknowledges the dictation start. */
@@ -281,7 +282,6 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       break;
     case "foreground":
       if (!window || window.windowId !== message.windowId) break;
-      if (message.foreground && !window.foreground) openUrgentAgent();
       window.foreground = message.foreground;
       window.focused = message.focused;
       if (!window.foreground && dictation) cancelDictation();
@@ -299,6 +299,12 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       break;
     case "raw-pcm":
       handleRawPcm(message.pcm);
+      break;
+    case "alert-open":
+      if (window && agents.has(message.key)) {
+        openChat(message.key);
+        renderNow();
+      }
       break;
     case "tool-call":
       post({ type: "tool-result", callId: message.callId, result: { ok: false, error: "Paseo has no assistant tools." } });
@@ -446,6 +452,10 @@ function onWorkspaceUpdate(payload: any): void {
   scheduleRender();
 }
 
+function agentName(agent: AgentSnapshot): string {
+  return sessionWorkspaceName(agent, workspaceNames);
+}
+
 function onAgentUpdate(payload: any): void {
   if (!payload) return;
   if (payload.kind === "upsert" && payload.agent?.id) {
@@ -475,7 +485,6 @@ function onAgentStream(payload: any): void {
   if (!entry) return;
   if (upsertEntry(chat.entries, entry)) {
     chat.scrollBack = 0;
-    requestSummaries(chat.agentId, chat.entries);
     scheduleRender();
   }
 }
@@ -502,14 +511,19 @@ function noteAttention(agent: AgentSnapshot): void {
   const viewingAgent = Boolean(window?.foreground && screenOn && screen.kind === "chat" && chat?.agentId === agent.id);
   if (window && !(window.foreground && screenOn)) post({ type: "set-attention", windowId: window.windowId, attention: true });
   if (!paseoWakeOnAttentionSetting.get()) return;
-  if (!viewingAgent) buzz(needsUser ? NEEDS_BUZZ : DONE_BUZZ);
-  if (window && !screenOn) {
-    // Show the list with the agent selected rather than wherever we were.
-    if (screen.kind !== "chat") setScreen({ kind: "list" });
-    listSelectionKey = agent.id;
-    // The shell drops this unless the glasses are actually asleep.
-    post({ type: "wake-window", windowId: window.windowId });
-  }
+  if (viewingAgent) return;
+  buzz(needsUser ? NEEDS_BUZZ : DONE_BUZZ);
+  post({
+    type: "show-alert",
+    windowId: window?.windowId ?? null,
+    alert: {
+      key: agent.id,
+      icon: "square-terminal",
+      app: `Paseo · ${needsUser ? "Needs input" : bucket === "failed" ? "Failed" : "Done"}`,
+      sender: agentName(agent),
+      body: agentGlanceLine(agent) || (needsUser ? "The agent is waiting for you." : "Finished."),
+    },
+  });
 }
 
 function buzz(payload: Uint8Array): void {
@@ -527,8 +541,6 @@ let publishTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPublished = "";
 /** The last connected snapshot's counts, so the card can say what it looked like when the Mac dropped. */
 let lastGood: { counts: BucketCounts; atMs: number } | null = null;
-/** The agent the card's verdict points at while it asks the user to go in. */
-let urgentAgentId: string | null = null;
 
 function schedulePublish(): void {
   if (publishTimer) return;
@@ -550,7 +562,6 @@ function publishGlanceSnapshot(): void {
     (agent) => agentGlanceLine(agent),
   );
   if (!snapshot.status && snapshot.configured) lastGood = { counts: snapshot.counts, atMs: Date.now() };
-  urgentAgentId = glanceUrgentAgent(snapshot);
   refreshGlanceLines(snapshot.updates.map((update) => update.agentId));
   const encoded = JSON.stringify(snapshot);
   if (encoded === lastPublished) return;
@@ -621,16 +632,6 @@ function refreshGlanceLines(agentIds: string[]): void {
 
 function lineFor(entry: ChatEntry): string {
   return summaries.get(entry.id) ?? fallbackLine(entry.text);
-}
-
-/** Ask the daemon for the lines this chat lacks (newest first, at most 20 per request). */
-function requestSummaries(agentId: string, entries: readonly ChatEntry[]): void {
-  const missing = [...entries].reverse().filter((entry) => !summaries.has(entry.id) && !summariesPending.has(entry.id)).slice(0, 20);
-  if (!missing.length) return;
-  void summarize(agentId, missing).then(() => {
-    if (chat?.agentId === agentId) scheduleRender();
-    schedulePublish();
-  });
 }
 
 /** Lines the daemon precomputed when a turn finished or the agent asked something. */
@@ -705,11 +706,6 @@ function goBack(frameId: number): void {
 }
 
 /** Coming to the front from the home: straight into the agent the card said needs the user. */
-function openUrgentAgent(): void {
-  if (screen.kind !== "list" || !urgentAgentId || !agents.has(urgentAgentId)) return;
-  openChat(urgentAgentId);
-}
-
 function openChat(agentId: string): void {
   closeChat();
   chat = { agentId, entries: [], loaded: false, error: "", scrollBack: 0, permissionIndex: 0, flow: null, planSteps: false, planIndex: 0, textTarget: "message" };
@@ -734,7 +730,6 @@ async function loadChat(agentId: string): Promise<void> {
     chat.entries = entries;
     chat.loaded = true;
     chat.error = "";
-    requestSummaries(agentId, entries);
   } catch (error) {
     if (chat?.agentId !== agentId) return;
     chat.error = errorMessage(error);
@@ -756,7 +751,7 @@ function chatAgent(): AgentSnapshot | null {
 
 function chatTitle(): string {
   const agent = chatAgent();
-  return agent ? agentTitle(agent) : "Agent";
+  return agent ? agentName(agent) : "Agent";
 }
 
 function showNotice(text: string): void {
@@ -876,7 +871,7 @@ function handleChatInput(event: InputEvent, frameId: number): void {
         current.permissionIndex = Math.max(0, Math.min(PERMISSION_OPTIONS.length - 1, current.permissionIndex + (down ? 1 : -1)));
       } else {
         const max = chatMaxScrollBack(face(), chatView());
-        current.scrollBack = Math.min(max, Math.max(0, current.scrollBack + (down ? -1 : 1)));
+        current.scrollBack = Math.min(max, Math.max(0, current.scrollBack + (down ? -SCROLL_ROWS : SCROLL_ROWS)));
       }
       renderNow(frameId);
       return;
@@ -1370,7 +1365,7 @@ function chatView(): ChatView {
   const current = chat;
   const agent = chatAgent();
   if (!current) return { lines: [], scrollBack: 0, footer: null, permission: null };
-  const lines: ChatLine[] = current.entries.map((entry) => ({ role: entry.role, text: lineFor(entry) }));
+  const lines: ChatLine[] = current.entries.map((entry) => ({ role: entry.role, text: messageText(entry.text) }));
   if (dictation) lines.push({ role: "user", text: dictation.partial || "…", live: true });
   else if (draft.active) lines.push({ role: "user", text: draft.text || "…", live: true });
   const request = agent?.pendingPermissions?.[0] ?? null;
@@ -1381,6 +1376,7 @@ function chatView(): ChatView {
   return {
     lines,
     scrollBack: current.scrollBack,
+    full: true,
     footer: chatFooter(agent),
     permission: draft.active ? { question: sendingDraft ? "Sending" : draft.editing ? "Edit on phone" : "Draft", options: DRAFT_OPTIONS, selected: draft.selected } : permission,
     message: current.error ? current.error : !current.loaded ? (client?.connected ? "Loading…" : client?.status || "Connecting…") : "No messages yet.",
@@ -1456,13 +1452,14 @@ function chatFooter(agent: AgentSnapshot | null): { left: string; right: string 
   if (dictation) return { left: dictation.state === "finishing" ? "· Finishing" : "· Listening", right: formatClock(nowMs - dictation.startedMs) };
   if (!client?.connected) return { left: `· ${client?.status || "Offline"}`, right: "" };
   if (!agent) return { left: "· Gone", right: "" };
+  const left = `· ${agentName(agent)}`;
   const bucket = agentBucket(agent);
   if (bucket === "working") {
     const started = agent.activeTurn?.startedAt ? Date.parse(agent.activeTurn.startedAt) : NaN;
-    return { left: "· Working", right: Number.isFinite(started) ? formatDuration(nowMs - started) : "" };
+    return { left, right: Number.isFinite(started) ? `Working ${formatDuration(nowMs - started)}` : "Working" };
   }
-  if (bucket === "review") return { left: "· Done", right: "" };
-  return { left: `· ${BUCKET_LABELS[bucket]}`, right: "" };
+  if (bucket === "review") return { left, right: "Done" };
+  return { left, right: BUCKET_LABELS[bucket] };
 }
 
 // ---------------------------------------------------------------------------

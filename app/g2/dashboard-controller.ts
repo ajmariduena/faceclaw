@@ -2439,6 +2439,7 @@ class DashboardController {
           this.appendLog(`settings launch failed: ${this.formatError(error)}`);
         });
       },
+      launchApp: async () => { await this.launchApp(appId); },
       startTextSettingEdit: (settingId) => {
         const setting = getStringSettingById(settingId);
         if (setting) {

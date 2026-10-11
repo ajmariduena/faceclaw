@@ -55,32 +55,23 @@ test('the Translate card says Ready with a Soniox key and the Paseo card shows c
   assert.ok(texts().includes('Mac unreachable'));
   assert.equal(textDraws.find(draw => draw.text === 'Mac unreachable').value, 153);
   textDraws = [];
-  paintHome(0, snapshot({ paseo: { configured: true, status: '', updates: [], needs: 0, working: 0 } }), face);
-  assert.ok(texts().includes('No agents'));
-  textDraws = [];
-  const lastCounts = { needs: 1, failed: 0, review: 0, working: 2, done: 3 };
+  const lastCounts = { needs: 1, failed: 0, review: 0, working: 2, background: 0, done: 3 };
   paintHome(0, snapshot({ paseo: { configured: true, status: 'Mac unreachable', updates: [], needs: 0, working: 0, lastSeenMs: NOW.getTime() - 29 * 60_000, lastCounts } }), face);
-  const offline = textDraws.filter(draw => draw.x === 20);
-  assert.deepEqual(offline.slice(0, 2).map(draw => [draw.text, draw.value]), [['Mac unreachable', 255], ['Last seen 29 min ago', 153]]);
-  // Terminus is wider than the stock font, so the ledger clips.
-  assert.ok(offline[2].text.startsWith('Was: 1 needs you') && offline[2].value === 153, offline[2].text);
+  assert.equal(textDraws.find(draw => draw.text === 'Offline').value, 153, 'the last counts, marked offline');
+  assert.ok(texts().includes('Review') && texts().includes('Done'));
 });
 
-test('the Paseo card states a verdict, the agent behind it and a ledger on the last row', () => {
+test('the Paseo card is four counts: Review, Working, Background and Done', () => {
   textDraws = [];
-  const counts = { needs: 1, failed: 0, review: 0, working: 2, done: 3 };
+  const counts = { needs: 1, failed: 0, review: 1, working: 2, background: 0, done: 3 };
   const paseo = { configured: true, status: '', needs: 1, working: 2, counts, lastSeenMs: null, lastCounts: null, updates: [
     { agentId: 'a', title: 'Fix reconnect BLE', bucket: 'needs', activityMs: NOW.getTime() - 60_000, line: '¿Apruebo correr los tests de BLE?' },
-    { agentId: 'b', title: 'PR #1221 jelou-cli', bucket: 'working', activityMs: NOW.getTime() - 240_000, line: 'Corriendo los tests.' },
   ] };
   paintHome(0, snapshot({ paseo }), face);
-  const card = textDraws.filter(draw => draw.x === 20);
-  assert.deepEqual(card.slice(0, 2).map(draw => [draw.text, draw.value]), [['1 needs you', 255], ['Fix reconnect BLE', 153]]);
-  assert.ok(card.some(draw => draw.value === 255 && draw.text.startsWith('¿Apruebo')));
-  const ledger = card[card.length - 1];
-  assert.deepEqual([ledger.text, ledger.value], ['2 working · 3 done', 153]);
-  assert.ok(ledger.y > card[card.length - 2].y + 27, 'a blank row before the ledger');
-  assert.ok(!texts().includes('PR #1221 jelou-cli'), 'only the lead agent is named');
+  const labels = textDraws.filter(draw => ['Review', 'Working', 'Background', 'Done'].includes(draw.text));
+  assert.deepEqual(labels.map(draw => [draw.text, draw.value]), [['Review', 153], ['Working', 153], ['Background', 85], ['Done', 153]], 'an empty count is faint');
+  assert.ok(labels[0].y === labels[1].y && labels[2].y === labels[3].y && labels[2].y > labels[0].y, 'a 2×2 grid');
+  assert.ok(!texts().includes('Fix reconnect BLE'), 'counts only, no agent names');
   assert.equal(textDraws.find(draw => draw.text === 'Paseo').y, 16, 'header keeps the name');
 });
 

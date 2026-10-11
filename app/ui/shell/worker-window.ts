@@ -6,6 +6,7 @@ import { toolRegistry, type ToolResult, type ToolSpec } from "../../assistant/to
 import { appViewportSize, type WindowHeightMode } from "./geometry";
 import * as frameTimings from "../../native/frame-timings";
 import { shell, type ShellWindow } from "./shell";
+import type { WindowAlert } from "./window-alert-layer";
 import { publishWorkerState } from "./worker-state";
 
 /**
@@ -39,7 +40,9 @@ export type WorkerAppMessage =
   /** Answer to raw-mic: whether the glasses mic tap is running for the window (reason when not). */
   | { type: "raw-mic-state"; windowId: string; active: boolean; reason?: string }
   /** One decoded glasses mic packet (16 kHz mono S16LE), base64, while the raw mic tap runs. */
-  | { type: "raw-pcm"; windowId: string; pcm: string };
+  | { type: "raw-pcm"; windowId: string; pcm: string }
+  /** The user tapped the app's alert (see show-alert); its window is already in front. */
+  | { type: "alert-open"; key: string };
 
 export type WorkerAppReply =
   | { type: "worker-idle" }
@@ -85,6 +88,16 @@ export type WorkerAppReply =
     }
   | { type: "set-title"; windowId: string; title: string }
   | { type: "set-attention"; windowId: string; attention: boolean }
+  | {
+      /**
+       * Wake the glasses to show an alert in Even's notification box; dropped
+       * while the screen is on. Tapping it brings the window forward
+       * (launching the app when it has none) and answers alert-open.
+       */
+      type: "show-alert";
+      windowId: string | null;
+      alert: WindowAlert;
+    }
   /** App-driven animation phase for sidebar icons that support an activity cursor. */
   | { type: "set-icon-activity"; windowId: string; activity: IconActivity }
   | {
@@ -223,6 +236,8 @@ export type WorkerAppHostOptions = {
   startRawMic?: (deliver: (pcmBase64: string) => void) => { stop: () => void } | string;
   /** Open or focus the Settings app, optionally selecting a section. */
   openSettings: (section?: string) => void;
+  /** Open (or focus) this host's own app, for an alert tapped while it has no window. */
+  launchApp?: () => Promise<void>;
   /** Open the phone app's text editor on a string setting (by id). */
   startTextSettingEdit: (settingId: string) => void;
   /** Close the phone text editor opened by startTextSettingEdit. */
@@ -346,6 +361,21 @@ export class WorkerAppHost {
         case "set-attention":
           shell.setWindowAttention(message.windowId, message.attention);
           break;
+        case "show-alert": {
+          const windowId = message.windowId;
+          shell.showWindowAlert(message.alert, (key) => {
+            if (windowId && this.openWindows.has(windowId)) {
+              shell.focusWindow(windowId);
+              this.post({ type: "alert-open", key });
+              return;
+            }
+            void Promise.resolve(this.options.launchApp?.())
+              .then(() => this.post({ type: "alert-open", key }))
+              .catch((error: unknown) => console.warn(`alert launch failed: ${error}`));
+          });
+          this.options.requestShellRender();
+          break;
+        }
         case "start-voice-input":
           // Menus only open on the focused window, but re-check foreground:
           // the reply crosses a thread boundary and focus may have moved.

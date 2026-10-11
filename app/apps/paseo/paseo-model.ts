@@ -36,17 +36,20 @@ export type AgentSnapshot = {
   archivedAt?: string | null;
   labels?: Record<string, string>;
   lastError?: string;
+  /** Background shells and the like still running after the turn ended. */
+  backgroundTasks?: unknown[];
 };
 
-export type Bucket = "needs" | "failed" | "review" | "working" | "done";
+export type Bucket = "needs" | "failed" | "review" | "working" | "background" | "done";
 
-export const BUCKET_ORDER: readonly Bucket[] = ["needs", "failed", "review", "working", "done"];
+export const BUCKET_ORDER: readonly Bucket[] = ["needs", "failed", "review", "working", "background", "done"];
 
 export const BUCKET_LABELS: Record<Bucket, string> = {
   needs: "Needs input",
   failed: "Failed",
   review: "Ready to review",
   working: "Working",
+  background: "Background",
   done: "Done",
 };
 
@@ -58,7 +61,7 @@ export function agentBucket(agent: AgentSnapshot): Bucket {
   if (agent.status === "error") return "failed";
   if (agent.requiresAttention && agent.status !== "running") return "review";
   if (agent.status === "running") return "working";
-  return "done";
+  return agent.backgroundTasks?.length ? "background" : "done";
 }
 
 /** Top-level, live agents only: no subagents, nothing archived or closed. */
@@ -215,6 +218,19 @@ export function plainText(text: string): string {
     .replace(/https?:\/\/\S+/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * A whole message for the chat: the same cleanup line by line, keeping
+ * paragraphs and list markers, with every sentence on a line of its own.
+ */
+export function messageText(text: string): string {
+  return text.replace(/```[\s\S]*?```/g, "\n").split("\n").map((line) => {
+    const marker = /^(\s*)([-*+]|\d+\.)\s+/.exec(line);
+    const body = plainText(marker ? line.slice(marker[0].length) : line).replace(/([.!?…])\s+(?=[¿¡"“(A-ZÁÉÍÓÚÑÜ\d])/g, "$1\n");
+    if (!body || !marker) return body;
+    return `${marker[1]!.length >= 2 ? "  " : ""}${/\d/.test(marker[2]!) ? marker[2] : "•"} ${body}`;
+  }).filter(Boolean).join("\n");
 }
 
 /**

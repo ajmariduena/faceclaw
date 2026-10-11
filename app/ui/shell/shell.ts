@@ -52,6 +52,7 @@ import { onAmbientCardsChanged } from "./ambient-cards";
 import { ShellChromeLayer, sidebarContentSpan, type ShellChromeState, type ShellChromeWindow } from "./chrome-layer";
 import { ShellModalLayer } from "./modal-layer";
 import { NotificationModalQueue } from "./notification-modal-queue";
+import { WindowAlertLayer, type WindowAlert } from "./window-alert-layer";
 import { ALL_NOTIFICATIONS, readActiveNotifications } from "../../native/notification-icons";
 import { shouldShowNotificationOnGlasses } from "../../native/notification-sources";
 import { ToolDebugMenuLayer } from "./tool-debug-layer";
@@ -469,6 +470,7 @@ class Shell {
   };
   private readonly chrome = new ShellChromeLayer(() => this.chromeState());
   private readonly stack = new LayerStack(this.chrome, this.actions);
+  private windowAlert: { layer: WindowAlertLayer; open: (key: string) => void } | null = null;
 
   // Top-bar settings we mirror into the chrome; a change to any of them
   // repaints the shell surface so the top bar reflects it immediately.
@@ -1732,6 +1734,41 @@ class Shell {
     this.noteUserActivity();
     this.config.requestShellRender();
     return closed;
+  }
+
+  /**
+   * A window's alert in Even's notification box, only while the screen is
+   * off: it wakes the screen to show it, and dismissing it sleeps again. A
+   * newer alert replaces the open one; with the screen on otherwise, nothing.
+   */
+  showWindowAlert(alert: WindowAlert, open: (key: string) => void): void {
+    if (this.windowAlert) {
+      this.windowAlert.layer.alert = alert;
+      this.windowAlert.open = open;
+      this.config.requestShellRender();
+      return;
+    }
+    if (this.screenOn) return;
+    this.wake("window");
+    const entry: { layer: WindowAlertLayer; open: (key: string) => void } = {
+      open,
+      layer: new WindowAlertLayer(alert, {
+        open: () => {
+          this.stack.remove(entry.layer);
+          entry.open(entry.layer.alert.key);
+          this.config.requestShellRender();
+        },
+        dismiss: () => {
+          this.stack.remove(entry.layer);
+          this.sleep();
+          this.config.requestShellRender();
+        },
+        removed: () => { if (this.windowAlert === entry) this.windowAlert = null; },
+      }),
+    };
+    this.windowAlert = entry;
+    this.stack.push(entry.layer);
+    this.config.requestShellRender();
   }
 
   /** Show a brief text popup on the lenses (assistant show_alert / notices). */
