@@ -11,13 +11,6 @@ import {
 } from "~/native/settings-store";
 import { getDefaultSmallFont } from "~/graphics/ui-fonts";
 import { wrapText } from "~/graphics/textwrap";
-import {
-  ASSISTANT_MODEL_CHOICES,
-  assistantModelLabel,
-  assistantModelProvider,
-  type AssistantModel,
-} from "~/assistant/models";
-import { isLocalModelReady } from "../native/llama";
 import { drawRightValueMenuItem, drawToggleMenuItem, MenuItem, openModalMenu } from "./menu";
 import { ANIMATION_SPEEDS, animationSpeedLabel, scaleAnimationDuration, type AnimationSpeed } from "./animation-speed";
 import { MENU_ANIMATION_KEY } from "./menu-animation-pref";
@@ -625,10 +618,10 @@ export const watchCrownClockwiseNextSetting = new ConfigSettingBoolean({
 
 export const watchMirrorAssistantSetting = new ConfigSettingBoolean({
   id: "watch-mirror-assistant",
-  label: "Mirror assistant to watch",
+  label: "Mirror Grok Bot to watch",
   storageKey: "watch.mirrorAssistant",
   defaultValue: true,
-  description: "Stream assistant replies and on-glasses alerts to the watch so they can be read from the wrist.",
+  description: "Send Grok Bot's reply to a watch question, and on-glasses alerts, to the watch so they can be read from the wrist.",
 });
 
 export type VerticalPosition = "top" | "upper" | "middle" | "lower" | "bottom";
@@ -805,74 +798,6 @@ export const saveVoiceRecordingsSetting = new ConfigSettingBoolean({
   description: "Keep a copy of captured voice audio on the phone, for debugging transcription problems.",
 });
 
-export const assistantSkipConfirmationSetting = new ConfigSettingBoolean({
-  id: "assistant-skip-confirmation",
-  label: "Send to assistant without confirming",
-  storageKey: "assistant.skipConfirmationAfterWakeword",
-  defaultValue: false,
-  description: "After a wakeword utterance, send the transcript straight to the assistant instead of stopping at the Send/Type confirmation menu.",
-});
-
-export type AssistantBackendKind = "direct" | "external";
-
-const assistantBackendLabels: Record<AssistantBackendKind, string> = {
-  direct: global.isIOS ? "Cloud API" : "On-phone",
-  external: "My own agent (bridge)",
-};
-
-export const assistantBackendSetting = new ConfigSettingEnum<AssistantBackendKind>({
-  id: "assistant-backend",
-  label: "Assistant backend",
-  storageKey: "assistant.backend",
-  defaultValue: "direct",
-  values: global.isIOS ? ["direct"] : ["direct", "external"],
-  formatValue: (value) => assistantBackendLabels[value] ?? value,
-  description:
-    global.isIOS ? "Cloud models called with your OpenAI or Anthropic API key. Add your key in Settings > API Keys." : "Who answers assistant queries: an LLM called from the phone (a cloud API with your key, or the downloaded on-phone model), or your own long-running agent (e.g. OpenClaw) reached through the faceclaw-agent-bridge plugin.",
-});
-
-export const assistantBridgeHostSetting = new ConfigSettingString({
-  id: "assistant-bridge-host",
-  label: "Bridge host",
-  storageKey: "assistant.bridgeHost",
-  defaultValue: "",
-  editorTitle: "Agent bridge host (tailscale IP)",
-  glassesEditTitle: "Edit bridge host",
-  description:
-    "Hostname or IP address (e.g. a Tailscale address) of the machine running the agent bridge.",
-});
-
-export const assistantBridgePortSetting = new ConfigSettingString({
-  id: "assistant-bridge-port",
-  label: "Bridge port",
-  storageKey: "assistant.bridgePort",
-  defaultValue: "8790",
-  editorTitle: "Agent bridge port",
-  glassesEditTitle: "Edit bridge port",
-  description: "TCP port the agent bridge listens on. The default is 8790.",
-});
-
-export const assistantBridgeTokenSetting = new ConfigSettingString({
-  id: "assistant-bridge-token",
-  label: "Bridge token",
-  storageKey: "assistant.bridgeToken",
-  defaultValue: "",
-  editorTitle: "Agent bridge auth token",
-  glassesEditTitle: "Edit bridge token",
-  inputKind: "password",
-  formatValue: (value) => (value ? "••••••••" : "(not set)"),
-  description: "Shared secret that must match the bridge's configured token.",
-});
-
-export const assistantAllowProactiveSetting = new ConfigSettingBoolean({
-  id: "assistant-allow-proactive",
-  label: "Allow proactive agent actions",
-  storageKey: "assistant.allowProactive",
-  defaultValue: true,
-  description:
-    "Let the external agent use glasses tools outside of a conversation, e.g. showing an alert when a long-running job finishes. Rate-limited; only tools marked proactive-safe are allowed.",
-});
-
 export const elevenLabsApiKeySetting = new ConfigSettingString({
   id: "elevenlabs-api-key",
   label: "ElevenLabs key",
@@ -894,7 +819,7 @@ export const openAiApiKeySetting = new ConfigSettingString({
   glassesEditTitle: "Edit OpenAI key",
   inputKind: "password",
   formatValue: (value) => (value ? "••••••••" : "(not set)"),
-  description: "OpenAI API key, used when Whisper is the transcription provider or an OpenAI model is selected for the voice assistant.",
+  description: "OpenAI API key, used when Whisper is the transcription provider and by the Calculator's spoken-math fallback.",
 });
 
 export const sonioxApiKeySetting = new ConfigSettingString({
@@ -918,7 +843,7 @@ export const anthropicApiKeySetting = new ConfigSettingString({
   glassesEditTitle: "Edit Anthropic key",
   inputKind: "password",
   formatValue: (value) => (value ? "••••••••" : "(not set)"),
-  description: "Anthropic API key, used when an Anthropic model is selected for the voice assistant.",
+  description: "Anthropic API key, used by the Calculator's spoken-math fallback.",
 });
 
 function apiKeySetting(id: string, label: string, storageKey: string): ConfigSettingString {
@@ -931,7 +856,6 @@ export const cerebrasApiKeySetting = apiKeySetting("cerebras-api-key", "Cerebras
 export const braveApiKeySetting = apiKeySetting("brave-api-key", "Brave key", "search.braveApiKey");
 export const perplexityApiKeySetting = apiKeySetting("perplexity-api-key", "Perplexity key", "search.perplexityApiKey");
 export const typesafeApiKeySetting = apiKeySetting("typesafe-api-key", "TypeSafe key", "llm.typesafeApiKey");
-export const aiChatDraftSetting = new ConfigSettingString({ id: "ai-chat-draft", label: "AI Chat draft", storageKey: "aiChat.draft", defaultValue: "", editorTitle: "Edit draft" });
 export const paseoChatDraftSetting = new ConfigSettingString({ id: "paseo-chat-draft", label: "Paseo draft", storageKey: "paseo.chatDraft", defaultValue: "", editorTitle: "Edit draft" });
 export const cursorApiKeySetting = apiKeySetting("cursor-api-key", "Cursor key", "grokbot.cursorApiKey");
 export const grokBotNamesSetting = new ConfigSettingString({
@@ -943,32 +867,13 @@ export const grokBotNamesSetting = new ConfigSettingString({
   normalize: (value) => (value ?? "").replace(/[\x00-\x1f]+/g, " "),
   description: "The exact name of the Grok Bot the glasses talk to. A misspelled name creates a new, empty bot.",
 });
-export const botsChatDraftSetting = new ConfigSettingString({ id: "bots-chat-draft", label: "Bots draft", storageKey: "grokbot.chatDraft", defaultValue: "", editorTitle: "Edit draft" });
+export const botsChatDraftSetting = new ConfigSettingString({ id: "bots-chat-draft", label: "Grok Bot draft", storageKey: "grokbot.chatDraft", defaultValue: "", editorTitle: "Edit draft" });
 export const botsWakeOnReplySetting = new ConfigSettingBoolean({
   id: "grokbot-wake-on-reply",
-  label: "Wake when a bot replies",
+  label: "Wake when Grok Bot replies",
   storageKey: "grokbot.wakeOnReply",
   defaultValue: true,
-  description: "When a Grok Bot answers something you asked and its chat is not on screen, buzz; if the glasses are asleep, wake them into that chat.",
-});
-
-export const assistantModelSetting = new ConfigSettingEnum<AssistantModel>({
-  id: "assistant-model",
-  label: "Assistant model",
-  storageKey: "assistant.model",
-  defaultValue: "openrouter",
-  values: ASSISTANT_MODEL_CHOICES,
-  formatValue: assistantModelLabel,
-  isDisabled: (value) => {
-    const provider = assistantModelProvider(value);
-    if (provider === "anthropic") return anthropicApiKeySetting.get().trim().length === 0;
-    if (provider === "openrouter") return openRouterApiKeySetting.get().trim().length === 0;
-    if (provider === "openai") return openAiApiKeySetting.get().trim().length === 0;
-    if (provider === "local") return !isLocalModelReady();
-    return false;
-  },
-  description:
-    global.isIOS ? "Model used by the voice assistant. Auto prefers Terra with an OpenAI key, then Sonnet with an Anthropic key." : "Model used by the voice assistant. Auto prefers Terra when an OpenAI key is set, then Sonnet when an Anthropic key is set, then the downloaded on-phone model.",
+  description: "When Grok Bot answers something you asked and its chat is not on screen, buzz; if the glasses are asleep, wake them into the chat.",
 });
 
 export const mapboxApiKeySetting = new ConfigSettingString({

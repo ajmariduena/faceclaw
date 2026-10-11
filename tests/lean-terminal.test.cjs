@@ -95,37 +95,37 @@ test('terminal list helpers: fit, scroll window, selectable stepping and row pai
   assert.deepEqual(e.texts(), ['Nothing here', '· Test']);
 });
 
-test('More: four fixed rows, scroll stops at the ends, tap launches, double tap returns home', async () => {
+test('More: three fixed rows, scroll stops at the ends, tap launches, double tap returns home', async () => {
   const e = env();
   const { MoreListLayer, MORE_ROWS, moreRows, paintMoreList } = e.load('app/apps/launcher/more-list.ts');
-  assert.equal(MORE_ROWS.map(row => row.label).join('|'), 'AI Chat|Timers|Navigate|Settings');
-  assert.equal(MORE_ROWS.map(row => row.appId).join('|'), 'ai-chat|timer|navigate|settings');
-  assert.equal(moreRows(false).length, 4);
+  assert.equal(MORE_ROWS.map(row => row.label).join('|'), 'Timers|Navigate|Settings');
+  assert.equal(MORE_ROWS.map(row => row.appId).join('|'), 'timer|navigate|settings');
+  assert.equal(moreRows(false).length, 3);
   assert.equal(moreRows(true).at(-1).appId, 'developer');
   const layer = new MoreListLayer(async appId => e.launched.push(appId));
   layer.paint(e.ctx);
-  assert.deepEqual(e.texts(), ['>', 'AI Chat', 'Timers', 'Navigate', 'Settings', '· More', '1/4']);
-  assert.equal(e.draws.find(d => d.text === 'AI Chat').value, 255);
-  assert.equal(e.draws.find(d => d.text === 'Timers').value, 136);
+  assert.deepEqual(e.texts(), ['>', 'Timers', 'Navigate', 'Settings', '· More', '1/3']);
+  assert.equal(e.draws.find(d => d.text === 'Timers').value, 255);
+  assert.equal(e.draws.find(d => d.text === 'Navigate').value, 136);
   await layer.handleInput({ type: 'scroll-up' });
   assert.equal(layer.selectedIndex, 0);
   for (let i = 0; i < 6; i++) await layer.handleInput({ type: 'scroll-down' });
-  assert.equal(layer.selectedIndex, 3);
+  assert.equal(layer.selectedIndex, 2);
   e.draws.length = 0;
   layer.paint(e.ctx);
-  assert.ok(e.texts().includes('4/4'));
+  assert.ok(e.texts().includes('3/3'));
   await layer.handleInput({ type: 'click' });
   assert.deepEqual(e.launched, ['settings']);
   await layer.handleInput({ type: 'double-click' });
   assert.equal(e.yields.length, 1);
   assert.equal(await layer.hitTest(200, 24 + 46 + 10), true);
-  assert.deepEqual(e.launched, ['settings', 'timer']);
+  assert.deepEqual(e.launched, ['settings', 'navigate']);
   assert.equal(await layer.hitTest(200, 280), false);
   const { GrayImage } = e.load('app/graphics/image.ts');
   e.draws.length = 0;
-  paintMoreList(new GrayImage(576, 288), e.face, 4, moreRows(true));
+  paintMoreList(new GrayImage(576, 288), e.face, 3, moreRows(true));
   assert.ok(e.texts().includes('Developer'));
-  assert.ok(e.texts().includes('5/5'));
+  assert.ok(e.texts().includes('4/4'));
 });
 
 test('Settings: status rows read batteries, the Paseo link and the phone\'s key tests; brightness and Disconnect act', async () => {
@@ -278,7 +278,7 @@ test('the registry hides the spec\'s apps from the lean UI without dropping them
   const { LEAN_HIDDEN_APP_IDS } = loader()('app/lean.ts');
   for (const app of ALL_APPS) ids.push(app.appId);
   assert.ok(ids.includes('converse'));
-  for (const id of ['paseo', 'calendar', 'ai-chat', 'timer', 'navigate', 'settings', 'launcher', 'home']) assert.ok(!LEAN_HIDDEN_APP_IDS.has(id), id);
+  for (const id of ['paseo', 'calendar', 'bots', 'timer', 'navigate', 'settings', 'launcher', 'home']) assert.ok(!LEAN_HIDDEN_APP_IDS.has(id), id);
   for (const id of ['music', 'notifications', 'teleprompter', 'microphones', 'evenhub', 'glanceboard', 'developer', 'flappy']) {
     assert.ok(LEAN_HIDDEN_APP_IDS.has(id), id);
     assert.ok(ids.includes(id), `${id} stays registered`);

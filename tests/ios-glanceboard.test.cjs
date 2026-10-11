@@ -132,6 +132,8 @@ function fixture() {
     '../assistant/window-tools': { registerWindowTools() {} },
     '../assistant/navigate-tools': { registerNavigateTools() {} },
     '../assistant/roam-tools': { registerRoamTools() {} },
+    '../assistant/grokbot/grokbot': { grokBotHub: { configured: false } },
+    '../apps/bots/bots-app': { sendToBots() {} },
     "../native/ios-navigation-sensors": {},
     '../native/notification-icons.ios': { bindIosNotifications() {}, iosNotificationsChanged() {}, onIosNotificationPopup: () => () => {}, readActiveNotifications: () => [] },
     '../native/notification-sources': { shouldShowNotificationOnGlasses: () => true },

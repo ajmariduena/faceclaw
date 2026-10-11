@@ -183,7 +183,7 @@ test('Stop interrupts the turn and leaves a Stopped line; a routine message mark
     headers: { Authorization: 'Bearer cursor-key', 'Content-Type': 'application/json' }, body: { reason: 'Stopped from the glasses' } });
   const glasses = h.hub.bot('Glasses');
   assert.equal(glasses.working, false);
-  eq(model.chatLines(glasses, '').at(-1), { role: 'assistant', text: '> Stopped · Glasses', action: true });
+  eq(model.chatLines(glasses, '').at(-1), { role: 'assistant', text: '> Stopped', action: true });
   h.pages.push({ entries: [], turn: busy });
   h.hub.setWatching(['Glasses']);
   await new Promise(setImmediate);
@@ -223,7 +223,7 @@ test('a rejected key stops polling until the key changes; network failures back 
   h.state.offline = true;
   await h.hub.refresh();
   assert.equal(h.hub.error, OFFLINE);
-  assert.equal(model.chatEmptyMessage(h.hub.bot('Glasses'), h.hub), 'Ask Glasses anything', 'a loaded chat stays; the footer says Offline');
+  assert.equal(model.chatEmptyMessage(h.hub.bot('Glasses'), h.hub), 'Ask Grok Bot anything', 'a loaded chat stays; the footer says Offline');
   assert.equal(h.nextDelay(), 3000);
   await h.hub.refresh();
   assert.equal(h.nextDelay(), 6000, 'watched backoff doubles');
@@ -258,7 +258,7 @@ test('the home card glance: unread first, then working, then the latest; empty a
   const h = harness({ names: 'Glasses, Research, Inbox' });
   h.hub.start();
   await new Promise(setImmediate);
-  eq({ ...model.botsGlance(h.hub, NOW) }, { updates: [], status: 'Ask Glasses anything' });
+  eq({ ...model.botsGlance(h.hub, NOW) }, { updates: [], status: 'Ask Grok Bot anything' });
   const [glasses, research, inbox] = h.hub.list();
   glasses.messages.push({ role: 'bot', text: 'Sale 06:20 desde GYE.', createdAtMs: NOW - 60 * 60_000, seq: 2 });
   research.messages.push({ role: 'user', text: 'Compara Google y Mapbox', createdAtMs: NOW - 5 * 60_000, seq: 4 });
@@ -267,8 +267,8 @@ test('the home card glance: unread first, then working, then the latest; empty a
   inbox.unread = 1;
   const glance = model.botsGlance(h.hub, NOW);
   eq(glance.updates.map(update => [update.who, update.line]), [
-    ['Inbox · 2 h', '3 urgentes: Fly pide respuesta hoy.'],
-    ['Research · working 4 min', 'You: Compara Google y Mapbox'],
+    ['2 h', '3 urgentes: Fly pide respuesta hoy.'],
+    ['working 4 min', 'You: Compara Google y Mapbox'],
   ]);
   assert.equal(model.elapsedClock(12_000), '0:12');
   assert.equal(model.elapsedClock(16 * 60_000 + 5000), '16:05');

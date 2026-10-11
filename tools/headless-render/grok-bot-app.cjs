@@ -141,11 +141,11 @@ async function main() {
       weather: { temperatureC: 27.4, code: 2, isDay: true, atMs: nowMs }, bots: botsGlance(hub, nowMs) }, traced.face);
     save(home, 'bots-home');
     const texts = traced.draws.map((draw) => draw.text);
-    assert.ok(texts.includes('Glasses · 1 h'), texts.join(' | '));
+    assert.ok(texts.includes('1 h'), texts.join(' | '));
   }
 
   let texts = scene('bots-chat-idle');
-  assert.equal(texts.at(-1), '· Glasses');
+  assert.equal(texts.at(-1), '· Grok Bot');
 
   const sent = hub.send('Glasses', 'Busca vuelos más baratos a Quito el jueves');
   await sent;
@@ -162,13 +162,13 @@ async function main() {
   advance(2);
   await hub.refresh();
   texts = scene('bots-chat-reply');
-  assert.equal(texts.at(-1), '· Glasses');
+  assert.equal(texts.at(-1), '· Grok Bot');
   assert.ok(texts.some((text) => text.startsWith('· Copa')) && texts.some((text) => text.includes('reservo LATAM')), texts.join(' | '));
   assert.ok(!texts.some((text) => /\*\*|\]\(|https?:/.test(text)), `markdown left: ${texts.join(' | ')}`);
 
   input('scroll-up');
   texts = scene('bots-chat-scrolled');
-  assert.deepEqual(texts.slice(-2), ['· Glasses', 'older']);
+  assert.deepEqual(texts.slice(-2), ['· Grok Bot', 'older']);
   assert.ok(texts.some((text) => text.startsWith('Para el jueves 15')), texts.join(' | '));
   input('scroll-down');
 
@@ -178,7 +178,7 @@ async function main() {
   layer.menuItems().find((item) => item.label === 'Stop').onSelect(paintCtx);
   await new Promise(setImmediate);
   texts = scene('bots-chat-stopped');
-  assert.ok(texts.includes('> Stopped · Glasses'), texts.join(' | '));
+  assert.ok(texts.includes('> Stopped'), texts.join(' | '));
 
   layer.reviewText('Busca si hay vuelos más baratos el viernes');
   texts = scene('bots-chat-draft');

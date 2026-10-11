@@ -3,6 +3,9 @@ import { formatAge } from "../paseo/paseo-model";
 import { KEY_REJECTED, OFFLINE, type BotState } from "../../assistant/grokbot/grokbot-hub";
 import type { ChatLine } from "../../graphics/terminal-painter";
 
+/** What the glasses call the one Grok Bot session they talk to, whatever its name in Cursor. */
+export const BOT_TITLE = "Grok Bot";
+
 export type BotsHubView = {
   readonly configured: boolean;
   readonly error: string;
@@ -40,7 +43,7 @@ export function plainText(text: string): string {
 export function chatLines(bot: BotState, hubError: string): ChatLine[] {
   const lines: ChatLine[] = bot.messages.map(message => message.role === "user"
     ? { role: "user", text: message.text } : { role: "assistant", text: plainText(message.text) });
-  if (bot.stopped) lines.push({ role: "assistant", text: `> Stopped · ${bot.name}`, action: true });
+  if (bot.stopped) lines.push({ role: "assistant", text: "> Stopped", action: true });
   if (lines.length && hubError) lines.push({ role: "assistant", text: `> ${hubError === KEY_REJECTED ? "Cursor key rejected · fix on phone" : `${hubError} · retrying`}`, action: true });
   return lines;
 }
@@ -51,7 +54,7 @@ export function chatEmptyMessage(bot: BotState, hub: BotsHubView): string {
   if (hub.error === OFFLINE && !bot.loaded) return `${OFFLINE} · retrying`;
   if (!bot.loaded) return "Loading…";
   if (bot.newEmpty) return "New empty bot · name not found";
-  return `Ask ${bot.name} anything`;
+  return `Ask ${BOT_TITLE} anything`;
 }
 
 export type BotsGlanceUpdate = { bot: string; who: string; line: string };
@@ -69,7 +72,7 @@ export function botsGlance(hub: BotsHubView, nowMs: number): BotsGlance {
     .map(bot => {
       const latest = bot.latest!;
       const when = bot.working ? workingLabel(nowMs - bot.workingSince) : formatAge(latest.createdAtMs || nowMs, nowMs);
-      return { bot: bot.name, who: `${bot.name} · ${when}`, line: latest.role === "user" ? `You: ${latest.text}` : plainText(latest.text) };
+      return { bot: bot.name, who: when, line: latest.role === "user" ? `You: ${latest.text}` : plainText(latest.text) };
     });
-  return { updates, status: hub.error === OFFLINE && !updates.length ? OFFLINE : `Ask ${hub.defaultBot} anything` };
+  return { updates, status: hub.error === OFFLINE && !updates.length ? OFFLINE : `Ask ${BOT_TITLE} anything` };
 }

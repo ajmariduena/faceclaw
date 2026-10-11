@@ -7,7 +7,7 @@ const { HomeModel, HOME_CARDS, HOME_SLEEP_GUARD_MS, calendarCardState, emptyCard
 test('six fixed cards wrap in both directions, Paseo then Bots, with English names', () => {
   const model = new HomeModel();
   assert.deepEqual(Array.from(HOME_CARDS, card => card.id), ['paseo', 'bots', 'calendar', 'translate', 'converse', 'more']);
-  assert.deepEqual(Array.from(HOME_CARDS, card => card.name), ['Paseo', 'Bots', 'Calendar', 'Translate', 'Converse', 'More']);
+  assert.deepEqual(Array.from(HOME_CARDS, card => card.name), ['Paseo', 'Grok Bot', 'Calendar', 'Translate', 'Converse', 'More']);
   assert.deepEqual(Array.from(HOME_CARDS, card => card.appId), ['paseo', 'bots', 'calendar', 'translate', 'converse', 'launcher']);
   model.move(-1);
   assert.equal(model.selected.id, 'more');

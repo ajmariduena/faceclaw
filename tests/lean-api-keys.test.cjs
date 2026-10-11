@@ -65,14 +65,16 @@ test('phone key row ignores results from a credential edited while a test is run
   });
   const page = {}; load('app/phone-ui/api-keys-page.ts').navigatingTo({ object: page });
   assert.deepEqual(Array.from(page.bindingContext.rows, row => `${row.group}: ${row.label}`),
-    ['Paseo: Pairing link', 'Grok Bot: Cursor', 'Grok Bot: Bot name', 'Listening · Translate, Converse: Soniox', 'Facts · Converse: Jev (TypeSafe)', 'Facts · Converse: Cerebras', 'Facts & AI Chat: OpenRouter', 'Search · Converse: Perplexity', 'Search · Converse: Brave (fallback)']);
-  assert.deepEqual([page.bindingContext.rows[1].secure, page.bindingContext.rows[2].secure, page.bindingContext.rows[2].testVisibility], [true, false, 'collapse']);
-  page.bindingContext.rows[2].onEdit({ object: { text: 'Glasses, Research' } });
-  assert.equal(settings.grokBotNamesSetting.get(), 'Glasses, Research');
-  const row = page.bindingContext.rows[6];
+    ['Paseo: Pairing link', 'Grok Bot: Cursor', 'Listening · Translate, Converse: Soniox', 'Facts · Converse: Jev (TypeSafe)', 'Facts · Converse: Cerebras', 'Facts: OpenRouter', 'Search · Converse: Perplexity', 'Search · Converse: Brave (fallback)']);
+  assert.equal(page.bindingContext.rows[1].secure, true);
+  const row = page.bindingContext.rows[5];
   const pending = row.onTest(); row.value = 'new';
   finish({ status: { state: 'ok', at: 1, ms: 10, error: null } }); await pending;
   assert.equal(storage.has('apiKeys.status.openrouter'), false);
   assert.equal(row.testing, false);
   page.bindingContext.toggleAdvanced(); assert.equal(page.bindingContext.rows.length, 14);
+  const session = page.bindingContext.rows[13];
+  assert.deepEqual([`${session.group}: ${session.label}`, session.secure, session.testVisibility], ['Advanced: Grok Bot session', false, 'collapse']);
+  session.onEdit({ object: { text: 'Glasses' } });
+  assert.equal(settings.grokBotNamesSetting.get(), 'Glasses');
 });

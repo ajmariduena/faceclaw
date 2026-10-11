@@ -12,7 +12,7 @@ const definitions: { service: ApiService; label: string; group: string; setting:
   { service: "soniox", label: "Soniox", group: "Listening · Translate, Converse", setting: settings.sonioxApiKeySetting },
   { service: "typesafe", label: "Jev (TypeSafe)", group: "Facts · Converse", setting: settings.typesafeApiKeySetting },
   { service: "cerebras", label: "Cerebras", group: "Facts · Converse", setting: settings.cerebrasApiKeySetting },
-  { service: "openrouter", label: "OpenRouter", group: "Facts & AI Chat", setting: settings.openRouterApiKeySetting },
+  { service: "openrouter", label: "OpenRouter", group: "Facts", setting: settings.openRouterApiKeySetting },
   { service: "perplexity", label: "Perplexity", group: "Search · Converse", setting: settings.perplexityApiKeySetting },
   { service: "brave", label: "Brave (fallback)", group: "Search · Converse", setting: settings.braveApiKeySetting },
   ...([
@@ -76,14 +76,14 @@ class ApiKeyRow extends Observable {
 }
 /** Shares the key rows' template, so it exposes the same bindings. */
 class BotNamesRow extends Observable {
-  readonly label = "Bot name";
-  readonly group = "Grok Bot";
+  readonly label = "Grok Bot session";
+  readonly group = "Advanced";
   readonly secure = false;
   readonly testVisibility = "collapse";
   readonly testLabel = "";
   readonly enabled = true;
   readonly placeholder = "Glasses";
-  readonly status = "The exact name of your glasses bot. A misspelled name creates an empty bot.";
+  readonly status = "The exact name of the Grok Bot the glasses talk to. A misspelled name creates an empty one.";
   get value(): string { return settings.grokBotNamesSetting.get(); }
   set value(value: string) { if (value !== this.value) settings.grokBotNamesSetting.set(value); }
   onEdit(args: { object: { text: string } }): void { this.value = args.object.text; }
@@ -104,8 +104,7 @@ class ApiKeysViewModel extends Observable {
     this.notifyPropertyChange("advancedLabel", this.advancedLabel);
   }
   private visibleRows(): (ApiKeyRow | BotNamesRow)[] {
-    return this.allRows.filter(row => this.advanced || !row.definition.advanced)
-      .flatMap(row => row.definition.service === "cursor" ? [row, this.botNames] : [row]);
+    return [...this.allRows.filter(row => this.advanced || !row.definition.advanced), ...(this.advanced ? [this.botNames] : [])];
   }
   async testAll(): Promise<void> {
     if (this.testing) return;

@@ -11,10 +11,10 @@ import type { Layer, LayerContext } from "../../ui/layers";
 import type { MenuItem } from "../../ui/menu";
 import { createInProcessWindow, type InProcessAppOptions, type InProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
-import { VoiceDraft } from "../ai-chat/voice-draft";
+import { VoiceDraft } from "./voice-draft";
 import { ChatDraft, DRAFT_OPTIONS } from "../../ui/chat-draft";
 import type { AppContext } from "../app-definition";
-import { chatEmptyMessage, chatLines, elapsedClock } from "./bots-model";
+import { BOT_TITLE, chatEmptyMessage, chatLines, elapsedClock } from "./bots-model";
 
 export const BOTS_WINDOW_ID = "bots";
 const BOTS_SURFACE_ID = "window:bots";
@@ -30,8 +30,14 @@ export async function launchBots(ctx: AppContext): Promise<void> {
   if (!visible) activeLayer?.land();
 }
 
-/** The wakeword's dictation, once Bots is in front. */
+/** The wakeword's dictation, once Grok Bot is in front. */
 export function startBotsListening(): boolean { return activeLayer?.listen() ?? false; }
+
+/** Text composed elsewhere (the voice dialog, the watch, the remote API); a send that fails lands in the chat's draft. */
+export function sendToBots(text: string): void {
+  if (activeLayer) activeLayer.send(text);
+  else void grokBotHub.send(grokBotHub.defaultBot, text);
+}
 
 class BotsLayer implements Layer {
   readonly acceptsDirectional = true;
@@ -99,7 +105,7 @@ class BotsLayer implements Layer {
     this.requestRender();
   }
 
-  private send(text: string): void {
+  send(text: string): void {
     this.scrollBack = 0;
     void grokBotHub.send(grokBotHub.defaultBot, text).then(reason => {
       if (!reason) return;
@@ -127,7 +133,7 @@ class BotsLayer implements Layer {
     const now = Date.now();
     const footer = this.draft.active ? { left: this.draft.phase === "finishing" ? "· Finishing" : "· Listening", right: elapsedClock(now - this.draft.startedAt) } :
       bot.working ? { left: "· Working", right: elapsedClock(now - bot.workingSince) } :
-      { left: `· ${bot.name}`, right: grokBotHub.error === OFFLINE ? "Offline" : this.scrollBack > 0 ? "older" : "" };
+      { left: `· ${BOT_TITLE}`, right: grokBotHub.error === OFFLINE ? "Offline" : this.scrollBack > 0 ? "older" : "" };
     const question = this.notSent ? `Not sent · ${this.notSent}` : this.review.editing ? "Edit on phone" : "Draft";
     const view: ChatView = { lines, scrollBack: this.scrollBack, full: true, footer,
       permission: this.review.active ? { question, options: DRAFT_OPTIONS, selected: this.review.selected } : null,
@@ -193,7 +199,7 @@ function createBotsWindow(options: InProcessAppOptions): InProcessWindow {
   let unsubscribe = () => {};
   const app = createInProcessWindow({
     ...options,
-    appId: "bots", windowId: BOTS_WINDOW_ID, title: "Bots", iconLetter: "B", icon: "sparkles", closeable: true,
+    appId: "bots", windowId: BOTS_WINDOW_ID, title: BOT_TITLE, iconLetter: "G", icon: "sparkles", closeable: true,
     baseLayer: layer,
     isVoiceCapturing: () => layer.draft.active,
     onSystemMenuOpened: () => layer.draft.cancel(),

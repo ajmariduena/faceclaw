@@ -27,7 +27,6 @@ import {
   type CountdownTimer,
 } from "../apps/timer/timer-model";
 import { timerEngine } from "../apps/timer/timer-engine";
-import { shell } from "../ui/shell/shell";
 import { timeFormatSetting } from "../ui/dashboard-settings";
 import { toolRegistry, type ToolRegistry, type ToolResult } from "./tool-registry";
 
@@ -139,7 +138,7 @@ export function registerTimerTools(launchApp: (appId: string) => Promise<void>, 
       if (durationMs > MAX_TIMER_DURATION_MS) return { ok: false, error: "Timers can run for at most 24 hours." };
       const label = typeof args?.label === "string" ? args.label.trim() : "";
       const timer = timerEngine.startTimer(durationMs, label);
-      if (shell.foregroundWindow()?.appId !== "ai-chat") showApp();
+      showApp();
       const number = listedTimers().indexOf(timer) + 1;
       return {
         ok: true,

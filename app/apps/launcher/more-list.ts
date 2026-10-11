@@ -12,7 +12,6 @@ export type MoreRow = { appId: string; label: string; icon: IconName };
 
 /** The fixed More list: the apps without a home card, in this order. */
 export const MORE_ROWS: readonly MoreRow[] = [
-  { appId: "ai-chat", label: "AI Chat", icon: "sparkles" },
   { appId: "timer", label: "Timers", icon: "timer" },
   { appId: "navigate", label: "Navigate", icon: "navigation" },
   { appId: "settings", label: "Settings", icon: "settings" },

@@ -149,9 +149,9 @@ test('home: the six cards and their states, Paseo then Bots with six dots', asyn
   }
 });
 
-test('More: the four fixed rows at a 46 px pitch, "· More 1/4", icons dim with their row', async () => {
+test('More: the three fixed rows at a 46 px pitch, "· More 1/3", icons dim with their row', async () => {
   const stock = await leanFacePromise;
-  for (const [name, selected, rows] of [['more', 0, moreRows(false)], ['more-settings', 3, moreRows(false)], ['more-developer', 4, moreRows(true)]]) {
+  for (const [name, selected, rows] of [['more', 0, moreRows(false)], ['more-settings', 2, moreRows(false)], ['more-developer', 3, moreRows(true)]]) {
     const { face, draws, texts } = tracing(stock);
     const image = new leanGraphics.GrayImage(576, 288);
     paintMoreList(image, face, selected, rows);

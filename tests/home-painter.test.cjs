@@ -39,7 +39,7 @@ test('app paints one bordered card with six stable dots centred on the card and 
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(image.pixels[y * 576 + x], 0);
   }
   const drawn = texts();
-  for (const expected of ['Sat 10', 'Nothing today', 'Not paired', 'Bots', 'Setup required', 'Live facts · ES/EN', 'More', 'ES ', ' EN'])
+  for (const expected of ['Sat 10', 'Nothing today', 'Not paired', 'Grok Bot', 'Setup required', 'Live facts · ES/EN', 'More', 'ES ', ' EN'])
     assert.ok(drawn.includes(expected), expected);
   for (const spanish of ['Sábado', 'Toca para', 'Sin ', 'Más', 'Traducir', 'Calendario', 'Nada sonando', 'Sin notificaciones'])
     assert.ok(!drawn.some(text => text.includes(spanish)), spanish);
@@ -165,22 +165,22 @@ test('long titles are clipped to the card and never overflow', () => {
   assert.ok(font.measureText(clipped.text) <= 278);
 });
 
-test('the Bots card shows the two most relevant updates (who dim, line white, at most two lines) or a centred status', () => {
-  const bots = { status: 'Ask Glasses anything', updates: [
-    { bot: 'Glasses', who: 'Glasses · now', line: 'Hay uno a $62 el jueves 07:10 en Avianca; el tuyo cuesta $89 y el cambio no cobra multa.' },
-    { bot: 'Research', who: 'Research · working 4 min', line: 'Comparando Google y Mapbox.' },
+test('the Grok Bot card shows the two most relevant updates (who dim, line white, at most two lines) or a centred status', () => {
+  const bots = { status: 'Ask Grok Bot anything', updates: [
+    { bot: 'Glasses', who: 'now', line: 'Hay uno a $62 el jueves 07:10 en Avianca; el tuyo cuesta $89 y el cambio no cobra multa.' },
+    { bot: 'Research', who: 'working 4 min', line: 'Comparando Google y Mapbox.' },
   ] };
   textDraws = [];
   paintHome(1, snapshot({ bots }), face);
   const card = textDraws.filter(draw => draw.x === 20);
-  assert.equal(textDraws.find(draw => draw.text === 'Bots').y, 16, 'header');
+  assert.equal(textDraws.find(draw => draw.text === 'Grok Bot').y, 16, 'header');
   assert.deepEqual(card.map(draw => draw.value), [153, 255, 255, 153, 255]);
-  assert.equal(card[0].text, 'Glasses · now');
+  assert.equal(card[0].text, 'now');
   assert.ok(card[2].text.endsWith('…'), 'the long line is cut at two lines');
-  assert.equal(card[3].text, 'Research · working 4 min');
+  assert.equal(card[3].text, 'working 4 min');
   assert.ok(card.at(-1).y + font.lineHeight <= 254);
   textDraws = [];
-  paintHome(1, snapshot({ bots: { status: 'Ask Glasses anything', updates: [] } }), face);
-  assert.ok(texts().includes('Ask Glasses anything'));
-  assert.equal(textDraws.find(draw => draw.text === 'Ask Glasses anything').value, 153);
+  paintHome(1, snapshot({ bots: { status: 'Ask Grok Bot anything', updates: [] } }), face);
+  assert.ok(texts().includes('Ask Grok Bot anything'));
+  assert.equal(textDraws.find(draw => draw.text === 'Ask Grok Bot anything').value, 153);
 });

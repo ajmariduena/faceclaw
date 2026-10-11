@@ -12,6 +12,8 @@ import { registerSystemTools } from '../assistant/system-tools'
 import { registerWindowTools } from '../assistant/window-tools'
 import { registerNavigateTools } from '../assistant/navigate-tools'
 import { registerRoamTools } from '../assistant/roam-tools'
+import { grokBotHub } from '../assistant/grokbot/grokbot'
+import { sendToBots } from '../apps/bots/bots-app'
 import { IosNavigationSensors } from '../native/ios-navigation-sensors'
 import { bindCompassSession, receiveCompassEvent } from '../native/compass.ios'
 import { Dialogs, File, knownFolders, path, Utils, type ImageSource } from '@nativescript/core'
@@ -216,8 +218,8 @@ export class IosPreviewController {
       },
       acceptsText: () => !!shell.foregroundWindow()?.receiveTextInput,
       text: (text, submit) => { if (!shell.isScreenOn()) shell.wake('window'); shell.sendTextToForegroundWindow(text, { submit }); this.requestShellRender() },
-      assistantAvailable: () => shell.isAssistantAvailable(),
-      assistant: text => shell.sendToAssistant(text),
+      assistantAvailable: () => grokBotHub.configured,
+      assistant: text => { void this.launchApp('bots').catch(() => {}).finally(() => sendToBots(text)) },
     })
     registerSystemTools()
     registerWindowTools({ apps: ALL_APPS.filter(app => !iosAppUnavailableReason(app.appId)),
