@@ -3,7 +3,8 @@ import { hasCalendarPermission } from "../../native/calendar-permissions";
 import { getCurrentLocation } from "../../native/location";
 import { hasLocationPermission } from "../../native/location-permissions";
 import { getStringSetting, setStringSetting } from "../../native/settings-store";
-import { braveApiKeySetting, onAnySettingChanged, openRouterApiKeySetting, perplexityApiKeySetting, sonioxApiKeySetting } from "../../ui/dashboard-settings";
+import { onAnySettingChanged, sonioxApiKeySetting } from "../../ui/dashboard-settings";
+import { converseKeys, missingConverseKey } from "../converse/converse-keys";
 import type { InputEvent } from "../../ui/gestures";
 import type { Layer } from "../../ui/layers";
 import { createInProcessWindow } from "../../ui/shell/in-process-window";
@@ -67,7 +68,7 @@ export function createHomeWindow(ctx: AppContext) {
         paseo: (readWorkerState(PASEO_GLANCE_STATE_KEY) as PaseoGlanceSnapshot | undefined) ?? null,
         bots: botsGlance(grokBotHub, now.getTime()),
         translateReady: sonioxApiKeySetting.get().trim().length > 0,
-        converseReady: [sonioxApiKeySetting, openRouterApiKeySetting].every((key) => key.get().trim()) && [perplexityApiKeySetting, braveApiKeySetting].some((key) => key.get().trim()),
+        converseReady: missingConverseKey(sonioxApiKeySetting.get().trim(), converseKeys()) === null,
         battery: { ring: levels.ring, glasses: levels.headset },
         weather: weather.reading(),
       }, stockFace());

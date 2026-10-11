@@ -20,7 +20,7 @@ export type HomeSnapshot = {
   bots?: BotsGlance | null;
   /** A Soniox key is stored, so Translate can start. */
   translateReady?: boolean;
-  /** Soniox, OpenRouter and a search key are stored, so Converse can start. */
+  /** Every key Converse needs is stored (missingConverseKey), so it can start. */
   converseReady?: boolean;
   /** Ring and glasses levels from the shell; null (or absent) while unknown. */
   battery?: HomeBattery;

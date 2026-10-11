@@ -1,4 +1,4 @@
-export const API_SERVICES = ["paseo", "soniox", "openrouter", "parallel", "perplexity", "cerebras", "anthropic", "openai", "brave", "mapbox", "elevenlabs", "cursor"] as const;
+export const API_SERVICES = ["paseo", "soniox", "openrouter", "typesafe", "parallel", "perplexity", "cerebras", "anthropic", "openai", "brave", "mapbox", "elevenlabs", "cursor"] as const;
 export type ApiService = typeof API_SERVICES[number];
 export type ApiKeyStatus = { state: "ok" | "failed" | "missing" | "untested"; at: number; ms: number | null; error: string | null };
 export const apiStatusKey = (service: ApiService): string => `apiKeys.status.${service}`;
@@ -31,6 +31,10 @@ export async function testHttpApiKey(service: Exclude<ApiService, "paseo" | "son
       url = "https://api.parallel.ai/v1/search"; method = "POST";
       headers = { "x-api-key": key, "Content-Type": "application/json" };
       body = JSON.stringify({ mode: "fast", search_queries: ["Even Realities smart glasses"], advanced_settings: { max_results: 1 } }); break;
+    case "typesafe":
+      url = "https://api.typesafe.ai/v1/systemone"; method = "POST";
+      headers = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+      body = JSON.stringify({ state: "Even Realities smart glasses", model: "jev-latest", questions: { ok: { type: "noul", instructions: "This mentions glasses." } } }); break;
     case "perplexity":
       url = "https://api.perplexity.ai/search"; method = "POST";
       headers = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };

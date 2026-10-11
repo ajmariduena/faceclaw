@@ -4,7 +4,7 @@ const { loader } = require('./helpers/load-typescript.cjs');
 
 const load = loader({ encodeURIComponent, Promise, Error }, {});
 const { lookupFact, parseFactLine } = load('app/apps/converse/converse-facts.ts');
-const KEYS = { openRouter: 'or-key', perplexity: 'px-key', brave: 'br-key' };
+const KEYS = { typesafe: '', cerebras: '', openRouter: 'or-key', perplexity: 'px-key', brave: 'br-key' };
 
 function fakePost(routes) {
   const calls = [];
@@ -84,7 +84,7 @@ function sessionHarness() {
     '../../native/reconnecting-stt': { ReconnectingSttClient: class { constructor(_create, opts) { options = opts; } start() {} stop() {} acceptPcm() {} } },
     '../../native/soniox-stt': { SonioxSttClient: class {} },
     '../../native/voice-control': { voiceControlBridge: { onRawPcm: () => () => {}, startRawCapture: () => true, stopRawCapture() {} } },
-    '../../ui/dashboard-settings': { sonioxApiKeySetting: setting('sx'), openRouterApiKeySetting: setting('or'), perplexityApiKeySetting: setting('px'), braveApiKeySetting: setting('') },
+    '../../ui/dashboard-settings': { sonioxApiKeySetting: setting('sx'), typesafeApiKeySetting: setting('ts'), cerebrasApiKeySetting: setting(''), openRouterApiKeySetting: setting('or'), perplexityApiKeySetting: setting('px'), braveApiKeySetting: setting('') },
     '../../ui/shell/voice-activity': { voiceActivity: { subscribe: () => () => {} } },
     '../evenhub/mic-router': { activeCommunicator: () => ({}) },
     '../translate/translate-session': { describeFailure: (message) => message },
@@ -116,4 +116,28 @@ test('interim transcripts are not looked up', () => {
   const { lookups, options } = sessionHarness();
   options.onTranscript({ text: '¿Cuántos habi', isFinal: false });
   assert.equal(lookups.length, 0);
+});
+
+test('Jev and Cerebras are called directly when their keys are set, OpenRouter answers when Cerebras fails', async () => {
+  const { post, calls } = fakePost({
+    'https://api.typesafe.ai/v1/systemone': () => ({ status: 200, json: { answers: { lookup: { noul: 0.95 } } } }),
+    'https://api.perplexity.ai/search': () => PERPLEXITY,
+    'https://api.cerebras.ai/': () => ({ status: 402, json: {} }),
+    'https://openrouter.ai/api/v1/chat/completions': () => writer('Chimborazo | Mide 6.263 m. | 1'),
+  });
+  const fact = await lookupFact('¿Qué altura tiene el Chimborazo?', 'es', { ...KEYS, typesafe: 'ts-key', cerebras: 'cb-key' }, post);
+  assert.equal(fact.text, 'Mide 6.263 m.');
+  const typesafe = calls.find((call) => call.url.includes('typesafe'));
+  assert.equal(typesafe.body.state, '¿Qué altura tiene el Chimborazo?');
+  assert.ok(!calls.some((call) => call.url.includes('alpha/decisions')));
+});
+
+test('Converse says which key is still missing', () => {
+  const { missingConverseKey } = loader({}, { '../../ui/dashboard-settings': {} })('app/apps/converse/converse-keys.ts');
+  const none = { typesafe: '', cerebras: '', openRouter: '', perplexity: '', brave: '' };
+  assert.equal(missingConverseKey('', none), 'Soniox');
+  assert.equal(missingConverseKey('sx', none), 'Jev (TypeSafe)');
+  assert.equal(missingConverseKey('sx', { ...none, typesafe: 'ts' }), 'Cerebras');
+  assert.equal(missingConverseKey('sx', { ...none, openRouter: 'or' }), 'Perplexity');
+  assert.equal(missingConverseKey('sx', { ...none, typesafe: 'ts', cerebras: 'cb', brave: 'br' }), null);
 });

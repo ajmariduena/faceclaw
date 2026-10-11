@@ -2,11 +2,12 @@ import type { CloudSttClient, CloudSttOptions } from "../../native/cloud-stt";
 import { ReconnectingSttClient } from "../../native/reconnecting-stt";
 import { SonioxSttClient, type SonioxSttOptions } from "../../native/soniox-stt";
 import { voiceControlBridge } from "../../native/voice-control";
-import { braveApiKeySetting, openRouterApiKeySetting, perplexityApiKeySetting, sonioxApiKeySetting } from "../../ui/dashboard-settings";
+import { sonioxApiKeySetting } from "../../ui/dashboard-settings";
 import { voiceActivity } from "../../ui/shell/voice-activity";
 import { activeCommunicator } from "../evenhub/mic-router";
 import { describeFailure } from "../translate/translate-session";
 import type { Fact, FactKeys } from "./converse-facts";
+import { converseKeys, missingConverseKey } from "./converse-keys";
 
 export type ConverseState =
   | { kind: "connecting" }
@@ -50,10 +51,9 @@ export class ConverseSession {
   start(): void {
     if (this.listening) return;
     const apiKey = sonioxApiKeySetting.get().trim();
-    const keys = { openRouter: openRouterApiKeySetting.get().trim(), perplexity: perplexityApiKeySetting.get().trim(), brave: braveApiKeySetting.get().trim() };
-    if (!apiKey) return this.setState({ kind: "missing-key", service: "Soniox" });
-    if (!keys.openRouter) return this.setState({ kind: "missing-key", service: "OpenRouter" });
-    if (!keys.perplexity && !keys.brave) return this.setState({ kind: "missing-key", service: "Perplexity" });
+    const keys = converseKeys();
+    const missing = missingConverseKey(apiKey, keys);
+    if (missing) return this.setState({ kind: "missing-key", service: missing });
     const communicator = activeCommunicator();
     if (!communicator) return this.setState({ kind: "no-glasses" });
     this.offPcm = voiceControlBridge.onRawPcm((pcm) => this.client?.acceptPcm(pcm));
