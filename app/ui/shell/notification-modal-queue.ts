@@ -8,8 +8,8 @@
  * reports back how each one left the stack.
  */
 export interface NotificationModalHost<M> {
-  /** Create and stack a modal showing this notification. */
-  open(notificationKey: string): M;
+  /** Create and stack a modal showing this notification; `wokeScreen` when the screen was off for it. */
+  open(notificationKey: string, wokeScreen: boolean): M;
   /** Whether a queued notification is still worth opening (not dismissed, popups still on). */
   isAvailable(notificationKey: string): boolean;
   /** Put the screen back to sleep. */
@@ -41,7 +41,7 @@ export class NotificationModalQueue<M> {
       }
       return;
     }
-    this.current = { modal: this.host.open(notificationKey), notificationKey, wokeScreen };
+    this.current = { modal: this.host.open(notificationKey, wokeScreen), notificationKey, wokeScreen };
   }
 
   /**

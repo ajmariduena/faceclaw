@@ -1,4 +1,4 @@
-import type { GrayImage } from "../../graphics/image";
+import { GrayImage } from "../../graphics/image";
 import { renderIcon, type IconName } from "../../graphics/icons";
 import { fitLine, wrapCapped } from "../../graphics/terminal-painter";
 import type { InputEvent } from "../gestures";
@@ -24,7 +24,7 @@ const PAD_X = 20;
 const PAD_Y = 12;
 
 /**
- * A window's alert in Even's notification box over the screen it woke.
+ * A window's alert in Even's notification box, alone on the screen it woke.
  * Tap opens it in the window, double tap dismisses it.
  */
 export class WindowAlertLayer implements Layer {
@@ -33,8 +33,9 @@ export class WindowAlertLayer implements Layer {
     private readonly actions: { open: () => void; dismiss: () => void; removed: () => void },
   ) {}
 
-  paint(_ctx: LayerContext, paintBelow: () => GrayImage): GrayImage {
-    const image = paintBelow();
+  paint(ctx: LayerContext): GrayImage {
+    const base = ctx.stack.getBaseSize();
+    const image = new GrayImage(base.width, base.height, SHELL_OPAQUE_BLACK);
     const face = terminalFace();
     const area = appViewportRect("min");
     const pitch = Math.max(27, face.lineHeight + 4);

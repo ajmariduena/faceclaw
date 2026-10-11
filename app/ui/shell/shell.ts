@@ -427,7 +427,7 @@ class Shell {
   private activeVoiceLayer: VoiceInputLayer | null = null;
   private activeKeyboardLayer: KeyboardInputLayer | null = null;
   private readonly notificationModals = new NotificationModalQueue<ShellModalLayer>({
-    open: (notificationKey) => this.pushNotificationModal(notificationKey),
+    open: (notificationKey, wokeScreen) => this.pushNotificationModal(notificationKey, wokeScreen),
     isAvailable: (notificationKey) => {
       const notification = readActiveNotifications(ALL_NOTIFICATIONS).find((item) => item.key === notificationKey);
       return !!notification && shouldShowNotificationOnGlasses(notification.packageName);
@@ -841,7 +841,7 @@ class Shell {
     this.config.requestShellRender();
   }
 
-  private pushNotificationModal(notificationKey: string): ShellModalLayer {
+  private pushNotificationModal(notificationKey: string, wokeScreen: boolean): ShellModalLayer {
     const modal: ShellModalLayer = new ShellModalLayer(
       new SingleNotificationLayer(notificationKey, {
         origin: "new-notification-modal",
@@ -849,6 +849,7 @@ class Shell {
       }),
       this.config.actions,
       () => this.notificationModals.removed(modal, this.screenOn),
+      wokeScreen,
     );
     this.stack.push(modal);
     return modal;
