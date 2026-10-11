@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { now, jev, parallel, brave, write } from './steps.mjs';
+import { now, jev, parallel, brave, write, perplexityFast } from './steps.mjs';
 
 const RATE = 16000;
 const GAP_MS = Number(process.env.GAP_MS ?? 1500);
@@ -55,7 +55,8 @@ function utteranceFor(at) {
 }
 
 async function lookup(r, text, heardAt) {
-  const [d, pf, br] = await Promise.all([jev(text), parallel(text, 'fast').catch((e) => ({ ms: NaN, snippets: [], error: e.message })), brave(text).catch((e) => ({ ms: NaN, snippets: [], error: e.message }))]);
+  const search = process.env.SEARCH === 'parallel' ? parallel(text, 'fast') : perplexityFast(text);
+  const [d, pf, br] = await Promise.all([jev(text), search.catch((e) => ({ ms: NaN, snippets: [], error: e.message })), brave(text).catch((e) => ({ ms: NaN, snippets: [], error: e.message }))]);
   r.jev = d.p;
   if (d.p >= 0.5) {
     const w = await write(text, pf.snippets.length ? pf.snippets : br.snippets);

@@ -32,6 +32,12 @@ Latencia objetivo: unos 1,5–2,5 s desde que termina la frase hasta que aparece
 - **Envío a las gafas** (frame-timings del Nubia en uso real): de render a pantalla, unos 200 ms de mediana y 290 ms en el p90.
 - **Total estimado, desde que la persona termina de hablar hasta ver el dato:** unos 1,8–2,0 s con Parallel. Con Brave serían unos 1,4–1,6 s (estimación). Falta medirlo con red móvil y con audio real con ruido.
 
+## Buscadores más rápidos (11 oct, `tools/conversar-probe/search-apis.mjs`)
+- openbenchmarks.com (300 preguntas, 19 sep 2026) mide estas medianas: Parallel `turbo` 315 ms, Exa `instant` 386 ms, Firecrawl 471 ms, Brave 590–613 ms, Parallel `fast` 861 ms. Perplexity Fast Search (`search_type: "fast"`, lanzado el 24 sep 2026, $1 por 1.000) anuncia 160 ms de mediana, pero no está en esa tabla.
+- **Medido desde la Mac** (6 frases × 3 corridas): Perplexity Fast 433 ms, Brave 509 ms, TinyFish 533 ms, Parallel `turbo` 611 ms (ya acepta español), Firecrawl 803 ms y Parallel `fast` 843 ms. Exa no tiene crédito. Todos dieron el dato en 6 de 6 frases. Con los fragmentos de Brave, el redactor dio una fecha mal (8 de noviembre de 1820); con Firecrawl y TinyFish a veces respondió en otro idioma (hindi, coreano), y hay que fijar el idioma en el prompt.
+- **Con Perplexity Fast en la cadena completa:** la búsqueda tarda 280–360 ms y la línea con el dato sale unos 1,19 s después de que termina la frase (antes 1,55–1,75 s). Con el envío a las gafas serían unos 1,4 s en total.
+- Ahora el tiempo se reparte en: Soniox detectando el fin de frase (~380 ms), la búsqueda o Jev (~350 ms, en paralelo), el redactor (~300 ms) y el envío a las gafas (~200 ms).
+
 ## Decisiones abiertas
 - Dónde corre el «cerebro» (detectar, buscar, redactar): directo desde el teléfono (las claves quedan en el teléfono) o a través del daemon de Paseo en la Mac por el relay (las claves se quedan en la Mac, pero depende de la Mac).
 - Qué búsqueda usar (Parallel, Brave o Perplexity) y qué modelo en Cerebras.

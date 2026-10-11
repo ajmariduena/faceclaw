@@ -70,3 +70,16 @@ export async function write(text, snippets) {
   if (!res.ok) throw new Error(`writer ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
   return { ms: now() - t0, line: body.choices?.[0]?.message?.content?.trim(), provider: body.provider };
 }
+
+export async function perplexityFast(text) {
+  const t0 = now();
+  const res = await fetch('https://api.perplexity.ai/search', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: text, search_type: 'fast', max_results: 5 }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(`perplexity ${res.status}: ${JSON.stringify(body).slice(0, 200)}`);
+  const snippets = (body.results ?? []).map((r) => `${r.title}: ${(r.snippet ?? '').slice(0, 500)}`);
+  return { ms: now() - t0, snippets };
+}
