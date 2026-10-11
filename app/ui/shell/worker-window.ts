@@ -125,6 +125,8 @@ export type WorkerAppReply =
       windowId: string;
       on: boolean;
     }
+  /** Hold off the screen timeout while this window is in front (e.g. a route in progress). */
+  | { type: "keep-screen-on"; windowId: string; on: boolean }
   | {
       /** Close this window (the shell owns the close path). */
       type: "close-window-request";
@@ -298,6 +300,7 @@ export class WorkerAppHost {
   /** The window receiving the glasses mic tap, with the tap's stop handle. */
   private rawMic: { windowId: string; stop: () => void } | null = null;
   private voiceDraft: { windowId: string; draft: VoiceDraft } | null = null;
+  private readonly screenHolds = new Set<string>();
 
   constructor(private readonly options: WorkerAppHostOptions) {
     options.worker.onmessage = (event: MessageEvent) => {
@@ -399,6 +402,10 @@ export class WorkerAppHost {
         case "raw-mic":
           if (message.on) this.startRawMic(message.windowId);
           else this.stopRawMic();
+          break;
+        case "keep-screen-on":
+          if (message.on && this.openWindows.has(message.windowId)) this.screenHolds.add(message.windowId);
+          else this.screenHolds.delete(message.windowId);
           break;
         case "voice-draft":
           if (message.action === "start") this.startVoiceDraft(message.windowId);
@@ -618,12 +625,14 @@ export class WorkerAppHost {
       hasAppMenu: () => this.windowGestures.get(spec.windowId)?.hasAppMenu ?? false,
       claimsLongPress: () => this.windowGestures.get(spec.windowId)?.claimsLongPress ?? false,
       // The idle timeout would otherwise sleep mid-dictation, and sleeping cancels it.
+      keepsScreenOn: () => this.screenHolds.has(spec.windowId),
       isVoiceCapturing: () => this.rawMic?.windowId === spec.windowId ||
         (this.voiceDraft?.windowId === spec.windowId && this.voiceDraft.draft.active),
       close: () => {
         if (closed) return;
         closed = true;
         this.openWindows.delete(spec.windowId);
+        this.screenHolds.delete(spec.windowId);
         this.cancelVoiceDraft(spec.windowId);
         if (!this.openWindows.size) this.options.navigationSensors?.stop();
         this.windowGestures.delete(spec.windowId);

@@ -67,3 +67,25 @@ test('voice-draft relays the standard dictation to the worker: live text, then o
   assert.deepEqual(after.map(m => [m.phase, m.final]), [['idle', 'Parque Histórico']]);
   assert.equal(window.isVoiceCapturing(), false);
 });
+
+test('a worker window can hold the screen on until it lets go or closes', () => {
+  const worker = { postMessage() {} };
+  const load = loader({ global: { isIOS: false } }, {
+    '../../graphics/image': {}, './chrome-layer': { windowIcon() {} },
+    '../../assistant/tool-registry': { toolRegistry: { removeAppTools() {} } },
+    './geometry': { appViewportSize: () => ({ width: 576, height: 260 }) },
+    '../../native/frame-timings': {}, './worker-state': {},
+    './shell': { shell: { registerWindow() {}, foregroundWindow: () => ({ windowId: 'navigate' }), setTrayIcon() {} } },
+  });
+  const { WorkerAppHost } = load('app/ui/shell/worker-window.ts');
+  const host = new WorkerAppHost({ appId: 'navigate', worker, configureSurface: async () => {}, requestShellRender() {}, removeSurface() {} });
+  const window = host.openWindow({ windowId: 'navigate', title: 'Navigate' });
+  assert.equal(window.keepsScreenOn(), false);
+  worker.onmessage({ data: { type: 'keep-screen-on', windowId: 'navigate', on: true } });
+  assert.equal(window.keepsScreenOn(), true);
+  worker.onmessage({ data: { type: 'keep-screen-on', windowId: 'navigate', on: false } });
+  assert.equal(window.keepsScreenOn(), false);
+  worker.onmessage({ data: { type: 'keep-screen-on', windowId: 'navigate', on: true } });
+  window.close();
+  assert.equal(window.keepsScreenOn(), false);
+});

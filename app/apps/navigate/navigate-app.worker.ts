@@ -228,6 +228,7 @@ const tiles = new RoadTiles(() => {
   if (phase === "guiding" || phase === "starting" || phase === "arrived") render();
 });
 
+let screenHeld = false;
 let compassActive = false;
 let unsubscribeCompass: (() => void) | null = null;
 
@@ -303,6 +304,7 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       googleStarted = false;
       googleReady = false;
       window = null;
+      screenHeld = false;
       reconcileTracking();
       reconcileCompass();
       break;
@@ -1290,8 +1292,17 @@ function render(): void {
   if (window) renderAndSubmit(window, 0);
 }
 
+/** A trip on screen must not go dark on the screen timeout. */
+function reconcileScreenHold(win: NavWindow): void {
+  const wanted = phase === "starting" || phase === "guiding" || phase === "arrived";
+  if (wanted === screenHeld) return;
+  screenHeld = wanted;
+  post({ type: "keep-screen-on", windowId: win.windowId, on: wanted });
+}
+
 function renderAndSubmit(win: NavWindow, inputFrameId: number): void {
   reconcileCompass();
+  reconcileScreenHold(win);
   if (!win.foreground && inputFrameId === 0) return;
   const frameId = inputFrameId > 0 ? inputFrameId : frameTimings.startFrame(`render:${win.windowId}`);
   try {

@@ -257,3 +257,15 @@ test('a tap during guidance opens the menu where the route can be stopped', asyn
   assert.ok(h.calls.some(c => c[0] === 'menu'));
   assert.equal(h.state().phase, 'guiding');
 });
+
+test('the screen stays on from the route search until the trip ends', async () => {
+  const h = fixture();
+  const holds = () => h.messages.filter(m => m.type === 'keep-screen-on').map(m => m.on);
+  h.handleNavigateTool('start_route', { query: 'Malecón' });
+  await flush();
+  assert.deepEqual(holds(), [true]);
+  h.nav({ type: 'ready' });
+  h.nav({ type: 'status', status: 'OK' });
+  await h.handleNavigateTool('stop_route', {});
+  assert.deepEqual(holds(), [true, false]);
+});
