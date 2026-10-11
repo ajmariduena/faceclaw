@@ -18,6 +18,7 @@ import { IosNavigationSensors } from '../native/ios-navigation-sensors'
 import { bindCompassSession, receiveCompassEvent } from '../native/compass.ios'
 import { Dialogs, File, knownFolders, path, Utils, type ImageSource } from '@nativescript/core'
 import { iosVoiceInput } from '../native/ios-voice-input'
+import { VoiceDraft } from '../ui/voice-draft'
 import { nightscoutBridge } from '../native/nightscout-bridge'
 import { weatherBridge } from '../native/weather'
 import { FaceclawCommunicatorBridge, resolveIosPeripherals, type CommunicatorState, type RawInputEvent } from '../native/faceclaw-communicator.ios'
@@ -657,6 +658,7 @@ export class IosPreviewController {
       startTextSettingEdit: id => { const setting = getStringSettingById(id); if (setting) void this.editSetting(setting) },
       endTextSettingEdit: () => {},
       startTextInput: () => shell.startVoiceInput(),
+      createVoiceDraft: (prepare, changed, send) => new VoiceDraft(this.actions, prepare, changed, send),
     })
     this.appHosts.set(appId, host)
     return host

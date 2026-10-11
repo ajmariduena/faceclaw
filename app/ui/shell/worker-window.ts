@@ -8,6 +8,7 @@ import * as frameTimings from "../../native/frame-timings";
 import { shell, type ShellWindow } from "./shell";
 import type { WindowAlert } from "./window-alert-layer";
 import { publishWorkerState } from "./worker-state";
+import type { VoiceDraft } from "../voice-draft";
 
 /**
  * Messages between the shell (main thread) and an app worker. One worker
@@ -42,7 +43,9 @@ export type WorkerAppMessage =
   /** One decoded glasses mic packet (16 kHz mono S16LE), base64, while the raw mic tap runs. */
   | { type: "raw-pcm"; windowId: string; pcm: string }
   /** The user tapped the app's alert (see show-alert); its window is already in front. */
-  | { type: "alert-open"; key: string };
+  | { type: "alert-open"; key: string }
+  /** Answer to voice-draft: each change, then `final` once with the transcript (idle without it ended empty). */
+  | { type: "voice-draft"; windowId: string; phase: VoiceDraft["phase"]; text: string; status: string; final?: string };
 
 export type WorkerAppReply =
   | { type: "worker-idle" }
@@ -104,6 +107,12 @@ export type WorkerAppReply =
       /** Open the shell's voice dialog aimed at this window (a menu pick). */
       type: "start-voice-input";
       windowId: string;
+    }
+  | {
+      /** Start, finish (release) or drop the standard dictation, Grok Bot's, for this window. */
+      type: "voice-draft";
+      windowId: string;
+      action: "start" | "release" | "cancel";
     }
   | {
       /**
@@ -234,6 +243,8 @@ export type WorkerAppHostOptions = {
    * can't run (another capture owns the mic, no glasses mic on this OS).
    */
   startRawMic?: (deliver: (pcmBase64: string) => void) => { stop: () => void } | string;
+  /** A VoiceDraft on the phone's speech-to-text, for voice-draft. */
+  createVoiceDraft?: (prepare: () => Promise<boolean>, changed: () => void, send: (text: string) => void) => VoiceDraft;
   /** Open or focus the Settings app, optionally selecting a section. */
   openSettings: (section?: string) => void;
   /** Open (or focus) this host's own app, for an alert tapped while it has no window. */
@@ -286,6 +297,7 @@ export class WorkerAppHost {
   private readonly publishedStateKeys = new Set<string>();
   /** The window receiving the glasses mic tap, with the tap's stop handle. */
   private rawMic: { windowId: string; stop: () => void } | null = null;
+  private voiceDraft: { windowId: string; draft: VoiceDraft } | null = null;
 
   constructor(private readonly options: WorkerAppHostOptions) {
     options.worker.onmessage = (event: MessageEvent) => {
@@ -387,6 +399,13 @@ export class WorkerAppHost {
         case "raw-mic":
           if (message.on) this.startRawMic(message.windowId);
           else this.stopRawMic();
+          break;
+        case "voice-draft":
+          if (message.action === "start") this.startVoiceDraft(message.windowId);
+          else if (this.voiceDraft?.windowId === message.windowId) {
+            if (message.action === "release") this.voiceDraft.draft.release();
+            else this.cancelVoiceDraft();
+          }
           break;
         case "close-window-request":
           if (this.openWindows.has(message.windowId)) {
@@ -499,6 +518,45 @@ export class WorkerAppHost {
     reply(true);
   }
 
+  private startVoiceDraft(windowId: string): void {
+    if (this.voiceDraft?.draft.active) {
+      if (this.voiceDraft.windowId === windowId) return;
+      this.cancelVoiceDraft();
+    }
+    const create = this.options.createVoiceDraft;
+    if (!create || shell.foregroundWindow()?.windowId !== windowId) {
+      this.post({ type: "voice-draft", windowId, phase: "idle", text: "", status: "Microphone unavailable" });
+      return;
+    }
+    const postState = (final?: string) => this.post({
+      type: "voice-draft", windowId, phase: draft.phase, text: draft.text, status: draft.status, ...(final === undefined ? {} : { final }),
+    });
+    // finish() goes idle and then sends in the same tick; hold the idle so the
+    // worker sees one transition to the transcript instead of a flash of "ended".
+    let idlePending = false;
+    const draft: VoiceDraft = create(() => shell.prepareChatVoiceCapture(windowId), () => {
+      if (this.voiceDraft?.draft !== draft) return;
+      if (draft.phase !== "idle") { postState(); return; }
+      idlePending = true;
+      void Promise.resolve().then(() => {
+        if (!idlePending) return;
+        idlePending = false;
+        postState();
+      });
+    }, (text) => {
+      idlePending = false;
+      if (this.voiceDraft?.draft === draft) postState(text);
+    });
+    this.voiceDraft = { windowId, draft };
+    void draft.start();
+  }
+
+  private cancelVoiceDraft(windowId?: string): void {
+    const current = this.voiceDraft;
+    if (!current || (windowId !== undefined && current.windowId !== windowId)) return;
+    current.draft.cancel();
+  }
+
   private stopRawMic(): void {
     const current = this.rawMic;
     if (!current) return;
@@ -513,6 +571,7 @@ export class WorkerAppHost {
     this.queuedMessages.length = 0;
     this.options.navigationSensors?.stop();
     this.stopRawMic();
+    this.cancelVoiceDraft();
     shell.setTrayIcon(this.options.appId, null);
     for (const key of this.publishedStateKeys) publishWorkerState(key, undefined);
     this.publishedStateKeys.clear();
@@ -559,11 +618,13 @@ export class WorkerAppHost {
       hasAppMenu: () => this.windowGestures.get(spec.windowId)?.hasAppMenu ?? false,
       claimsLongPress: () => this.windowGestures.get(spec.windowId)?.claimsLongPress ?? false,
       // The idle timeout would otherwise sleep mid-dictation, and sleeping cancels it.
-      isVoiceCapturing: () => this.rawMic?.windowId === spec.windowId,
+      isVoiceCapturing: () => this.rawMic?.windowId === spec.windowId ||
+        (this.voiceDraft?.windowId === spec.windowId && this.voiceDraft.draft.active),
       close: () => {
         if (closed) return;
         closed = true;
         this.openWindows.delete(spec.windowId);
+        this.cancelVoiceDraft(spec.windowId);
         if (!this.openWindows.size) this.options.navigationSensors?.stop();
         this.windowGestures.delete(spec.windowId);
         this.windowIconActivity.delete(spec.windowId);
@@ -595,6 +656,8 @@ export class WorkerAppHost {
         this.options.setSurfaceVisible(surfaceId, foreground);
         if (foreground) {
           shell.setWindowAttention(spec.windowId, false);
+        } else {
+          this.cancelVoiceDraft(spec.windowId);
         }
         this.post({
           type: "foreground",
@@ -606,6 +669,7 @@ export class WorkerAppHost {
       setScreenOn: (on) => {
         // Screen state is per-app, but sending per-window keeps the protocol
         // uniform; the worker treats it globally.
+        if (!on) this.cancelVoiceDraft(spec.windowId);
         this.post({ type: "screen", on });
       },
       setInputFocus: (focused) => {

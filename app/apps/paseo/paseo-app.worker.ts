@@ -318,6 +318,7 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       post({ type: "tool-result", callId: message.callId, result: { ok: false, error: "Paseo has no assistant tools." } });
       break;
     case "input-focus":
+    case "voice-draft":
     case "navigation-sensors":
       break;
   }

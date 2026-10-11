@@ -53,6 +53,7 @@ import { type GlanceEvent } from "./glance-state";
 import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from "../phone-ui/onboarding-state";
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
+import { VoiceDraft } from "../ui/voice-draft";
 import { encodeBase64 } from "../util/base64";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
@@ -2416,6 +2417,10 @@ class DashboardController {
       },
       endTextSettingEdit: () => this.endTextSettingEdit(),
       startRawMic: (deliver) => this.startRawMicTap(deliver),
+      createVoiceDraft: (prepare, changed, send) => new VoiceDraft({
+        startVoiceCapture: (endpointing) => this.startVoiceCapture(endpointing),
+        stopVoiceCapture: () => this.stopVoiceCapture(),
+      }, prepare, changed, send),
     });
     this.appHosts.set(appId, host);
     return host;

@@ -20,12 +20,12 @@ function draftEnv({ prepare = async () => true, start = async () => {}, stop = (
   const transcripts = new Set(), statuses = new Set(), timers = new Map();
   const sent = [];
   let starts = 0, stops = 0, mic = false, timerId = 0;
-  const { VoiceDraft } = load('app/apps/bots/voice-draft.ts', {
-    '../../native/voice-control': { voiceControlBridge: {
+  const { VoiceDraft } = load('app/ui/voice-draft.ts', {
+    '../native/voice-control': { voiceControlBridge: {
       onTranscript(cb) { transcripts.add(cb); return () => transcripts.delete(cb); },
       onStatus(cb) { statuses.add(cb); cb({ status: initialStatus }); return () => statuses.delete(cb); },
     } },
-    '../../ui/shell/voice-activity': { voiceActivity: { setActive(value) { mic = value; } } },
+    './shell/voice-activity': { voiceActivity: { setActive(value) { mic = value; } } },
   }, {
     setTimeout(cb) { timers.set(++timerId, cb); return timerId; },
     clearTimeout(id) { timers.delete(id); },

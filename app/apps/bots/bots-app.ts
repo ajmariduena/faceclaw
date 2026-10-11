@@ -11,7 +11,7 @@ import type { Layer, LayerContext } from "../../ui/layers";
 import type { MenuItem } from "../../ui/menu";
 import { createInProcessWindow, type InProcessAppOptions, type InProcessWindow } from "../../ui/shell/in-process-window";
 import { shell } from "../../ui/shell/shell";
-import { VoiceDraft } from "./voice-draft";
+import { VoiceDraft } from "../../ui/voice-draft";
 import { ChatDraft, DRAFT_OPTIONS } from "../../ui/chat-draft";
 import type { AppContext } from "../app-definition";
 import { BOT_TITLE, chatEmptyMessage, chatLines, elapsedClock } from "./bots-model";

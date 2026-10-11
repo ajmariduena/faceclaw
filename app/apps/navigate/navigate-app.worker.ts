@@ -11,7 +11,8 @@ import { prepareFrameDraws } from "../../graphics/glyph-wire";
 import { getDefaultSmallFont } from "../../graphics/ui-fonts";
 import { TtfFont } from "../../graphics/ttf-font";
 import { ensurePreinstalledFonts, installedFontPath } from "../../graphics/installed-fonts";
-import { fitLine } from "../../graphics/terminal-painter";
+import { fitLine, paintChat } from "../../graphics/terminal-painter";
+import { ChatDraft, DRAFT_OPTIONS } from "../../ui/chat-draft";
 import * as frameTimings from "../../native/frame-timings";
 import { getActiveDisplay } from "../../native/active-display";
 import { onSettingsStoreChanged } from "../../native/settings-store";
@@ -166,6 +167,12 @@ let searchSession = "";
 let searchGeneration = 0;
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** The host's dictation of a destination (see voice-draft in worker-window.ts). */
+let voice: { phase: string; text: string; status: string; startedMs: number } | null = null;
+let voiceStatus = "";
+let voiceTicker: ReturnType<typeof setInterval> | null = null;
+const review = new ChatDraft();
+
 /** Name and address edits for saved destinations (phone editor, click confirms). */
 type DestinationEdit = { setting: ConfigSettingString; title: string; onDone: (value: string) => void };
 let editing: DestinationEdit | null = null;
@@ -217,8 +224,11 @@ function post(message: WorkerAppReply): void {
 }
 
 onSettingsStoreChanged((key) => {
-  if (key === NAVIGATE_SEARCH_DRAFT_KEY && phase === "search") {
-    setQuery(navigateSearchDraftSetting.get());
+  if (key === NAVIGATE_SEARCH_DRAFT_KEY) {
+    if (review.editing) {
+      review.text = navigateSearchDraftSetting.get();
+      render();
+    }
     return;
   }
   if (key === GOOGLE_MAPS_KEY_SETTING_KEY) tiles.clear();
@@ -271,8 +281,10 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       render();
       break;
     case "close-window":
-      if (editing || phase === "search") post({ type: "end-text-setting-edit" });
+      if (editing || review.editing) post({ type: "end-text-setting-edit" });
       editing = null;
+      endVoice();
+      review.discard();
       stopTrip("");
       phase = "idle";
       google.detach();
@@ -296,13 +308,16 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
       if (editing) {
         editing.setting.set(text);
         render();
-      } else if (text) {
-        if (phase !== "search") beginSearch();
-        navigateSearchDraftSetting.set(text);
-        setQuery(text);
+      } else if (text && !voice) {
+        if (phase !== "search") beginSearch(false);
+        review.review(text);
+        render();
       }
       break;
     }
+    case "voice-draft":
+      handleVoiceDraft(message);
+      break;
     case "render":
       if (!window) break;
       window.focused = message.focused;
@@ -328,7 +343,7 @@ global.onmessage = (event: { data: WorkerAppMessage }) => {
 // ---------------------------------------------------------------------------
 // Search
 
-function beginSearch(): void {
+function beginSearch(listen = true): void {
   phase = "search";
   statusMessage = "";
   query = "";
@@ -337,8 +352,8 @@ function beginSearch(): void {
   searchTop = 0;
   searchState = "empty";
   searchSession = newSearchSession();
-  navigateSearchDraftSetting.set("");
-  post({ type: "start-text-setting-edit", settingId: navigateSearchDraftSetting.id });
+  review.discard();
+  if (listen) startVoice();
   render();
 }
 
@@ -346,7 +361,76 @@ function endSearch(): void {
   if (searchTimer) clearTimeout(searchTimer);
   searchTimer = null;
   searchGeneration++;
-  post({ type: "end-text-setting-edit" });
+  endVoice();
+  discardReview();
+}
+
+function leaveSearch(): void {
+  endSearch();
+  phase = "idle";
+  reconcileTracking();
+}
+
+// ---------------------------------------------------------------------------
+// Dictation: tap listens, tap again stops, then Send / Edit / Discard
+
+function startVoice(): void {
+  if (!window || voice) return;
+  voice = { phase: "preparing", text: "", status: "", startedMs: Date.now() };
+  voiceStatus = "";
+  voiceTicker ??= setInterval(render, 1_000);
+  post({ type: "voice-draft", windowId: window.windowId, action: "start" });
+}
+
+function endVoice(): void {
+  if (voice && window) post({ type: "voice-draft", windowId: window.windowId, action: "cancel" });
+  clearVoice();
+}
+
+function clearVoice(): void {
+  voice = null;
+  if (voiceTicker) clearInterval(voiceTicker);
+  voiceTicker = null;
+}
+
+function handleVoiceDraft(message: Extract<WorkerAppMessage, { type: "voice-draft" }>): void {
+  if (!voice || !window || message.windowId !== window.windowId) return;
+  if (message.final !== undefined || message.phase === "idle") {
+    clearVoice();
+    voiceStatus = message.final ? "" : message.status;
+    if (message.final) review.review(message.final);
+  } else {
+    voice.phase = message.phase;
+    voice.text = message.text;
+    voice.status = message.status;
+  }
+  render();
+}
+
+function discardReview(): void {
+  if (review.editing) post({ type: "end-text-setting-edit" });
+  review.discard();
+  navigateSearchDraftSetting.set("");
+}
+
+function applyReview(): void {
+  switch (review.selected) {
+    case 0: {
+      const text = review.text.trim();
+      if (!text) return;
+      discardReview();
+      setQuery(text);
+      return;
+    }
+    case 1:
+      navigateSearchDraftSetting.set(review.text);
+      review.editing = true;
+      post({ type: "start-text-setting-edit", settingId: navigateSearchDraftSetting.id });
+      return;
+    default:
+      discardReview();
+      if (!query) leaveSearch();
+  }
 }
 
 function setQuery(text: string): void {
@@ -810,7 +894,7 @@ function activateIdleRow(row: IdleRow): void {
 
 function searchMessage(): string {
   if (searchState === "error") return searchError;
-  if (!query) return "Escribe en el teléfono o di un lugar.";
+  if (!query) return voiceStatus ? `${voiceStatus}. Toca para dictar otra vez.` : "Toca para dictar un lugar.";
   if (searchState === "searching" && !suggestions.length) return "Buscando…";
   if (!suggestions.length) return "Sin resultados.";
   return "";
@@ -869,14 +953,31 @@ function applyInput(event: InputEvent): boolean {
       return true;
     }
     case "search":
+      if (voice) {
+        if (event.type === "click" && window) post({ type: "voice-draft", windowId: window.windowId, action: "release" });
+        else if (event.type === "double-click") {
+          endVoice();
+          if (!query) leaveSearch();
+        } else return false;
+        return true;
+      }
+      if (review.active) {
+        if (scroll) review.move(scroll);
+        else if (event.type === "click") applyReview();
+        else if (event.type === "double-click") {
+          discardReview();
+          if (!query) leaveSearch();
+        } else return false;
+        return true;
+      }
       if (scroll && suggestions.length) {
         searchSelected = Math.max(0, Math.min(suggestions.length - 1, searchSelected + scroll));
       } else if (event.type === "click" && suggestions[searchSelected]) {
         pickSuggestion(suggestions[searchSelected]!);
+      } else if (event.type === "click") {
+        startVoice();
       } else if (event.type === "double-click") {
-        endSearch();
-        phase = "idle";
-        reconcileTracking();
+        leaveSearch();
       } else {
         return false;
       }
@@ -1103,6 +1204,19 @@ function paintContent(win: NavWindow): GrayImage {
       break;
     }
     case "search": {
+      if (voice || review.active) {
+        paintChat(image, f.face, {
+          lines: [{ role: "user", text: voice?.text || review.text || "…", live: Boolean(voice) }],
+          scrollBack: 0,
+          full: true,
+          footer: voice
+            ? { left: voice.phase === "finishing" ? "· Finishing" : "· Listening", right: elapsedClock(Date.now() - voice.startedMs) }
+            : { left: "· Buscar", right: "Google Maps" },
+          permission: review.active ? { question: review.editing ? "Edit on phone" : "Draft", options: DRAFT_OPTIONS, selected: review.selected } : null,
+          message: voice?.status,
+        });
+        break;
+      }
       const rows: TerminalRow[] = suggestions.map((s) => ({ label: s.name, value: s.distanceMeters === null ? "" : formatDistance(s.distanceMeters).join(" ") }));
       searchTop = listScrollTop(rows.length, searchSelected, searchTop);
       const detail = suggestions[searchSelected]?.detail;
@@ -1119,6 +1233,11 @@ function paintContent(win: NavWindow): GrayImage {
       break;
   }
   return image;
+}
+
+function elapsedClock(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function render(): void {

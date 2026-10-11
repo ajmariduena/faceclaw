@@ -1,6 +1,6 @@
-import { voiceControlBridge } from "../../native/voice-control";
-import { voiceActivity } from "../../ui/shell/voice-activity";
-import type { LayerActions } from "../../ui/layers";
+import { voiceControlBridge } from "../native/voice-control";
+import { voiceActivity } from "./shell/voice-activity";
+import type { LayerActions } from "./layers";
 
 /** One dictation cycle. Async startup and trailing cloud finals belong to this cycle only. */
 export class VoiceDraft {

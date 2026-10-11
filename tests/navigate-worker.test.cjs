@@ -8,7 +8,7 @@ const { loader } = require('./helpers/load-typescript.cjs');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture({ key = 'test-key' } = {}) {
-  const messages = [], timeouts = new Set(), intervals = new Set(), holds = [], errors = [], searches = [], trips = [], calls = [];
+  const messages = [], chats = [], menus = [], timeouts = new Set(), intervals = new Set(), holds = [], errors = [], searches = [], trips = [], calls = [];
   let callbacks, compass, onNavEvent = null;
   const tracker = { running: false, isRunning() { return this.running; }, start() { this.running = true; }, stop() { this.running = false; } };
   const sensor = { LocationTracker: function (value) { callbacks = value; return tracker; }, COMPASS_CHANGED: 15,
@@ -40,9 +40,15 @@ function fixture({ key = 'test-key' } = {}) {
     '../compass/calibration': { calibrateHeading: value => value + 5, normalizeHeading: value => ((value % 360) + 360) % 360 },
     '../../native/frame-timings': { startFrame: () => 1, finishFrame() {}, logFrame() {}, span: (_id, _name, fn) => fn(), runWithFrame: (_id, fn) => fn() },
     '../../native/active-display': { getActiveDisplay: () => null },
-    '../../ui/window-menu': { WindowMenu: class { paint() { return []; } isOpen() { return false; } resize() {} open() {} }, WindowMenuLayer: class {} },
+    '../../ui/window-menu': { WindowMenu: class { constructor(options) { menus.push(options); } paint() { return []; } isOpen() { return false; } resize() {} open() {} }, WindowMenuLayer: class {} },
+    '../../graphics/image': { GrayImage: class {} },
+    '../../graphics/ttf-font': { TtfFont: { load: () => ({}) } },
+    '../../ui/terminal-face': { terminalFace: () => ({}) },
+    './nav-render': { paintGuidance() {}, formatDistance: meters => [String(meters), 'm'] },
     '../../ui/terminal': { listScrollTop: () => 0, paintTerminalList() {}, stepSelection: (rows, selected, direction) => Math.max(0, Math.min(rows.length - 1, selected + direction)) },
     '../../graphics/plane': { planesFingerprint: () => 'frame' },
+    '../../graphics/terminal-painter': { fitLine: (_face, text) => text, paintChat: (_image, _face, view) => chats.push(view) },
+    '../../ui/chat-draft': loader({ Math })('app/ui/chat-draft.ts'),
     '../../native/google-maps': {
       GOOGLE_MAPS_KEY_SETTING_KEY: 'maps.googleApiKey',
       getGoogleMapsKey: () => key,
@@ -62,7 +68,7 @@ function fixture({ key = 'test-key' } = {}) {
   };
   const global = { postMessage: message => messages.push(message) };
   const source = fs.readFileSync(path.join(__dirname, '../app/apps/navigate/navigate-app.worker.ts'), 'utf8') +
-    '\nexports.probe = { handleNavigateTool, describeRouteStatus, headingNow: () => heading.output(Date.now()), state: () => ({ phase, statusMessage, suggestions, query, target, rerouting }) };';
+    '\nexports.probe = { handleNavigateTool, describeRouteStatus, headingNow: () => heading.output(Date.now()), state: () => ({ phase, statusMessage, suggestions, query, target, rerouting, voice, review, searchMessage: searchMessage() }) };';
   const exports = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
     exports, global, Uint8Array, Date, Math, JSON, Promise, Error, Number, String,
@@ -73,7 +79,8 @@ function fixture({ key = 'test-key' } = {}) {
   const send = data => global.onmessage({ data });
   send({ type: 'open-window', windowId: 'navigate:main', surfaceId: 'window:navigate:main', title: 'Navigate', viewport: { width: 576, height: 288 } });
   send({ type: 'foreground', windowId: 'navigate:main', foreground: true, focused: true });
-  return { ...exports.probe, send, messages, intervals, holds, errors, tracker, searches, trips, calls,
+  return { ...exports.probe, send, messages, intervals,
+    view: () => { menus.at(-1).paintBase(); return chats.at(-1); }, holds, errors, tracker, searches, trips, calls,
     nav: event => onNavEvent?.(event),
     input: type => send({ type: 'input', windowId: 'navigate:main', focused: true, frameId: 1, event: { type } }),
     runTimers: () => { const pending = [...timeouts]; timeouts.clear(); for (const callback of pending) callback(); },
@@ -154,12 +161,25 @@ test('closing the window mid-route stops guidance and ignores late Google events
   assert.equal(h.holds.includes(true), false);
 });
 
-test('searching from the glasses: phone text debounces into suggestions, click starts the trip', async () => {
+const voiceDrafts = h => h.messages.filter(m => m.type === 'voice-draft').map(m => m.action);
+const voiceState = (h, state) => h.send({ type: 'voice-draft', windowId: 'navigate:main', text: '', status: '', ...state });
+
+test('searching from the glasses: tap dictates, tap stops, Send searches and a tap starts the trip', async () => {
   const h = fixture();
   h.input('click');
   assert.equal(h.state().phase, 'search');
-  assert.ok(h.messages.some(m => m.type === 'start-text-setting-edit'));
-  h.send({ type: 'text-input', text: 'Parque Histórico' });
+  assert.deepEqual(voiceDrafts(h), ['start']);
+  assert.equal(h.messages.some(m => m.type === 'start-text-setting-edit'), false);
+  voiceState(h, { phase: 'listening', text: 'Parque' });
+  assert.equal(h.view().lines[0].text, 'Parque');
+  assert.equal(h.view().footer.left, '· Listening');
+  h.input('click');
+  assert.deepEqual(voiceDrafts(h), ['start', 'release']);
+  voiceState(h, { phase: 'idle', final: 'Parque Histórico' });
+  assert.equal(h.state().voice, null);
+  assert.equal(h.view().permission.question, 'Draft');
+  assert.deepEqual([...h.view().permission.options], ['Send', 'Edit', 'Discard']);
+  h.input('click');
   assert.deepEqual(h.searches, []);
   h.runTimers();
   await flush();
@@ -168,9 +188,40 @@ test('searching from the glasses: phone text debounces into suggestions, click s
   h.input('click');
   assert.equal(h.state().phase, 'starting');
   assert.equal(h.state().target.placeId, 'place:Parque Histórico');
-  assert.ok(h.messages.some(m => m.type === 'end-text-setting-edit'));
   h.input('double-click');
   assert.equal(h.messages.at(-1).type, 'yield-focus');
+});
+
+test('a dictated destination can be edited on the phone or discarded back to the list', () => {
+  const h = fixture();
+  h.input('click');
+  voiceState(h, { phase: 'idle', final: 'Malecon' });
+  h.input('scroll-down');
+  h.input('click');
+  const edit = h.messages.find(m => m.type === 'start-text-setting-edit');
+  assert.ok(edit);
+  assert.equal(h.state().review.editing, true);
+  assert.equal(h.view().permission.question, 'Edit on phone');
+  h.input('scroll-down');
+  h.input('click');
+  assert.equal(h.state().phase, 'idle');
+  assert.equal(h.messages.at(-1).type, 'end-text-setting-edit');
+});
+
+test('dictation that hears nothing, or is cancelled, never searches', () => {
+  const h = fixture();
+  h.input('click');
+  voiceState(h, { phase: 'idle', status: 'No speech detected' });
+  assert.equal(h.state().phase, 'search');
+  assert.match(h.state().searchMessage, /No speech detected/);
+  h.input('click');
+  assert.deepEqual(voiceDrafts(h), ['start', 'start']);
+  h.input('double-click');
+  assert.deepEqual(voiceDrafts(h), ['start', 'start', 'cancel']);
+  assert.equal(h.state().phase, 'idle');
+  voiceState(h, { phase: 'idle', final: 'late' });
+  assert.equal(h.state().review.active, false);
+  assert.deepEqual(h.searches, []);
 });
 
 test('without a Google key the list explains what to do instead of searching', async () => {

@@ -17,11 +17,11 @@ function chatEnv({ configured = true, sendResult = '' } = {}) {
     '../paseo/paseo-model': { formatAge: () => 'now' },
     '../../ui/dashboard-settings': { botsChatDraftSetting: setting, botsWakeOnReplySetting: {}, toggleSettingMenuItem: () => ({}) },
     '../../native/settings-store': { onSettingsStoreChanged(cb) { changed = cb; return () => {}; } },
-    '../../native/voice-control': { voiceControlBridge: {
+    '../native/voice-control': { voiceControlBridge: {
       onTranscript(cb) { transcripts.add(cb); return () => transcripts.delete(cb); },
       onStatus(cb) { statuses.add(cb); return () => statuses.delete(cb); },
     } },
-    '../../ui/shell/voice-activity': { voiceActivity: { setActive() {} } },
+    './shell/voice-activity': { voiceActivity: { setActive() {} } },
     '../../ui/shell/in-process-window': { createInProcessWindow(value) { options = value; return { requestRender() {} }; } },
     '../../ui/shell/shell': { shell: {
       isScreenOn: () => true, isWindowVisible: () => false, prepareChatVoiceCapture: async () => true,
