@@ -34,17 +34,11 @@ export class TranslateSession {
   private draining: CloudSttClient | null = null;
   private offPcm: (() => void) | null = null;
   private offVoiceActivity: (() => void) | null = null;
-  private elapsedBeforeMs = 0;
-  private recordingSinceMs = 0;
 
   constructor(private readonly onChange: () => void) {}
 
   get recording(): boolean {
     return this.state.kind === "connecting" || this.state.kind === "translating" || this.state.kind === "reconnecting";
-  }
-
-  elapsedMs(nowMs = Date.now()): number {
-    return this.elapsedBeforeMs + (this.recording ? nowMs - this.recordingSinceMs : 0);
   }
 
   start(): void {
@@ -80,8 +74,7 @@ export class TranslateSession {
     };
     client = new ReconnectingSttClient((config: CloudSttOptions) => new SonioxSttClient(config as SonioxSttOptions), options, () => false);
     this.client = client;
-    this.recordingSinceMs = Date.now();
-    this.transcript.lastSpeechAtMs = this.recordingSinceMs;
+    this.transcript.lastSpeechAtMs = Date.now();
     this.setState({ kind: "connecting" });
     client.start();
   }
@@ -89,7 +82,6 @@ export class TranslateSession {
   /** End the Soniox session, letting it finalize what was already said. */
   pause(): void {
     if (!this.recording) return;
-    this.elapsedBeforeMs += Date.now() - this.recordingSinceMs;
     this.releaseMic();
     this.draining = this.client;
     this.client = null;
@@ -98,7 +90,6 @@ export class TranslateSession {
   }
 
   stop(): void {
-    if (this.recording) this.elapsedBeforeMs += Date.now() - this.recordingSinceMs;
     this.releaseMic();
     this.client?.stop();
     this.draining?.stop();
@@ -124,7 +115,6 @@ export class TranslateSession {
   }
 
   private fail(message: string): void {
-    if (this.recording) this.elapsedBeforeMs += Date.now() - this.recordingSinceMs;
     this.releaseMic();
     this.client = null;
     this.transcript.dropLive();

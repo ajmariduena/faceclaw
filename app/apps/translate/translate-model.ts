@@ -16,6 +16,8 @@ export type TranslateSegment = {
   translated: boolean;
   /** The speech is complete; a lagging translation may still extend it. */
   closed: boolean;
+  /** Length of the final prefix of `translation`; the rest is non-final and may still be revised. */
+  settled: number;
 };
 
 const MAX_SEGMENTS = 60;
@@ -104,10 +106,10 @@ export class TranslationTranscript {
   }
 
   segments(): TranslateSegment[] {
-    const segments = this.closed.map((segment) => ({ ...clean(segment), closed: true }));
+    const segments: TranslateSegment[] = this.closed.map((segment) => withSettled(segment, segment.translation, true));
     if (this.liveTranslationClosed && segments.length) {
       const last = this.closed[this.closed.length - 1]!;
-      segments[segments.length - 1] = { ...clean({ ...last, translation: last.translation + this.liveTranslation }), closed: true };
+      segments[segments.length - 1] = withSettled({ ...last, translation: last.translation + this.liveTranslation }, last.translation, true);
     }
     const open: Open = {
       original: this.current.original + this.liveOriginal,
@@ -115,7 +117,7 @@ export class TranslationTranscript {
       language: this.current.language || this.liveLanguage,
       translated: this.current.translated,
     };
-    if (open.original.trim() || open.translation.trim()) segments.push({ ...clean(open), closed: false });
+    if (open.original.trim() || open.translation.trim()) segments.push(withSettled(open, this.current.translation, false));
     return segments;
   }
 }
@@ -124,7 +126,7 @@ function empty(): Open {
   return { original: "", translation: "", language: "", translated: false };
 }
 
-function clean(segment: Open): Omit<TranslateSegment, "closed"> {
+function clean(segment: Open): Omit<TranslateSegment, "closed" | "settled"> {
   return {
     original: segment.original.replace(/\s+/g, " ").trim(),
     translation: segment.translation.replace(/\s+/g, " ").trim(),
@@ -133,11 +135,8 @@ function clean(segment: Open): Omit<TranslateSegment, "closed"> {
   };
 }
 
-/** "0:42", "12:05", "1:02:03". */
-export function formatElapsed(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = String(total % 60).padStart(2, "0");
-  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+function withSettled(segment: Open, settledTranslation: string, closed: boolean): TranslateSegment {
+  const cleaned = clean(segment);
+  const settled = settledTranslation.replace(/\s+/g, " ").trim();
+  return { ...cleaned, closed, settled: cleaned.translation.startsWith(settled) ? settled.length : 0 };
 }

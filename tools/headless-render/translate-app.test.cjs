@@ -78,36 +78,24 @@ function converse(socket) {
   socket.send([...original('Great, and is it open on', 'en'), ...live(original(' Sundays?', 'en')), ...translation('Genial, ¿y abre los', 'es', 'en'), ...live(translation(' domingos?', 'es', 'en'))]);
 }
 
-test('live: newest translation white, original dim under it, older exchange above, footer with ⇄ and time', async () => {
+test('live: only the utterance being translated, white with its gray tail; no frame, footer or history', async () => {
   const app = await open();
   app.socket().open();
   converse(app.socket());
   app.advance(42_000);
   const { image, draws } = app.shot('translate-app-live');
-  assert.equal(image.getPixel(4 + 8, 4), 255, 'frame top edge');
-  const newest = draws.find((d) => d.text === 'Genial, ¿y abre los domingos?');
-  assert.ok(newest && newest.value === 255 && newest.x === 22);
-  const said = draws.find((d) => d.text === 'Great, and is it open on Sundays?');
-  assert.ok(said && said.value === 120 && said.y === newest.y + 27);
-  assert.ok(said.y + 27 === 236, 'newest block sits on the content bottom');
-  assert.ok(draws.some((d) => d.text === "Yes, it's two blocks away, next to the market." && d.value === 187));
-  assert.ok(draws.some((d) => d.text === 'Sí, está a dos cuadras, al lado del mercado.' && d.value === 102));
-  assert.ok(draws.some((d) => d.text === '· Translating' && d.value === 119 && d.y === 252));
-  const elapsed = draws.find((d) => d.text === '0:42');
-  assert.ok(elapsed && elapsed.x + (await facePromise).measureLine('0:42') === 554);
-  const es = draws.find((d) => d.text === 'ES ');
-  const en = draws.find((d) => d.text === ' EN');
-  assert.ok(es && en && en.x - (es.x + (await facePromise).measureLine('ES ')) === 20);
-  let arrow = 0;
-  for (let x = es.x + (await facePromise).measureLine('ES '); x < en.x; x++) for (let y = 252; y < 275; y++) if (image.getPixel(x, y) === 119) arrow++;
-  assert.ok(arrow > 60, `⇄ drawn (${arrow} px)`);
+  assert.deepEqual(draws.map((d) => [d.text, d.value]), [['Genial, ¿y abre los', 255], [' domingos?', 187]]);
+  assert.equal(draws[0].x, 22);
+  assert.equal(draws[0].y + 27, 236, 'sits on the content bottom');
+  let ink = 0;
+  for (let y = 0; y < 288; y++) for (let x = 0; x < 576; x++) if (image.getPixel(x, y) && y < draws[0].y) ink++;
+  assert.equal(ink, 0, 'nothing drawn above the translation');
 });
 
 test('paused, connecting and the leave dialog', async () => {
   const app = await open();
   const connecting = app.shot('translate-app-connecting');
-  assert.ok(connecting.draws.some((d) => d.text === '· Connecting'));
-  assert.ok(connecting.draws.some((d) => d.text === '0:00'));
+  assert.ok(connecting.draws.some((d) => d.text === '· Connecting' && d.value === 120));
   app.socket().open();
   converse(app.socket());
   app.advance(42_000);
@@ -118,15 +106,13 @@ test('paused, connecting and the leave dialog', async () => {
   assert.ok(question && question.x === 28);
   assert.ok(leave.draws.some((d) => d.text === 'Keep listening' && d.value === 255 && d.x === 48));
   assert.ok(leave.draws.some((d) => d.text === 'Stop and leave' && d.value === 136));
-  assert.ok(leave.draws.some((d) => d.text === '· Translating'));
   await app.input('double-click');
   app.input('click');
   app.advance(3_000);
   const paused = app.shot('translate-app-paused');
   const label = paused.draws.find((d) => d.text === '· Paused');
   assert.ok(label && label.value === 255, '"· Paused" in white');
-  assert.ok(paused.draws.some((d) => d.text === '0:42'));
-  assert.ok(paused.draws.some((d) => d.text.startsWith('Great, and is it open on') && d.value === 120), 'the paused session still finalizes what was said');
+  assert.ok(paused.draws.some((d) => d.text.startsWith('Genial, ¿y abre los') && d.value === 255), 'the paused session keeps what was translated');
 });
 
 test('a long monologue keeps its newest lines; scrolling back shows earlier exchanges', async () => {
@@ -138,11 +124,10 @@ test('a long monologue keeps its newest lines; scrolling back shows earlier exch
   app.socket().send([...original(speech, 'es'), ...translation("Look, the station is close, but on Sundays the schedule changes: they open at eight and the last train leaves at nine at night, so if you're traveling late you should buy the ticket beforehand and arrive early because there's always a line at the ticket office.", 'en', 'es')]);
   app.advance(75_000);
   const long = app.shot('translate-app-long');
-  const white = long.draws.filter((d) => d.value === 255 && d.y < 244);
-  assert.equal(white.length, 4);
-  assert.ok(white[0].text.startsWith('…'));
-  assert.ok(white.at(-1).text.endsWith('ticket office.'));
-  assert.ok(long.draws.filter((d) => d.value === 120 && d.y < 244).length === 2);
+  assert.equal(long.draws.length, 3, 'three lines at most');
+  assert.ok(long.draws.every((d) => d.value === 255));
+  assert.ok(long.draws[0].text.startsWith('…'));
+  assert.ok(long.draws.at(-1).text.endsWith('ticket office.'));
   app.input('scroll-up');
   app.input('scroll-up');
   const back = app.shot('translate-app-scrolled');
@@ -161,7 +146,6 @@ test('speech outside the pair is shown as said; missing and rejected keys', asyn
   const missing = await open({ apiKey: '' });
   const shot = missing.shot('translate-app-missing-key');
   assert.ok(shot.draws.some((d) => d.text === 'Soniox key missing' && d.value === 255 && d.y === 14));
-  assert.ok(shot.draws.some((d) => d.text === '· Translate'));
 
   const rejected = await open();
   rejected.socket().config.onError('Soniox: Invalid API key. (401)');

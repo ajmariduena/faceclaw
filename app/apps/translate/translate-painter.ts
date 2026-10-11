@@ -1,8 +1,9 @@
 /**
- * Translate in the terminal-mode frame: the newest translation in white with
- * what was actually said dim under it, older exchanges above, newest at the
- * bottom; "· Translating  ES ⇄ EN  0:42" in the footer; "Stop and leave?" in
- * the nested choice box. Pure painters over a Face, like the Paseo painter.
+ * Translate with no frame and no footer, so it stays out of the way during a
+ * conversation: only the utterance being translated, final words white and
+ * the still-revisable tail gray. A dim status line appears only when not
+ * translating ("· Paused"); "Stop and leave?" uses the nested choice box.
+ * Pure painters over a Face, like the Paseo painter.
  */
 import type { GrayImage } from "../../graphics/image";
 import {
@@ -14,35 +15,28 @@ import {
   RIGHT,
   fitLine,
   paintChoice,
-  paintFrame,
   wrapCapped,
   wrapLines,
   type Face,
 } from "../paseo/paseo-painter";
 import type { TranslateSegment } from "./translate-model";
 
-const RULE = 119;
 const ORIGINAL = 120;
-const OLDER = 187;
-const OLDER_ORIGINAL = 102;
-const BLOCK_GAP = 12;
-const NEWEST_LINES = 4;
-const NEWEST_ORIGINAL_LINES = 2;
-const OLDER_LINES = 2;
-const ARROW_WIDTH = 20;
+const PENDING = 187;
+const LINES = 3;
 
-export type TranslateFooter = {
+export type TranslateStatus = {
+  /** "" while translating: nothing but the translation is drawn. */
   label: string;
   /** "· Paused" stands out in white; every other state is dim. */
   bright: boolean;
-  elapsed: string;
 };
 
 export type TranslateView = {
   segments: readonly TranslateSegment[];
   /** Segments scrolled back from the newest. */
   scrollBack: number;
-  footer: TranslateFooter;
+  status: TranslateStatus;
   /** Shown in place of the conversation (missing key, mic busy, failure). */
   message: { title: string; detail: string } | null;
   /** "Stop and leave?" with the selected option. */
@@ -51,7 +45,7 @@ export type TranslateView = {
 
 export const LEAVE_OPTIONS = ["Keep listening", "Stop and leave"] as const;
 
-type Block = { lines: { text: string; value: number }[] };
+type Run = { text: string; value: number };
 
 /** The last `max` wrapped lines, the first marked "…" when earlier text was cut. */
 function wrapTail(face: Face, text: string, width: number, max: number): string[] {
@@ -64,23 +58,33 @@ function wrapTail(face: Face, text: string, width: number, max: number): string[
   return kept;
 }
 
-function segmentBlock(face: Face, segment: TranslateSegment, newest: boolean): Block {
-  const width = RIGHT - LEFT;
-  // Speech outside the pair is only transcribed: it is the content itself.
-  const primary = segment.translation || (segment.translated ? "" : segment.original);
-  const secondary = primary === segment.original ? "" : segment.original;
-  const lines: Block["lines"] = [];
-  if (newest) {
-    for (const text of wrapTail(face, primary, width, NEWEST_LINES)) lines.push({ text, value: 255 });
-    for (const text of wrapTail(face, secondary, width, NEWEST_ORIGINAL_LINES)) lines.push({ text, value: ORIGINAL });
-  } else {
-    for (const text of wrapCapped(face, primary, width, OLDER_LINES)) lines.push({ text, value: OLDER });
-    for (const text of wrapCapped(face, secondary, width, 1)) lines.push({ text, value: OLDER_ORIGINAL });
-  }
-  return { lines };
+/** Wrapped lines of `text` as runs: the first `settled` characters white, the rest gray. */
+function settledRuns(lines: string[], text: string, settled: number): Run[][] {
+  let cursor = 0;
+  return lines.map((line) => {
+    const ellipsis = line.startsWith("…") ? "…" : "";
+    const body = line.slice(ellipsis.length);
+    const start = text.indexOf(body, cursor);
+    if (start < 0) return [{ text: line, value: 255 }];
+    cursor = start + body.length;
+    const white = Math.max(0, Math.min(body.length, settled - start));
+    const runs: Run[] = [];
+    if (ellipsis || white) runs.push({ text: ellipsis + body.slice(0, white), value: 255 });
+    if (white < body.length) runs.push({ text: body.slice(white), value: PENDING });
+    return runs;
+  });
 }
 
-/** How far back the ring can scroll: every segment but the first can be the bottom one. */
+function segmentLines(face: Face, segment: TranslateSegment): Run[][] {
+  const width = RIGHT - LEFT;
+  if (segment.translation) return settledRuns(wrapTail(face, segment.translation, width, LINES), segment.translation, segment.settled);
+  // Speech outside the pair is only transcribed, so it is the content itself;
+  // otherwise the original stands in, dim, until the first translated word.
+  const value = segment.translated ? ORIGINAL : 255;
+  return wrapTail(face, segment.original, width, LINES).map((text) => [{ text, value }]);
+}
+
+/** How far back the ring can scroll: every segment but the first can be the one shown. */
 export function translateMaxScrollBack(view: Pick<TranslateView, "segments">): number {
   return Math.max(0, view.segments.length - 1);
 }
@@ -96,59 +100,26 @@ export function paintTranslate(image: GrayImage, face: Face, view: TranslateView
       selected: view.leaving.selected,
       footer: { left: "", right: "" },
     });
-    paintFooterText(image, face, view.footer);
     return;
   }
-  paintFrame(image);
   if (view.message) {
     face.drawText(image, LEFT, CONTENT_TOP, fitLine(face, view.message.title, RIGHT - LEFT), 255);
     wrapCapped(face, view.message.detail, RIGHT - LEFT, 3)
       .forEach((line, index) => face.drawText(image, LEFT, CONTENT_TOP + (index + 1) * PITCH, line, ORIGINAL));
   } else {
-    const end = Math.max(0, view.segments.length - Math.min(view.scrollBack, translateMaxScrollBack(view)));
-    let bottom = CONTENT_BOTTOM;
-    for (let index = end - 1; index >= 0; index--) {
-      const block = segmentBlock(face, view.segments[index]!, index === end - 1);
-      const height = block.lines.length * PITCH;
-      if (!block.lines.length) continue;
-      if (bottom - height < CONTENT_TOP) {
-        // Only whole blocks; the newest keeps its last lines when even it does not fit.
-        if (index !== end - 1) break;
-        block.lines.splice(0, Math.ceil((CONTENT_TOP - (bottom - height)) / PITCH));
+    const shown = view.segments[view.segments.length - 1 - Math.min(view.scrollBack, translateMaxScrollBack(view))];
+    const lines = shown ? segmentLines(face, shown) : [];
+    let y = CONTENT_BOTTOM - lines.length * PITCH;
+    for (const line of lines) {
+      let x = LEFT;
+      for (const run of line) {
+        face.drawText(image, x, y, run.text, run.value);
+        x += face.measureLine(run.text);
       }
-      let y = bottom - block.lines.length * PITCH;
-      for (const line of block.lines) {
-        face.drawText(image, LEFT, y, line.text, line.value);
-        y += PITCH;
-      }
-      bottom -= block.lines.length * PITCH + BLOCK_GAP;
+      y += PITCH;
     }
   }
-  image.fillRect(14, FOOTER_TOP, 548, 1, RULE);
-  paintFooterText(image, face, view.footer);
-}
-
-/** Label, the language pair with a drawn ⇄ (the stock font has no arrows), and the elapsed time. */
-function paintFooterText(image: GrayImage, face: Face, footer: TranslateFooter): void {
-  const y = FOOTER_TOP + 8;
-  const label = fitLine(face, footer.label, 220);
-  face.drawText(image, LEFT, y, label, footer.bright ? 255 : RULE);
-  let x = LEFT + face.measureLine(label) + face.measureLine("  ");
-  face.drawText(image, x, y, "ES ", RULE);
-  x += face.measureLine("ES ");
-  drawSwapArrow(image, x, y, RULE);
-  face.drawText(image, x + ARROW_WIDTH, y, " EN", RULE);
-  if (footer.elapsed) face.drawText(image, RIGHT - face.measureLine(footer.elapsed), y, footer.elapsed, RULE);
-}
-
-/** A right arrow over a left arrow, sized to the stock font's x-height. */
-function drawSwapArrow(image: GrayImage, x: number, y: number, value: number): void {
-  image.fillRect(x, y + 7, 18, 2, value);
-  image.fillRect(x + 2, y + 15, 18, 2, value);
-  for (let step = 0; step < 3; step++) {
-    image.fillRect(x + 12 + step * 2, y + 3 + step * 2, 2, 2, value);
-    image.fillRect(x + 12 + step * 2, y + 11 - step * 2, 2, 2, value);
-    image.fillRect(x + 2 + step * 2, y + 15 + step * 2, 2, 2, value);
-    image.fillRect(x + 2 + step * 2, y + 15 - step * 2, 2, 2, value);
+  if (view.status.label) {
+    face.drawText(image, LEFT, FOOTER_TOP + 8, fitLine(face, view.status.label, RIGHT - LEFT), view.status.bright ? 255 : ORIGINAL);
   }
 }

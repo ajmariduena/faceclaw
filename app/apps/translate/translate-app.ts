@@ -9,12 +9,12 @@ import {
 } from "../../ui/shell/in-process-window";
 import type { Face } from "../paseo/paseo-painter";
 import { terminalFace } from "../terminal-face";
-import { formatElapsed } from "./translate-model";
 import { LEAVE_OPTIONS, paintTranslate, translateMaxScrollBack, type TranslateView } from "./translate-painter";
 import { TranslateSession, type TranslateState } from "./translate-session";
 
 export const TRANSLATE_WINDOW_ID = "translate";
 export const TRANSLATE_SURFACE_ID = "window:translate";
+const RENDER_INTERVAL_MS = 120;
 
 const MESSAGES: Partial<Record<TranslateState["kind"], { title: string; detail: string }>> = {
   "missing-key": { title: "Soniox key missing", detail: "Add the Soniox key in the phone app, under API keys." },
@@ -24,23 +24,17 @@ const MESSAGES: Partial<Record<TranslateState["kind"], { title: string; detail: 
 
 const LABELS: Partial<Record<TranslateState["kind"], string>> = {
   connecting: "· Connecting",
-  translating: "· Translating",
   reconnecting: "· Reconnecting",
   paused: "· Paused",
 };
 
-export function translateView(session: TranslateSession, scrollBack: number, leaving: TranslateView["leaving"], nowMs = Date.now()): TranslateView {
+export function translateView(session: TranslateSession, scrollBack: number, leaving: TranslateView["leaving"]): TranslateView {
   const state = session.state;
   const message = state.kind === "failed" ? { title: "Translation stopped", detail: state.message } : MESSAGES[state.kind] ?? null;
-  const elapsed = session.elapsedMs(nowMs);
   return {
     segments: session.transcript.segments(),
     scrollBack,
-    footer: {
-      label: LABELS[state.kind] ?? "· Translate",
-      bright: state.kind === "paused",
-      elapsed: session.recording || elapsed > 0 ? formatElapsed(elapsed) : "",
-    },
+    status: { label: LABELS[state.kind] ?? "", bright: state.kind === "paused" },
     message,
     leaving,
   };
@@ -136,7 +130,21 @@ class TranslateRootLayer extends YieldAtRootLayer {
  */
 export function createTranslateAppWindow(options: InProcessAppOptions): InProcessWindow {
   let tick: ReturnType<typeof setInterval> | null = null;
-  const session = new TranslateSession(() => app.requestRender());
+  let lastRenderAtMs = 0;
+  let pendingRender: ReturnType<typeof setTimeout> | null = null;
+  // Soniox answers every few tens of ms and each render is a BLE frame; leading edge so a pause still shows at once.
+  const render = () => {
+    if (pendingRender !== null) return;
+    const wait = lastRenderAtMs + RENDER_INTERVAL_MS - Date.now();
+    const run = () => {
+      pendingRender = null;
+      lastRenderAtMs = Date.now();
+      app.requestRender();
+    };
+    if (wait <= 0) run();
+    else pendingRender = setTimeout(run, wait);
+  };
+  const session = new TranslateSession(render);
   const layer = new TranslateLayer(session, terminalFace);
 
   const app = createInProcessWindow({
@@ -165,14 +173,12 @@ export function createTranslateAppWindow(options: InProcessAppOptions): InProces
     onClosed: () => {
       session.stop();
       if (tick !== null) clearInterval(tick);
+      if (pendingRender !== null) clearTimeout(pendingRender);
       options.onClosed();
     },
   });
 
-  tick = setInterval(() => {
-    session.tick();
-    if (session.recording) app.requestRender();
-  }, 1000);
+  tick = setInterval(() => session.tick(), 1000);
   session.start();
   return app;
 }

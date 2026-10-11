@@ -43,10 +43,8 @@ test('opens straight into a two-way ES/EN Soniox translation fed by the glasses 
   app.advance(42_000);
   const draws = app.paint();
   assert.ok(draws.some((d) => d.text === 'Hello, how are you?' && d.value === 255));
-  assert.ok(draws.some((d) => d.text === 'Hola, ¿cómo estás?' && d.value === 120));
-  assert.ok(draws.some((d) => d.text === '· Translating' && d.value === 119));
-  assert.ok(draws.some((d) => d.text === '0:42'));
-  assert.ok(draws.some((d) => d.text === 'ES ') && draws.some((d) => d.text === ' EN'));
+  assert.ok(!draws.some((d) => d.text.includes('¿cómo estás?')), 'the original stays hidden once translated');
+  assert.deepEqual(draws.map((d) => d.text), ['Hello, how are you?'], 'nothing but the translation while translating');
 });
 
 test('tap pauses (ending the Soniox session, mic released) and resumes into a new session', () => {
@@ -63,7 +61,6 @@ test('tap pauses (ending the Soniox session, mic released) and resumes into a ne
   app.advance(10_000);
   let draws = app.paint();
   assert.ok(draws.some((d) => d.text === '· Paused' && d.value === 255), 'paused footer stands out');
-  assert.ok(draws.some((d) => d.text === '0:05'), 'paused time does not count');
   assert.ok(draws.some((d) => d.text.includes('¿qué tal?')), 'late finals from the paused session still land');
   app.input('click');
   assert.equal(app.sockets.length, 2);
@@ -71,7 +68,7 @@ test('tap pauses (ending the Soniox session, mic released) and resumes into a ne
   assert.equal(app.mic.starts, 2);
   app.socket().open();
   draws = app.paint();
-  assert.ok(draws.some((d) => d.text === '· Translating'));
+  assert.ok(!draws.some((d) => d.text.startsWith('·')), 'no status line once translating');
 });
 
 test('double tap while listening asks "Stop and leave?"; double tap or Keep listening stays', async () => {
@@ -184,6 +181,36 @@ test('a dropped connection reconnects and starts a new segment', () => {
   app.socket().open();
   app.socket().send([{ text: 'Sí', is_final: true, language: 'es', translation_status: 'original' }]);
   const draws = app.paint();
-  assert.ok(draws.some((d) => d.text === '· Translating'));
-  assert.ok(draws.some((d) => d.text === 'Hola,') && draws.some((d) => d.text === 'Sí'));
+  assert.ok(draws.some((d) => d.text === 'Sí') && !draws.some((d) => d.text === 'Hola,'), 'the new segment replaces the old one');
+  app.input('scroll-up');
+  assert.ok(app.paint().some((d) => d.text === 'Hola,'), 'scrolling back shows the earlier one');
+});
+
+test('only the utterance being translated, no frame or footer; the non-final tail is gray', () => {
+  const app = open();
+  app.socket().open();
+  for (const message of fixture.slice(0, 5)) app.socket().send(message.tokens);
+  app.socket().send([
+    { text: 'Ok', is_final: true, language: 'en', translation_status: 'original' },
+    { text: 'Va', is_final: true, language: 'es', source_language: 'en', translation_status: 'translation' },
+    { text: 'le', is_final: false, language: 'es', source_language: 'en', translation_status: 'translation' },
+  ]);
+  const draws = app.paint();
+  assert.deepEqual(draws.map((d) => [d.text, d.value]), [['Va', 255], ['le', 187]]);
+  assert.equal(draws[1].x, draws[0].x + 20);
+});
+
+test('a burst of Soniox responses repaints at most every 120 ms, the first at once', () => {
+  const app = open();
+  app.socket().open();
+  app.advance(1_000);
+  const before = app.renders();
+  app.socket().send(fixture[0].tokens);
+  assert.equal(app.renders(), before + 1, 'leading edge');
+  for (let i = 0; i < 5; i++) app.socket().send(fixture[1].tokens);
+  assert.equal(app.renders(), before + 1);
+  app.advance(120);
+  assert.equal(app.renders(), before + 2, 'one trailing render for the burst');
+  app.advance(5_000);
+  assert.equal(app.renders(), before + 2, 'nothing repaints on a clock');
 });
