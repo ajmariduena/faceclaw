@@ -120,10 +120,17 @@ function firstNonEmpty(lists: Promise<SearchResult[]>[]): Promise<SearchResult[]
   });
 }
 
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function today(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${WEEKDAYS[now.getDay()]}, ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 async function write(sentence: string, language: string, results: SearchResult[], context: FactContext, keys: FactKeys, post: Post): Promise<Fact | null> {
   const languageName = language === "en" ? "English" : "Spanish";
   const messages = [
-    { role: "system", content: `Someone just said the utterance in a live conversation. Using only the numbered sources, give the single most useful fact about what it mentions: confirm or correct a claim, answer a question, or identify a name. Use the earlier conversation to understand what the utterance refers to. Never repeat a fact already shown; if nothing new is left, reply -.${context.region ? ` The listener is in country ${context.region}: when a name could mean several places or things, prefer the one nearest to them.` : ""} Reply on one line as: topic | fact | source number. The topic is 1 to 3 words. The fact is one complete sentence in ${languageName} that names its subject, at most ${MAX_FACT_CHARS} characters, no markdown. If the sources say nothing relevant, reply exactly: -` },
+    { role: "system", content: `Today is ${today()}. Sources can be older than today: never present something that has already ended as current, and count ages and durations from today. Someone just said the utterance in a live conversation. Using only the numbered sources, give the single most useful fact about what it mentions: confirm or correct a claim, answer a question, or identify a name. Use the earlier conversation to understand what the utterance refers to. Never repeat a fact already shown; if nothing new is left, reply -.${context.region ? ` The listener is in country ${context.region}: when a name could mean several places or things, prefer the one nearest to them.` : ""} Reply on one line as: topic | fact | source number. The topic is 1 to 3 words. The fact is one complete sentence in ${languageName} that names its subject, at most ${MAX_FACT_CHARS} characters, no markdown. If the sources say nothing relevant, reply exactly: -` },
     { role: "user", content: `${context.earlier.length ? `Earlier conversation:\n${context.earlier.join("\n")}\n\n` : ""}${context.shown.length ? `Already shown:\n${context.shown.join("\n")}\n\n` : ""}Utterance: ${sentence}\n\nSources:\n${results.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join("\n")}` },
   ];
   const attempts: [string, string, object][] = [];

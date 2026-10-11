@@ -11,6 +11,7 @@ import {
 import { terminalFace } from "../../ui/terminal-face";
 import type { Face } from "../paseo/paseo-painter";
 import { lookupFact, type Post } from "./converse-facts";
+import { ConverseLog } from "./converse-log";
 import { paintConverse, type ConverseView } from "./converse-painter";
 import { ConverseSession, type ConverseState } from "./converse-session";
 
@@ -80,7 +81,13 @@ class ConverseRootLayer extends YieldAtRootLayer {
  * the foreground or turning the screen off pauses it; coming back resumes.
  */
 export function createConverseWindow(options: InProcessAppOptions): InProcessWindow {
-  const session = new ConverseSession(() => app.requestRender(), (sentence, language, keys, context) => lookupFact(sentence, language, keys, post, { ...context, region: Device.region }));
+  const log = new ConverseLog();
+  const session = new ConverseSession(() => app.requestRender(), async (sentence, language, keys, context) => {
+    const done = log.sentence(sentence, language);
+    const fact = await lookupFact(sentence, language, keys, post, { ...context, region: Device.region }).catch(() => null);
+    done(fact);
+    return fact;
+  });
   const layer = new ConverseLayer(session, terminalFace);
   const app = createInProcessWindow({
     appId: "converse",

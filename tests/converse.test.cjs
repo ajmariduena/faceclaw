@@ -31,6 +31,7 @@ test('a sentence worth a fact becomes topic, source host and one line', async ()
   assert.deepEqual(calls.slice(0, 2).map((call) => call.url.split('/')[2]), ['api.perplexity.ai', 'openrouter.ai'], 'the search starts with the decision, not after it');
   assert.equal(calls[0].body.search_type, 'fast');
   assert.match(calls[2].body.messages[0].content, /in Spanish/);
+  assert.match(calls[2].body.messages[0].content, /^Today is [A-Z][a-z]+day, \d{4}-\d\d-\d\d\./, 'the writer knows the date');
 });
 
 test('small talk gets no fact and no writer call', async () => {
@@ -88,14 +89,15 @@ function recordingFace() {
   return { draws, lineHeight: 20, measureLine: (text) => Array.from(text).length * 10, drawText: (_image, x, y, text, value = 255) => draws.push({ x, y, text, value }) };
 }
 
-test('the screen is the fact under its topic, nothing else', () => {
+test('the screen is the fact under its topic at the bottom, nothing else', () => {
   const painter = loader({}, { '../paseo/paseo-painter': { CONTENT_TOP: 20, FOOTER_TOP: 250, LEFT: 20, PITCH: 27, RIGHT: 556,
     fitLine: (_face, text) => text, wrapLines: (_face, text) => [text], wrapCapped: (_face, text) => [text] } })('app/apps/converse/converse-painter.ts');
   const face = recordingFace();
   const previous = { topic: 'Cajas', source: 'x.com', text: 'Está a media hora de Cuenca.' };
   painter.paintConverse({}, face, { fact: { topic: 'Chimborazo', source: 'es.wikipedia.org', text: 'Mide 6.263 m.' }, previous, status: { label: '', bright: false }, message: null });
   assert.deepEqual(face.draws.map((d) => [d.text, d.value]), [['Chimborazo', 153], ['Mide 6.263 m.', 255], ['Cajas', 70], ['Está a media hora de Cuenca.', 120]]);
-  assert.ok(face.draws[2].y > face.draws[1].y, 'the previous fact sits under the newest');
+  assert.ok(face.draws[3].y < face.draws[0].y, 'the previous fact sits above the newest');
+  assert.equal(face.draws[1].y, 250 - 27, 'the newest fact ends at the bottom');
   face.draws.length = 0;
   painter.paintConverse({}, face, { fact: null, previous: null, status: { label: '· Live facts', bright: false }, message: null });
   assert.deepEqual(face.draws.map((d) => [d.text, d.value]), [['· Live facts', 85]]);
@@ -104,9 +106,10 @@ test('the screen is the fact under its topic, nothing else', () => {
 function sessionHarness() {
   const lookups = [];
   let options = null;
+  let continuous = null;
   const setting = (value) => ({ get: () => value });
   const { ConverseSession } = loader({ Date, Promise }, {
-    '../../native/reconnecting-stt': { ReconnectingSttClient: class { constructor(_create, opts) { options = opts; } start() {} stop() {} acceptPcm() {} } },
+    '../../native/reconnecting-stt': { ReconnectingSttClient: class { constructor(_create, opts, isContinuous) { options = opts; continuous = isContinuous; } start() {} stop() {} acceptPcm() {} } },
     '../../native/soniox-stt': { SonioxSttClient: class {} },
     '../../native/voice-control': { voiceControlBridge: { onRawPcm: () => () => {}, startRawCapture: () => true, stopRawCapture() {} } },
     '../../ui/dashboard-settings': { sonioxApiKeySetting: setting('sx'), typesafeApiKeySetting: setting('ts'), cerebrasApiKeySetting: setting(''), openRouterApiKeySetting: setting('or'), perplexityApiKeySetting: setting('px'), braveApiKeySetting: setting('') },
@@ -121,8 +124,31 @@ function sessionHarness() {
     options.onTokens([{ text, is_final: true, language }]);
     options.onTranscript({ text, isFinal: true, paragraphBreakAfter: true });
   };
-  return { session, lookups, say, options };
+  return { session, lookups, say, options, continuous };
 }
+
+test('a pause inside a sentence does not split it', () => {
+  const { session, lookups, say, continuous } = sessionHarness();
+  assert.equal(continuous(), false, 'no local silence cut');
+  say('Oye, ¿me puedes decir,', 'es');
+  assert.equal(lookups.length, 0);
+  say('cuántos habitantes tiene Guayaquil?', 'es');
+  assert.deepEqual(lookups.map((l) => l.sentence), ['Oye, ¿me puedes decir, cuántos habitantes tiene Guayaquil?']);
+  say('Y la altura del Chimborazo...', 'es');
+  session.tick(Date.now() + 9000);
+  assert.equal(lookups[1].sentence, 'Y la altura del Chimborazo...', 'an unfinished fragment still goes out after a long wait');
+});
+
+test('pausing sends a held fragment, leaving drops it', () => {
+  const { session, lookups, say } = sessionHarness();
+  say('Me dijeron que el Cotopaxi', 'es');
+  session.pause();
+  assert.equal(lookups.length, 1);
+  session.start();
+  say('Me dijeron que el Cotopaxi', 'es');
+  session.stop();
+  assert.equal(lookups.length, 1);
+});
 
 test('a slow lookup never replaces the fact of a later sentence', async () => {
   const { session, lookups, say } = sessionHarness();

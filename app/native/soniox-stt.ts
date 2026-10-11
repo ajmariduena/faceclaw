@@ -45,6 +45,8 @@ export type SonioxSttOptions = CloudSttOptions & {
   onTokens?: (tokens: SonioxToken[]) => void;
   /** Annotate spoken tokens with `loudness`. */
   measureLoudness?: boolean;
+  /** https://soniox.com/docs/stt/rt/endpoint-detection; negative sensitivity waits through hesitations. */
+  endpoint?: { sensitivity: number; maxDelayMs: number };
 };
 
 export class SonioxSttClient implements CloudSttClient {
@@ -86,6 +88,10 @@ export class SonioxSttClient implements CloudSttClient {
               language_hints: languageHints,
               enable_language_identification: true,
               enable_endpoint_detection: true,
+            } : {}),
+            ...(this.options.endpoint ? {
+              endpoint_sensitivity: this.options.endpoint.sensitivity,
+              max_endpoint_delay_ms: this.options.endpoint.maxDelayMs,
             } : {}),
           }),
         );

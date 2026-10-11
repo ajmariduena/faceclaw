@@ -22,6 +22,8 @@ export type ConverseState =
 export type FactLookup = (sentence: string, language: string, keys: FactKeys, context: FactContext) => Promise<Fact | null>;
 
 export const SILENCE_AUTO_STOP_MS = 3 * 60_000;
+/** A fragment that ends unfinished waits this long for the rest of the sentence. */
+export const UNFINISHED_HOLD_MS = 8000;
 const KEPT_SENTENCES = 200;
 const KEPT_FACTS = 10;
 
@@ -45,6 +47,7 @@ export class ConverseSession {
   private heardCount = 0;
   private shownIndex = 0;
   private lastSpeechAtMs = 0;
+  private held: { text: string; sinceMs: number; keys: FactKeys } | null = null;
 
   constructor(
     private readonly onChange: () => void,
@@ -75,6 +78,7 @@ export class ConverseSession {
     const options: SonioxSttOptions = {
       apiKey,
       languageHints: ["es", "en"],
+      endpoint: { sensitivity: -0.5, maxDelayMs: 3000 },
       onTokens: (tokens) => {
         if (client !== this.client) return;
         this.lastSpeechAtMs = Date.now();
@@ -82,7 +86,7 @@ export class ConverseSession {
         if (spoken?.language) this.language = spoken.language;
       },
       onTranscript: (event) => {
-        if (client === this.client && event.isFinal && event.paragraphBreakAfter) this.heard(event.text.trim(), keys);
+        if (client === this.client && event.isFinal && event.paragraphBreakAfter) this.segment(event.text.trim(), keys);
       },
       onStatus: (status) => { if (client === this.client) this.handleStatus(status); },
       onError: (message) => { if (client === this.client) this.fail(message); },
@@ -97,6 +101,7 @@ export class ConverseSession {
   /** End the Soniox session; lookups already running still land. */
   pause(): void {
     if (!this.listening) return;
+    this.release();
     this.releaseMic();
     this.client?.stop();
     this.client = null;
@@ -104,6 +109,7 @@ export class ConverseSession {
   }
 
   stop(): void {
+    this.held = null;
     this.pause();
     this.fact = this.previous = null;
     this.transcript.length = 0;
@@ -111,7 +117,23 @@ export class ConverseSession {
   }
 
   tick(nowMs = Date.now()): void {
+    if (this.held && nowMs - this.held.sinceMs >= UNFINISHED_HOLD_MS) this.release();
     if (this.state.kind === "listening" && nowMs - this.lastSpeechAtMs >= SILENCE_AUTO_STOP_MS) this.pause();
+  }
+
+  /** "Oye, ¿me puedes decir…" is one sentence with a pause inside: keep it until the rest arrives. */
+  private segment(text: string, keys: FactKeys): void {
+    if (!text) return;
+    const joined = this.held ? `${this.held.text} ${text}` : text;
+    this.held = null;
+    if (isFinished(joined)) this.heard(joined, keys);
+    else this.held = { text: joined, sinceMs: Date.now(), keys };
+  }
+
+  private release(): void {
+    const held = this.held;
+    this.held = null;
+    if (held) this.heard(held.text, held.keys);
   }
 
   private heard(sentence: string, keys: FactKeys): void {
@@ -156,4 +178,12 @@ export class ConverseSession {
     this.state = state;
     this.onChange();
   }
+}
+
+/** Ends in . ? or ! (not "...") and closes every ¿ and ¡ it opens. */
+export function isFinished(text: string): boolean {
+  const trimmed = text.trim();
+  if (!/[.?!]["'»”)]*$/.test(trimmed) || /(\.\.\.|…)["'»”)]*$/.test(trimmed)) return false;
+  const count = (pattern: RegExp) => (trimmed.match(pattern) ?? []).length;
+  return count(/¿/g) <= count(/\?/g) && count(/¡/g) <= count(/!/g);
 }
