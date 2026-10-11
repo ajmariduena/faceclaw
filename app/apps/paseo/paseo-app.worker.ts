@@ -398,23 +398,10 @@ function onClientChanged(current: PaseoDaemonClient): void {
 
 /** A fresh connection: reload the agent list (subscribed) and whatever chat is open. */
 async function bootstrap(current: PaseoDaemonClient): Promise<void> {
+  void loadWorkspaces(current);
   try {
-    const [page, workspacePage] = await Promise.all([
-      current.fetchAgents({ subscribe: true }),
-      current.fetchWorkspaces({ subscribe: true }).catch(() => null),
-    ]);
+    const page = await current.fetchAgents({ subscribe: true });
     if (current !== client || !current.connected) return;
-    workspaceNames.clear();
-    if (workspacePage) {
-      for (const workspace of workspacePage.entries) workspaceNames.set(workspace.id, workspace.name);
-      let cursor = workspacePage.pageInfo.hasMore ? workspacePage.pageInfo.nextCursor : null;
-      while (cursor) {
-        const next = await current.fetchWorkspaces({ cursor });
-        if (current !== client || !current.connected) return;
-        for (const workspace of next.entries) workspaceNames.set(workspace.id, workspace.name);
-        cursor = next.pageInfo.hasMore ? next.pageInfo.nextCursor : null;
-      }
-    }
     agents.clear();
     for (const entry of page.entries) {
       const agent = entry.agent as AgentSnapshot;
@@ -429,6 +416,25 @@ async function bootstrap(current: PaseoDaemonClient): Promise<void> {
   } catch (error) {
     console.warn(`paseo: agent list failed: ${errorMessage(error)}`);
     showNotice(`Can't list agents: ${errorMessage(error)}`);
+  }
+}
+
+async function loadWorkspaces(current: PaseoDaemonClient): Promise<void> {
+  try {
+    const first = await current.fetchWorkspaces({ subscribe: true });
+    if (current !== client || !current.connected) return;
+    workspaceNames.clear();
+    for (const workspace of first.entries) workspaceNames.set(workspace.id, workspace.name);
+    let cursor = first.pageInfo.hasMore ? first.pageInfo.nextCursor : null;
+    while (cursor) {
+      const next = await current.fetchWorkspaces({ cursor });
+      if (current !== client || !current.connected) return;
+      for (const workspace of next.entries) workspaceNames.set(workspace.id, workspace.name);
+      cursor = next.pageInfo.hasMore ? next.pageInfo.nextCursor : null;
+    }
+    scheduleRender();
+  } catch (error) {
+    console.warn(`paseo: workspace list failed: ${errorMessage(error)}`);
   }
 }
 
