@@ -439,6 +439,17 @@ class GlassesSessionCore(
         for (transport in cfwTransports) transport.close()
     }
 
+    /** Bluetooth just turned on: redial now instead of waiting out the backoff from when it was off. */
+    fun onBluetoothAdapterOn() {
+        monitor.withLock {
+            if (!running || sessionReady || reconnectHalted) return
+            consecutiveReconnects = 0
+            reconnectAfterMs = 0
+        }
+        logLine("Bluetooth turned on; reconnecting now")
+        interruptibleSleep.interrupt()
+    }
+
     /** The platform's screen-on/off/user-present signal: refresh the lock state and wake the worker. */
     fun onPhoneLockSignal() {
         emitPhoneLockStateIfChanged(true)
@@ -1748,7 +1759,7 @@ class GlassesSessionCore(
             link.beginConnect(leftAddress, false)
             connectArm(rightAddress, true, deadlineMs)
             connectArm(leftAddress, true, deadlineMs)
-            if (!sleepDuringConnectSettling(800)) {
+            if (!sleepDuringConnectSettling(ConnectionOptions.CONNECT_SETTLE_MS)) {
                 return
             }
             authenticateArms()

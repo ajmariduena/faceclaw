@@ -1,6 +1,7 @@
 package com.faceclaw.app
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -109,6 +110,20 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
         }
     }
 
+    private val adapterStateReceiver: BroadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON) {
+                core.onBluetoothAdapterOn()
+            }
+        }
+    }
+
+    // The wake barrier's calls wait on glasses round trips (seconds at worst);
+    // run them here so the JS main thread keeps painting and taking input.
+    private val wakeExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "FaceclawWake").apply { isDaemon = true }
+    }
+
     // Active animated-GIF screen recording, or null when idle. Frames are
     // pushed by recordScreenFrame(), which the TS side calls at each
     // phone-preview flush.
@@ -121,6 +136,7 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
         phoneLockFilter.addAction(Intent.ACTION_SCREEN_OFF)
         phoneLockFilter.addAction(Intent.ACTION_USER_PRESENT)
         appContext.registerReceiver(phoneLockReceiver, phoneLockFilter)
+        appContext.registerReceiver(adapterStateReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         phoneLockReceiverRegistered = true
     }
 
@@ -144,7 +160,9 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
         if (phoneLockReceiverRegistered) {
             phoneLockReceiverRegistered = false
             appContext.unregisterReceiver(phoneLockReceiver)
+            appContext.unregisterReceiver(adapterStateReceiver)
         }
+        wakeExecutor.shutdown()
     }
 
     fun setG2ScreenOn(screenOn: Boolean) = core.setG2ScreenOn(screenOn)
@@ -163,6 +181,25 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
     fun setFaceclawWakeLeaseEnabled(enabled: Boolean): Boolean = core.setFaceclawWakeLeaseEnabled(enabled)
 
     fun awaitEvenHubSessionReady(timeoutMs: Int): Boolean = core.awaitEvenHubSessionReady(timeoutMs)
+
+    fun awaitEvenHubSessionReadyAsync(timeoutMs: Int, listener: FaceclawBooleanResultListener) =
+        runOnWakeThread(listener) { core.awaitEvenHubSessionReady(timeoutMs) }
+
+    fun resumeEvenHubSessionAsync(listener: FaceclawBooleanResultListener) =
+        runOnWakeThread(listener) { core.resumeEvenHubSession() }
+
+    private fun runOnWakeThread(listener: FaceclawBooleanResultListener, call: () -> Boolean) {
+        try {
+            wakeExecutor.execute {
+                val outcome = runCatching(call)
+                mainHandler.post {
+                    outcome.fold({ listener.onResult(it) }, { listener.onError(it.message ?: it.toString()) })
+                }
+            }
+        } catch (error: java.util.concurrent.RejectedExecutionException) {
+            mainHandler.post { listener.onError("communicator closed") }
+        }
+    }
 
     fun setImuReportEnabled(enable: Boolean, reportFrq: Int) = core.setImuReportEnabled(enable, reportFrq)
 

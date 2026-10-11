@@ -34,17 +34,19 @@ class ConnectionOptions {
         const val BATTERY_INPUT_QUIET_MS = 5_000
         // Poll cadence while in charging mode; also bounds how quickly we notice
         // the glasses coming back out of the case.
-        const val CHARGING_BATTERY_POLL_MS = 30_000
+        const val CHARGING_BATTERY_POLL_MS = 10_000
         const val IMAGE_FRAGMENT_SIZE = 3800
         const val IMAGE_RETRY_DELAY_MS = 2_000
         const val MAX_CONSECUTIVE_ACK_TIMEOUTS = 8
         const val EVEN_APP_WRITE_FAILURE_WINDOW_MS = 15_000
         const val IDLE_SLEEP_MS = 100
+        // Pause between enabling notifications on both arms and the security auth.
+        const val CONNECT_SETTLE_MS = 300L
         // Delay before each consecutive reconnect attempt (the last entry repeats). Android
         // keeps an LE link up for a few seconds after its last GATT client closes (4 s on a
         // Pixel), so the quick first retry reuses the old links and the glasses never see a
         // disconnect; later retries wait long enough for the links to really drop.
-        @JvmField val RECONNECT_BACKOFF_MS = intArrayOf(2_000, 6_000, 10_000)
+        @JvmField val RECONNECT_BACKOFF_MS = intArrayOf(2_000, 6_000)
         // A session that stayed up this long starts the backoff over when it fails.
         const val STABLE_SESSION_MS = 30_000
         // Cap on rects per batch. Each rect consumes a distinct CFW frame id, and the

@@ -541,11 +541,10 @@ class GlassesSessionCoreTest {
         core.monitor.withLock {
             assertEquals(2_000L, core.scheduleReconnectLocked(false))
             assertEquals(6_000L, core.scheduleReconnectLocked(false))
-            assertEquals(10_000L, core.scheduleReconnectLocked(false))
-            assertEquals(10_000L, core.scheduleReconnectLocked(false))
+            assertEquals(6_000L, core.scheduleReconnectLocked(false))
             // A session that dies soon after coming up keeps backing off...
             core.lastSessionReadyAtMs = core.now() - 1_000
-            assertEquals(10_000L, core.scheduleReconnectLocked(true))
+            assertEquals(6_000L, core.scheduleReconnectLocked(true))
             // ...one that stayed up starts the schedule over.
             core.lastSessionReadyAtMs = core.now() - ConnectionOptions.STABLE_SESSION_MS
             assertEquals(2_000L, core.scheduleReconnectLocked(true))
@@ -573,11 +572,48 @@ class GlassesSessionCoreTest {
             assertTrue(retryDelayMs() in 5_000L..6_000L)
             s.platform.offsetMs += 6_000
             assertTrue(waitUntil(5_000) { attempts() == 3 })
-            assertTrue(retryDelayMs() in 9_000L..10_000L)
+            assertTrue(retryDelayMs() in 5_000L..6_000L)
 
             // Once the arm answers again, the session comes up.
             s.link.unreachable = null
-            s.platform.offsetMs += 10_000
+            s.platform.offsetMs += 6_000
+            assertTrue(waitUntil(5_000) { s.layoutCreated() }, s.host.logs().takeLast(10).toString())
+        } finally {
+            s.core.close()
+        }
+    }
+
+    @Test
+    fun leavingTheChargerRestartsTheSessionOnTheLiveLinks() {
+        val s = Session()
+        try {
+            s.startAndAwaitLayout()
+            s.core.monitor.withLock { s.core.updateChargingModeLocked(true, 80) }
+            assertTrue(waitUntil(5_000) { !s.layoutCreated() })
+            val connects = s.link.connects
+            val preludes = s.link.writes.count { it.kind == "battery" }
+            s.core.monitor.withLock { s.core.updateChargingModeLocked(false, 80) }
+            // No backoff to wait out: the clock never moves.
+            assertTrue(waitUntil(5_000) { s.layoutCreated() }, s.host.logs().takeLast(10).toString())
+            assertTrue(s.link.disconnected.isEmpty(), "dropped ${s.link.disconnected}")
+            assertTrue(s.link.connects > connects)
+            assertTrue(s.link.writes.count { it.kind == "battery" } > preludes)
+            assertEquals(0, s.core.monitor.withLock { s.core.consecutiveReconnects })
+        } finally {
+            s.core.close()
+        }
+    }
+
+    @Test
+    fun bluetoothTurningOnSkipsTheRemainingBackoff() {
+        val s = Session()
+        s.link.unreachable = LEFT
+        fun attempts() = s.core.monitor.withLock { s.core.consecutiveReconnects }
+        try {
+            assertTrue(s.core.start())
+            assertTrue(waitUntil(5_000) { attempts() == 1 })
+            s.link.unreachable = null
+            s.core.onBluetoothAdapterOn()
             assertTrue(waitUntil(5_000) { s.layoutCreated() }, s.host.logs().takeLast(10).toString())
         } finally {
             s.core.close()

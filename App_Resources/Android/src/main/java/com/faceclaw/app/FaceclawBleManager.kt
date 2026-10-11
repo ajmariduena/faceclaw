@@ -123,6 +123,9 @@ class FaceclawBleManager(context: Context) {
             return true
         }
         try {
+            // With the adapter off every device reads BOND_NONE, which would park
+            // the session as "unpaired" for good instead of retrying.
+            if (!bluetoothAdapter.isEnabled) return true
             val device = bluetoothAdapter.getRemoteDevice(address)
             return device == null || device.bondState != BluetoothDevice.BOND_NONE
         } catch (t: Throwable) {
@@ -550,6 +553,7 @@ class FaceclawBleManager(context: Context) {
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             val address = gatt.device.address
             if (status == BluetoothGatt.GATT_SUCCESS) negotiatedMtus[address] = mtu
+            Log.i(TAG, "onMtuChanged: address=$address mtu=$mtu status=$status")
             completeOp(address, OpKind.MTU, status)
         }
 
