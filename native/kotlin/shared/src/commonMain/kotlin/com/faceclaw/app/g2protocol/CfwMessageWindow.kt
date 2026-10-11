@@ -22,12 +22,19 @@ class CfwMessageWindow private constructor() {
         fun ackDeadline(sentAtMs: Long, lastArmWriteAtMs: Long, lastArmAckAtMs: Long): Long =
             maxOf(lastArmWriteAtMs + DATA_STALL_MS, maxOf(sentAtMs, lastArmAckAtMs) + ACK_STALL_MS)
 
-        /** ID reuse must not invalidate an earlier command still eligible for replay. */
+        /**
+         * An eviction waits so ID reuse can't invalidate an earlier command still eligible for
+         * replay. A present waits until both lenses hold the frame: the right lens gets every
+         * message through the left lens's relay, so a present sent behind a large upload flips
+         * the left lens long before the right one.
+         */
         @JvmStatic
-        fun canSend(messages: Iterable<OutboundMessage>, candidate: OutboundMessage): Boolean =
-            candidate.sid != CfwTransport.SID ||
-                candidate.message.firstOrNull()?.toInt() != ResourceCacheState.EVICT_MODE ||
+        fun canSend(messages: Iterable<OutboundMessage>, candidate: OutboundMessage): Boolean {
+            if (candidate.sid != CfwTransport.SID) return true
+            val mode = candidate.message.firstOrNull()?.toInt()
+            return (mode != ResourceCacheState.EVICT_MODE && mode != CFW_MSG_PRESENT) ||
                 messages.none { it.sid == CfwTransport.SID }
+        }
 
         @JvmStatic
         fun acknowledgedHead(messages: Iterable<OutboundMessage>): OutboundMessage? {

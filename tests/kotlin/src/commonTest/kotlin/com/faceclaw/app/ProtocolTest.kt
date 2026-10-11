@@ -213,6 +213,18 @@ class ProtocolTest {
     }
 
     @Test
+    fun presentWaitsUntilBothLensesHoldTheFrame() {
+        val draws = message(input = byteArrayOf(CFW_MSG_DRAW_CALLS.toByte(), 0, 0))
+        val present = message(input = byteArrayOf(CFW_MSG_PRESENT.toByte()))
+        assertFalse(CfwMessageWindow.canSend(listOf(draws), present))
+        draws.cfwAckLenses = 1
+        assertFalse(CfwMessageWindow.canSend(listOf(draws), present))
+        assertTrue(CfwMessageWindow.canSend(emptyList(), present))
+        assertTrue(CfwMessageWindow.canSend(listOf(message(sid = 1)), present))
+        assertTrue(CfwMessageWindow.canSend(listOf(present), draws))
+    }
+
+    @Test
     fun cfwAckDeadlineWaitsWhileEitherWritesOrAcksProgress() {
         // Sent at 1000 into an idle arm: 3 s from the send.
         assertEquals(4_000L, CfwMessageWindow.ackDeadline(1_000, 1_000, 0))
