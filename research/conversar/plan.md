@@ -38,6 +38,9 @@ Latencia objetivo: unos 1,5–2,5 s desde que termina la frase hasta que aparece
 - **Con Perplexity Fast en la cadena completa:** la búsqueda tarda 280–360 ms y la línea con el dato sale unos 1,19 s después de que termina la frase (antes 1,55–1,75 s). Con el envío a las gafas serían unos 1,4 s en total.
 - Ahora el tiempo se reparte en: Soniox detectando el fin de frase (~380 ms), la búsqueda o Jev (~350 ms, en paralelo), el redactor (~300 ms) y el envío a las gafas (~200 ms).
 
+## Pantalla (11 oct)
+Elegida la variante «solo texto» (`tools/headless-render/live-facts.cjs`, `texto`): sin recuadro, el tema y la fuente en tenue, y el dato en blanco. Entre un dato y otro, la pantalla queda vacía con una marca tenue de «Live facts».
+
 ## Decisiones abiertas
 - Dónde corre el «cerebro» (detectar, buscar, redactar): directo desde el teléfono (las claves quedan en el teléfono) o a través del daemon de Paseo en la Mac por el relay (las claves se quedan en la Mac, pero depende de la Mac).
 - ~~Qué búsqueda usar~~ Decidido el 11 oct: Perplexity Fast Search (`search_type: "fast"`), con Brave de respaldo si falla o tarda.
