@@ -36,7 +36,7 @@
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
                         </GridLayout>
                         <GridLayout columns="*,auto,auto" class="fc-row" tap="{{ onVoiceSectionTap }}">
-                            <Label col="0" text="Voice &amp; assistant" class="fc-row-label" verticalAlignment="center" />
+                            <Label col="0" text="Voice &amp; bots" class="fc-row-label" verticalAlignment="center" />
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
                         </GridLayout>
                         <GridLayout columns="*,auto,auto" class="fc-row" tap="{{ onApiKeysTap }}">

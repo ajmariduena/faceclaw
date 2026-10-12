@@ -19,7 +19,7 @@ export type SectionContext = {
 export const SECTION_TITLES: Record<SectionId, string> = {
   display: "Display",
   controls: "Controls",
-  voice: "Voice & assistant",
+  voice: "Voice & bots",
   device: "Device",
   about: "About",
 };
@@ -173,29 +173,17 @@ function controlsSection(): SettingGroup[] {
 }
 
 function voiceSection(): SettingGroup[] {
-  const android = !global.isIOS;
   return [
     group("Voice", [
       enumRow(s.voiceProviderSetting, "Transcription"),
-      enumRow(s.wakeWordActionSetting, "“Hey Even”"),
+      enumRow(s.wakeWordActionSetting, "\u201CHey Even\u201D"),
       toggleRow(s.saveVoiceRecordingsSetting),
     ]),
-    group("Assistant", [
-      enumRow(s.assistantBackendSetting, "Backend"),
-      enumRow(s.assistantModelSetting, "Model"),
-      toggleRow(s.assistantSkipConfirmationSetting),
-      android && toggleRow(s.assistantAllowProactiveSetting),
-    ]),
-    android ? group("Agent bridge", [
-      textRow(s.assistantBridgeHostSetting, "Host"),
-      textRow(s.assistantBridgePortSetting, "Port"),
-      textRow(s.assistantBridgeTokenSetting, "Token"),
-    ]) : null,
-    group("Bots", [
+    group("Grok Bot", [
       textRow(s.grokBotNamesSetting),
       toggleRow(s.botsWakeOnReplySetting),
     ]),
-  ].filter((section): section is SettingGroup => !!section);
+  ];
 }
 
 function deviceSection(ctx: SectionContext): SettingGroup[] {

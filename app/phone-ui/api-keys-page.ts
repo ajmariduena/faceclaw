@@ -1,4 +1,4 @@
-import { Observable, ObservableArray, type NavigatedData, type Page } from "@nativescript/core";
+import { Frame, Observable, ObservableArray, type NavigatedData, type Page } from "@nativescript/core";
 import * as settings from "../ui/dashboard-settings";
 import { getStringSetting, setStringSetting } from "../native/settings-store";
 import { API_SERVICES, apiStatusKey, resetApiStatus, statusText, type ApiService, type ApiKeyStatus } from "../ui/api-key-status";
@@ -98,6 +98,7 @@ class ApiKeysViewModel extends Observable {
   readonly rows = new ObservableArray<ApiKeyRow | BotNamesRow>(this.visibleRows());
   testing = false;
   get testAllEnabled(): boolean { return !this.testing; }
+  onBackTap(): void { Frame.topmost()?.goBack(); }
   get advancedLabel(): string { return this.advanced ? "Advanced ▴" : "Advanced ▾"; }
   toggleAdvanced(): void {
     this.advanced = !this.advanced;
