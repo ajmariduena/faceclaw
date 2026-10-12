@@ -173,13 +173,15 @@ Slider.fc-slider,
 .fc-page .tab-button {
   background-color: #1d1d1d;
   color: #f2f2f2;
-  horizontal-align: stretch;
-  padding: 8 4;
+  padding: 0 4;
   border-radius: 12;
 }
 .fc-page .tab-button-selected {
   background-color: #f2f2f2;
   color: #000000;
+}
+.fc-page .tab-icon-button {
+  border-radius: 12;
 }
 .fc-page .tab-icon {
   tint-color: #f2f2f2;
