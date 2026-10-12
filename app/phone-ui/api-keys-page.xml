@@ -1,29 +1,12 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" class="fc-page">
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" xmlns:rc="phone-ui" navigatingTo="navigatingTo" class="fc-page">
   <ActionBar title="API keys" class="fc-action-bar">
     <NavigationButton android.systemIcon="ic_menu_back" tap="{{ onBackTap }}" />
-    <ActionItem text="Test all" tap="{{ testAll }}" isEnabled="{{ testAllEnabled }}" android.position="actionBar" />
+    <!-- Action view, not text: Android menu-item text takes the (unapplied) toolbar theme's colour and vanishes on the black bar. -->
+    <ActionItem tap="{{ testAll }}" android.position="actionBar">
+      <Label text="{{ testAllLabel }}" class="fc-bar-action" />
+    </ActionItem>
   </ActionBar>
-  <GridLayout rows="*,auto">
-    <!-- Not a ListView: recycled cells fire textChange with another row's text and overwrite that row's key. -->
-    <ScrollView row="0">
-      <StackLayout class="fc-body">
-        <Repeater items="{{ rows }}">
-          <Repeater.itemTemplate>
-            <StackLayout>
-              <Label text="{{ group }}" class="fc-group-title" />
-              <StackLayout class="fc-card fc-key-card">
-                <Label text="{{ label }}" class="fc-row-label" />
-                <GridLayout columns="*,auto" rows="auto" class="m-t-8">
-                  <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="{{ secure }}" autocorrect="false" autocapitalizationType="none" hint="{{ placeholder }}" class="fc-key-field" />
-                  <Label col="1" text="{{ testLabel }}" tap="{{ onTest }}" isEnabled="{{ enabled }}" visibility="{{ testVisibility }}" class="fc-key-test" verticalAlignment="center" />
-                </GridLayout>
-                <Label text="{{ status }}" textWrap="true" class="fc-row-sub m-t-8" />
-              </StackLayout>
-            </StackLayout>
-          </Repeater.itemTemplate>
-        </Repeater>
-      </StackLayout>
-    </ScrollView>
-    <Label row="1" text="{{ advancedLabel }}" tap="{{ toggleAdvanced }}" class="fc-text-button" />
-  </GridLayout>
+  <ScrollView>
+    <rc:settings-groups class="fc-body" />
+  </ScrollView>
 </Page>

@@ -19,6 +19,11 @@
 .fc-action-bar .action-bar-status {
   color: #9a9a9a;
 }
+.fc-bar-action {
+  font-size: 15;
+  color: #f2f2f2;
+  padding: 0 16 0 12;
+}
 .fc-body {
   padding: 0 16 24 16;
 }
@@ -123,8 +128,9 @@
   color: #000000;
   background-color: #f2f2f2;
 }
+/* SeekBar insets its track by its own padding; pull it out to the row's text edges. */
 .fc-slider {
-  margin: 4 0 0 0;
+  margin: 4 -8 0 -8;
 }
 Slider.fc-slider,
 .ns-dark Slider.fc-slider {
@@ -133,8 +139,8 @@ Slider.fc-slider,
 }
 .ns-android Slider.fc-slider[isEnabled=false],
 .ns-dark.ns-android Slider.fc-slider[isEnabled=false] {
-  color: #4a4a4a;
-  background-color: #2e2e2e;
+  color: #6b6b6b;
+  background-color: #3a3a3a;
 }
 .fc-segments {
   margin: 10 0 4 0;
@@ -198,31 +204,6 @@ Slider.fc-slider,
   border-color: #262626;
 }
 
-.fc-key-card {
-  padding: 14 16 14 18;
-}
-.fc-page TextField.fc-key-field {
-  background-color: #1d1d1d;
-  color: #f2f2f2;
-  placeholder-color: #6b6b6b;
-  border-width: 0;
-  border-radius: 12;
-  margin: 0;
-  padding: 10 12;
-  font-size: 15;
-}
-.fc-key-test {
-  font-size: 14;
-  font-weight: 500;
-  color: #f2f2f2;
-  padding: 10 0 10 14;
-}
-.fc-text-button {
-  font-size: 15;
-  color: #9a9a9a;
-  text-align: center;
-  padding: 14;
-}
 .fc-row > .fc-row-label {
   padding: 5 0;
 }
