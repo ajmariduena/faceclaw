@@ -149,6 +149,10 @@ export class SettingGroup extends Observable {
     return this.title ? "visible" : "collapse";
   }
 
+  get groupClass(): string {
+    return this.title ? "" : "fc-group-untitled";
+  }
+
   get groupVisibility(): Visibility {
     return this.rows.some((candidate) => candidate.isVisible()) ? "visible" : "collapse";
   }

@@ -1,7 +1,7 @@
 <StackLayout xmlns="http://schemas.nativescript.org/tns.xsd">
   <Repeater items="{{ groups }}">
     <Repeater.itemTemplate>
-      <StackLayout visibility="{{ groupVisibility }}">
+      <StackLayout class="{{ groupClass }}" visibility="{{ groupVisibility }}">
         <Label text="{{ title }}" class="fc-group-title" visibility="{{ titleVisibility }}" />
         <StackLayout class="fc-card">
           <Repeater items="{{ rows }}">

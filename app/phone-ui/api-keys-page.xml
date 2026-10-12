@@ -6,21 +6,23 @@
   <GridLayout rows="*,auto">
     <!-- Not a ListView: recycled cells fire textChange with another row's text and overwrite that row's key. -->
     <ScrollView row="0">
-      <Repeater items="{{ rows }}" class="fc-body">
-        <Repeater.itemTemplate>
-          <StackLayout>
-            <Label text="{{ group }}" class="fc-group-title" />
-            <StackLayout class="fc-card fc-key-card">
-              <Label text="{{ label }}" class="fc-row-label" />
-              <GridLayout columns="*,auto" rows="auto" class="m-t-8">
-                <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="{{ secure }}" autocorrect="false" autocapitalizationType="none" hint="{{ placeholder }}" class="fc-key-field" />
-                <Label col="1" text="{{ testLabel }}" tap="{{ onTest }}" isEnabled="{{ enabled }}" visibility="{{ testVisibility }}" class="fc-key-test" verticalAlignment="center" />
-              </GridLayout>
-              <Label text="{{ status }}" textWrap="true" class="fc-row-sub m-t-8" />
+      <StackLayout class="fc-body">
+        <Repeater items="{{ rows }}">
+          <Repeater.itemTemplate>
+            <StackLayout>
+              <Label text="{{ group }}" class="fc-group-title" />
+              <StackLayout class="fc-card fc-key-card">
+                <Label text="{{ label }}" class="fc-row-label" />
+                <GridLayout columns="*,auto" rows="auto" class="m-t-8">
+                  <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="{{ secure }}" autocorrect="false" autocapitalizationType="none" hint="{{ placeholder }}" class="fc-key-field" />
+                  <Label col="1" text="{{ testLabel }}" tap="{{ onTest }}" isEnabled="{{ enabled }}" visibility="{{ testVisibility }}" class="fc-key-test" verticalAlignment="center" />
+                </GridLayout>
+                <Label text="{{ status }}" textWrap="true" class="fc-row-sub m-t-8" />
+              </StackLayout>
             </StackLayout>
-          </StackLayout>
-        </Repeater.itemTemplate>
-      </Repeater>
+          </Repeater.itemTemplate>
+        </Repeater>
+      </StackLayout>
     </ScrollView>
     <Label row="1" text="{{ advancedLabel }}" tap="{{ toggleAdvanced }}" class="fc-text-button" />
   </GridLayout>
