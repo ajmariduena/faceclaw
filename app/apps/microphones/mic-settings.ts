@@ -124,7 +124,7 @@ export const wearerCommandsOnlySetting = new ConfigSettingBoolean({
   id: "microphones-wearer-commands",
   label: "My voice only",
   description:
-    "Restrict voice command recognition to your own enrolled voice; other speakers are captioned but cannot trigger commands.",
+    "Voice input and Transcribe hear only your enrolled voice; other speakers are not transcribed.",
   storageKey: "microphones.wearer-commands-only",
   defaultValue: false,
 });

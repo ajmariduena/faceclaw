@@ -2022,9 +2022,8 @@ class DashboardController {
       openAiApiKey: openAiApiKeySetting.get(),
       sonioxApiKey: sonioxApiKeySetting.get(),
       saveRecording: saveVoiceRecordingsSetting.get(),
-      // "My voice only" (Microphones app): verify command utterances
-      // against the enrolled wearer voice-print; non-matching speakers'
-      // finals are suppressed by the bridge.
+      // "My voice only" (Microphones app): other speakers reach the
+      // recognizer as silence.
       speakerVerification: wearerVerificationOptions() ?? undefined,
       // The Microphones app's processing config applies to every capture:
       // spectral noise suppression and the Sonic Radar listening beam.

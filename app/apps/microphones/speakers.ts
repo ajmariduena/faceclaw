@@ -17,6 +17,9 @@ declare const android: any;
  */
 
 export const SPEAKER_KNOWN_THRESHOLD = 0.8;
+// Live "my voice only" verdicts embed ~1 s windows, which score well below whole
+// utterances; tune against the "wearer gate:" logcat lines.
+export const WEARER_GATE_THRESHOLD = 0.55;
 export const SPEAKER_UNCERTAIN_THRESHOLD = 0.5;
 /** Cap on the running-mean weight of an existing centroid. */
 export const CENTROID_UPDATE_CAP = 24;
@@ -292,10 +295,10 @@ export class SpeakerRegistry {
 export const speakerRegistry = new SpeakerRegistry();
 
 /**
- * The speaker-verification config for "my voice only" command gating, or
- * null when the setting is off, no wearer voice is enrolled, or the speaker
- * model isn't downloaded. Consumed by the voice-capture path so assistant /
- * dictation commands from other speakers are discarded.
+ * The "my voice only" gate config, or null when the setting is off, no wearer
+ * voice is enrolled, or the speaker model isn't downloaded. Voice input and
+ * Transcribe then hear only the wearer; other speakers reach the recognizer as
+ * silence.
  */
 export function wearerVerificationOptions(): {
   speakerModelPath: string;
@@ -307,5 +310,5 @@ export function wearerVerificationOptions(): {
   if (!wearer?.embedding) return null;
   const speakerModelPath = micModelPath("speaker-embedding");
   if (!speakerModelPath) return null;
-  return { speakerModelPath, wearerEmbedding: wearer.embedding, threshold: SPEAKER_KNOWN_THRESHOLD };
+  return { speakerModelPath, wearerEmbedding: wearer.embedding, threshold: WEARER_GATE_THRESHOLD };
 }

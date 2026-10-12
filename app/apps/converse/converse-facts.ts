@@ -23,7 +23,9 @@ export type FactContext = {
 
 const LOOKUP_THRESHOLD = 0.6;
 const MIN_WORDS = 3;
-const SHORT_FOLLOW_UP_WORDS = 5;
+const SHORT_FOLLOW_UP_WORDS = 7;
+/** The search with the year is extra: once the others are back it gets this long, then is dropped. */
+const YEAR_SEARCH_GRACE_MS = 150;
 const MAX_FACT_CHARS = 90;
 const CONTEXT_SENTENCES = 6;
 const SHOWN_FOR_DECIDE = 3;
@@ -39,8 +41,11 @@ export async function lookupFact(sentence: string, language: string, keys: FactK
   // A second search with the previous sentence costs no time (both run beside Jev) and resolves "it", "there", "he".
   const withPrevious = earlier.length ? `${earlier[earlier.length - 1]} ${sentence}` : "";
   // Searched alone, "¿Ahorita los regresaron?" finds what "ahorita" means.
-  const queries = !withPrevious ? [sentence] : wordCount(sentence) <= SHORT_FOLLOW_UP_WORDS ? [withPrevious] : [sentence, withPrevious];
-  const searching = Promise.all(queries.map((query) => search(query, context.region, keys, post).catch(() => [] as SearchResult[]))).then(mergeResults);
+  const main = !withPrevious ? [sentence] : wordCount(sentence) <= SHORT_FOLLOW_UP_WORDS ? [withPrevious] : [sentence, withPrevious];
+  // With the year, the search also finds what is true now: alone, "¿hay pandas en Japón?" only found a 2023 page.
+  const lookups = [...main, `${main[main.length - 1]} ${new Date().getFullYear()}`].map((query) => search(query, context.region, keys, post).catch(() => [] as SearchResult[]));
+  const withYear = lookups.pop() as Promise<SearchResult[]>;
+  const searching = Promise.all(lookups).then(async (lists) => mergeResults([...lists, await within(withYear, YEAR_SEARCH_GRACE_MS, [])]));
   const p = await decide(sentence, earlier, context.shown.slice(-SHOWN_FOR_DECIDE), keys, post).catch(() => 0);
   if (p < LOOKUP_THRESHOLD) return null;
   const results = await searching;
@@ -60,6 +65,12 @@ export function sameFact(text: string, shown: string): boolean {
   let common = 0;
   for (const word of a) if (b.has(word)) common++;
   return common / a.size >= SAME_FACT_OVERLAP;
+}
+
+function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms); });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
 function wordCount(text: string): number {
@@ -153,19 +164,11 @@ function today(now = new Date()): string {
   return `${WEEKDAYS[now.getDay()]}, ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** "(2023-02-28, 3 years old) ": the writer misses a bare date's age. */
-function dated(date: string | undefined, now = new Date()): string {
-  const time = date ? Date.parse(date) : NaN;
-  if (Number.isNaN(time)) return "";
-  const years = Math.floor((now.getTime() - time) / (365.25 * 24 * 3600_000));
-  return `(${date}${years >= 1 ? `, ${years} year${years > 1 ? "s" : ""} old` : ""}) `;
-}
-
 async function write(sentence: string, language: string, results: SearchResult[], context: FactContext, keys: FactKeys, post: Post): Promise<Fact | null> {
   const languageName = language === "en" ? "English" : "Spanish";
   const messages = [
-    { role: "system", content: `Today is ${today()}. Sources can be older than today: never present something that has already ended as current, and count ages and durations from today. Someone just said the utterance in a live conversation. Using only the numbered sources, give the single most useful fact about what it mentions: confirm or correct a claim, answer a question, or identify a name. Use the earlier conversation to understand what the utterance refers to. Never repeat a fact already shown; if nothing new is left, reply -. State only what a source says outright: no inferred routes or flights, and do not contradict the speaker unless a source says the opposite. When sources give different figures, give the range; when they disagree on whether something is still true, trust the most recent dated one. A fact taken from a source marked years old goes in the past tense with that year ("En 2023 había…"), never in the present. If the sources are about a different subject than the conversation, reply -. Read the utterance in the speaker's dialect ("ahorita" means now) and never explain what a word they used means. Never mention sources or source numbers in the fact.${context.region ? ` The listener is in country ${context.region}: when a name could mean several places or things, prefer the one nearest to them.` : ""} Reply on one line as: topic | fact | one source number. The topic is 1 to 3 words. The fact is one complete sentence in ${languageName} that names its subject, at most ${MAX_FACT_CHARS} characters, no markdown. If the sources say nothing relevant, reply exactly: -` },
-    { role: "user", content: `${context.earlier.length ? `Earlier conversation:\n${context.earlier.join("\n")}\n\n` : ""}${context.shown.length ? `Already shown:\n${context.shown.join("\n")}\n\n` : ""}Utterance: ${sentence}\n\nSources:\n${results.map((r, i) => `${i + 1}. ${dated(r.date)}${r.title}: ${r.snippet}`).join("\n")}` },
+    { role: "system", content: `Today is ${today()}. Sources can be older than today: never present something that has already ended as current, and count ages and durations from today. Someone just said the utterance in a live conversation. Using only the numbered sources, give the single most useful fact about what it mentions: confirm or correct a claim, answer a question, or identify a name. Use the earlier conversation to understand what the utterance refers to. Never repeat a fact already shown; if nothing new is left, reply -. State only what a source says outright: no inferred routes or flights, and do not contradict the speaker unless a source says the opposite. When sources give different figures, give the range; when they disagree on whether something is still true, trust the most recent dated one. If the sources are about a different subject than the conversation, reply -. Read the utterance in the speaker's dialect ("ahorita" means now) and never explain what a word they used means. Never mention sources or source numbers in the fact.${context.region ? ` The listener is in country ${context.region}: when a name could mean several places or things, prefer the one nearest to them.` : ""} Reply on one line as: topic | fact | one source number. The topic is 1 to 3 words. The fact is one complete sentence in ${languageName} that names its subject, at most ${MAX_FACT_CHARS} characters, no markdown. If the sources say nothing relevant, reply exactly: -` },
+    { role: "user", content: `${context.earlier.length ? `Earlier conversation:\n${context.earlier.join("\n")}\n\n` : ""}${context.shown.length ? `Already shown:\n${context.shown.join("\n")}\n\n` : ""}Utterance: ${sentence}\n\nSources:\n${results.map((r, i) => `${i + 1}. ${r.date ? `(${r.date}) ` : ""}${r.title}: ${r.snippet}`).join("\n")}` },
   ];
   const attempts: [string, string, object][] = [];
   if (keys.cerebras) attempts.push(["https://api.cerebras.ai/v1/chat/completions", keys.cerebras, { model: "gpt-oss-120b", reasoning_effort: "low" }]);
@@ -188,8 +191,8 @@ export function parseFactLine(line: string, urls: string[]): Fact | null {
   const parts = line.split("|").map((part) => part.trim()).filter(Boolean);
   const sourceNumber = /^\d+(\s*,\s*\d+)*$/.test(parts[parts.length - 1] ?? "") ? parseInt(parts.pop() ?? "", 10) : 0;
   const topic = parts[0] ?? "";
-  const text = (parts.pop() ?? "").replace(SOURCE_MENTION, "").trim();
-  if (!text || text === "-" || /^\d+$/.test(text) || /^(fuente|source)\s*\d+\.?$/i.test(text)) return null;
+  const text = (parts.pop() ?? "").replace(SOURCE_MENTION, "").replace(/【[^】]*】/g, "").trim();
+  if (!/[A-Za-zÀ-ÿ]/.test(text) || /^(fuente|source)\s*\d+\.?$/i.test(text)) return null;
   const url = urls[sourceNumber - 1] ?? urls[0] ?? "";
   return { topic: topic.length <= MAX_TOPIC_CHARS ? topic : "", text, source: hostname(url) };
 }

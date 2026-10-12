@@ -33,12 +33,4 @@ interface FaceclawVoiceControllerListener {
      * when endpointing was enabled for the session; see FaceclawVoiceController.setEndpointing.
      */
     fun onSpeechEnd(): Unit
-
-    /**
-     * Result of speaker verification against the enrolled wearer voice-print, emitted once per
-     * capture session just before the final transcript. Only fires when verification was configured
-     * for the session; fails open (isWearer=true) when the utterance was too short to verify or the
-     * speaker model could not be loaded.
-     */
-    fun onSpeakerVerified(isWearer: Boolean, similarity: Float): Unit
 }
