@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { loader } = require('./helpers/load-typescript.cjs');
 
 const load = loader({ encodeURIComponent, Promise, Error, setTimeout, clearTimeout }, {});
-const { lookupFact, parseFactLine } = load('app/apps/converse/converse-facts.ts');
+const { lookupFact, parseFactLine, sameFact } = load('app/apps/converse/converse-facts.ts');
 const KEYS = { typesafe: '', cerebras: '', openRouter: 'or-key', perplexity: 'px-key', brave: 'br-key' };
 
 function fakePost(routes) {
@@ -194,7 +194,7 @@ test('Converse says which key is still missing', () => {
   assert.equal(missingConverseKey('sx', { ...none, typesafe: 'ts', cerebras: 'cb', brave: 'br' }), null);
 });
 
-test('a follow-up sentence is searched with the one before it and written with the conversation', async () => {
+test('a short follow-up is searched with the one before it and written with the conversation', async () => {
   const { post, calls } = fakePost({
     'https://api.typesafe.ai/v1/systemone': () => ({ status: 200, json: { answers: { lookup: { noul: 0.9 } } } }),
     'https://api.perplexity.ai/search': () => PERPLEXITY,
@@ -204,9 +204,10 @@ test('a follow-up sentence is searched with the one before it and written with t
   const fact = await lookupFact('¿Sabes cuántos habitantes tiene?', 'es', { ...KEYS, typesafe: 'ts', cerebras: 'cb' }, post, context);
   assert.equal(fact.topic, 'Cuenca');
   const queries = calls.filter((call) => call.url.includes('perplexity')).map((call) => call.body);
-  assert.deepEqual(queries.map((q) => q.query), ['¿Sabes cuántos habitantes tiene?', 'El mes pasado fui a Cuenca con mi familia. ¿Sabes cuántos habitantes tiene?']);
+  assert.deepEqual(queries.map((q) => q.query), ['El mes pasado fui a Cuenca con mi familia. ¿Sabes cuántos habitantes tiene?'], 'a short follow-up is only searched with the sentence before it');
   assert.equal(queries[0].country, 'EC');
   assert.match(calls.find((call) => call.url.includes('typesafe')).body.state, /Earlier: El mes pasado fui a Cuenca/);
+  assert.match(calls.find((call) => call.url.includes('typesafe')).body.state, /Fact on screen: La catedral se terminó en 1975\./);
   const prompt = calls.find((call) => call.url.includes('cerebras')).body.messages.map((m) => m.content).join('\n');
   assert.match(prompt, /Earlier conversation:\nEl mes pasado fui a Cuenca/);
   assert.match(prompt, /Already shown:\nLa catedral se terminó en 1975\./);
@@ -236,4 +237,34 @@ test('a new fact moves the one it replaces to previous', async () => {
   lookups[1].resolve({ topic: 'Cotopaxi', source: '', text: 'Mide 5.897 m.' });
   await new Promise((r) => setImmediate(r));
   assert.deepEqual([session.fact.topic, session.previous.topic], ['Cotopaxi', 'Chimborazo']);
+});
+
+test('the writer\'s source label never reaches the glasses', () => {
+  assert.equal(parseFactLine(' | Fuente 1 | 1', ['https://a.com']), null);
+  assert.deepEqual({ ...parseFactLine('Nagasaki | Entre 74 000 y 80 000 personas murieron. | 2, 3', ['https://a.com', 'https://b.com']) },
+    { topic: 'Nagasaki', text: 'Entre 74 000 y 80 000 personas murieron.', source: 'b.com' });
+  assert.equal(parseFactLine('Monte Fuji | El Monte Fuji está a unos 100 km al oeste de Tokio, según la fuente 1. | 1', ['https://a.com']).text,
+    'El Monte Fuji está a unos 100 km al oeste de Tokio.');
+});
+
+test('a fact already on screen in other words is not shown again', async () => {
+  const shown = 'Akihabara está en el distrito de Chiyoda, Tokio, Japón';
+  assert.equal(sameFact('Akihabara está en el distrito de Chiyoda, Tokio, Japón.', shown), true);
+  assert.equal(sameFact('El Shinkansen alcanza una velocidad máxima de 320 km/h.', shown), false);
+  const { post } = fakePost({
+    'https://openrouter.ai/api/alpha/decisions': () => ({ status: 200, json: { answers: { lookup: { noul: 0.9 } } } }),
+    'https://api.perplexity.ai/search': () => PERPLEXITY,
+    'https://openrouter.ai/api/v1/chat/completions': () => writer('Akihabara | Akihabara está en el distrito de Chiyoda, Tokio, Japón. | 1'),
+  });
+  assert.equal(await lookupFact('¿En qué parte de Japón queda Akihabara?', 'es', KEYS, post, { earlier: [], shown: [shown] }), null);
+});
+
+test('a period after a preposition is a pause, not the end of the sentence', () => {
+  const { lookups, say } = sessionHarness();
+  say('Son varias islas, o sea, por.', 'es');
+  assert.equal(lookups.length, 0);
+  say('Lo menos en tierra es una sola.', 'es');
+  assert.equal(lookups[0].sentence, 'Son varias islas, o sea, por. Lo menos en tierra es una sola.');
+  say('No había nadie ese día.', 'es');
+  assert.equal(lookups.length, 2);
 });

@@ -180,10 +180,13 @@ export class ConverseSession {
   }
 }
 
-/** Ends in . ? or ! (not "...") and closes every ¿ and ¡ it opens. */
+/** Soniox closes "…o sea, por." with a period on a pause; a sentence never ends on one of these. */
+const DANGLING_WORD = /(?<![A-Za-zÀ-ÿ])(a|al|de|del|el|la|los|las|un|una|y|o|que|en|por|para|con|pero|porque|the|of|to|and|or|but|in|for|with)\.["'»”)]*$/i;
+
+/** Ends in . ? or ! (not "...", not after a preposition or article) and closes every ¿ and ¡ it opens. */
 export function isFinished(text: string): boolean {
   const trimmed = text.trim();
-  if (!/[.?!]["'»”)]*$/.test(trimmed) || /(\.\.\.|…)["'»”)]*$/.test(trimmed)) return false;
+  if (!/[.?!]["'»”)]*$/.test(trimmed) || /(\.\.\.|…)["'»”)]*$/.test(trimmed) || DANGLING_WORD.test(trimmed)) return false;
   const count = (pattern: RegExp) => (trimmed.match(pattern) ?? []).length;
   return count(/¿/g) <= count(/\?/g) && count(/¡/g) <= count(/!/g);
 }

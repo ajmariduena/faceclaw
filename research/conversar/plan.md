@@ -47,6 +47,15 @@ Latencia objetivo: unos 1,5–2,5 s desde que termina la frase hasta que aparece
 ## Pantalla (11 oct)
 Elegida la variante «solo texto» (`tools/headless-render/live-facts.cjs`, `texto`): sin recuadro, el tema en tenue (sin fuente) y el dato en blanco. El dato anterior queda debajo, más tenue (`anterior-abajo`). Cada búsqueda lleva las frases anteriores de la conversación y los datos ya mostrados. Entre un dato y otro, la pantalla queda vacía con una marca tenue de «Live facts».
 
+## Primera conversación real (11 oct, `tools/conversar-probe/replay.cjs`)
+- Log de 106 frases (19:30–20:07). Antes salían 64 datos: unos 12 eran eco (Alexander leía el dato en voz alta y se volvía a buscar), y además había búsquedas de frases que no eran preguntas («territorio», «ahorita»), «Fuente 1» como dato y datos falsos (Kokura, «Sapporo no es una cerveza», un vuelo Fuji–Osaka).
+- Jev ahora recibe los datos que ya están en pantalla, con un criterio que dice no a repetir, asentir o señalar algo («mira, esto es…»), y el umbral sube de 0,5 a 0,6. Pasó de 73 a 29 síes, sin perder preguntas reales. Tarda unos 315 ms.
+- El código descarta un dato si el 70 % de sus palabras ya estaba en uno mostrado, quita «según la fuente N» y toma la primera fuente cuando el redactor cita varias («1,2,5»).
+- Si el redactor recibía la regla «si las fuentes no coinciden, responde -», callaba en las preguntas con cifras (Hiroshima, Nagasaki, Chile). Ahora da el rango.
+- Una pregunta corta de seguimiento (≤ 5 palabras) se busca solo junto a la frase anterior; sola, «¿Ahorita los regresaron?» encontraba qué significa «ahorita».
+- Una frase que termina en un punto después de una preposición, un artículo o una conjunción («…o sea, por.») espera el resto.
+- Repetido con la cadena nueva: 30 datos, sin ecos ni «Fuente N». Siguen mal: los pandas de Ueno (las fuentes están desactualizadas) y «¿Son originales…?», que encuentra falsificaciones.
+
 ## Decisiones abiertas
 - Dónde corre el «cerebro» (detectar, buscar, redactar): directo desde el teléfono (las claves quedan en el teléfono) o a través del daemon de Paseo en la Mac por el relay (las claves se quedan en la Mac, pero depende de la Mac).
 - ~~Qué búsqueda usar~~ Decidido el 11 oct: Perplexity Fast Search (`search_type: "fast"`), con Brave de respaldo si falla o tarda.
