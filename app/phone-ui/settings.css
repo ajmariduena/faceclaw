@@ -217,3 +217,10 @@ Slider.fc-slider,
 .fc-row > .fc-row-label {
   padding: 5 0;
 }
+.fc-page .conversation-row,
+.ns-dark .fc-page .conversation-row {
+  background-color: #151515;
+  border-width: 0;
+  border-radius: 20;
+  padding: 14 18;
+}

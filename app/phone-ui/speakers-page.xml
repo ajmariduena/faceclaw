@@ -1,5 +1,5 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo">
-    <ActionBar title="Speakers" />
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" class="fc-page" navigatingTo="navigatingTo">
+    <ActionBar class="fc-action-bar" title="Speakers" />
 
     <ScrollView class="p-8">
         <StackLayout>
