@@ -55,6 +55,9 @@ Elegida la variante «solo texto» (`tools/headless-render/live-facts.cjs`, `tex
 - Una pregunta corta de seguimiento (≤ 5 palabras) se busca solo junto a la frase anterior; sola, «¿Ahorita los regresaron?» encontraba qué significa «ahorita».
 - Una frase que termina en un punto después de una preposición, un artículo o una conjunción («…o sea, por.») espera el resto.
 - Repetido con la cadena nueva: 30 datos, sin ecos ni «Fuente N». Siguen mal: los pandas de Ueno (las fuentes están desactualizadas) y «¿Son originales…?», que encuentra falsificaciones.
+- Pendientes (mismo día): el redactor ahora recibe la fecha y la antigüedad de cada fuente («2023-02-28, 3 years old») y responde - si las fuentes hablan de otro tema. «¿Son originales…?» a veces ya no responde, pero sigue fallando en algunas corridas. Lo de los pandas no se arregla: la única fuente sobre pandas en Japón era de 2023 y el redactor, con esfuerzo low, sigue escribiendo en presente.
+- Con el esfuerzo en medium, el redactor sí calla en el caso de los pandas, pero suma unos 400 ms (mediana de 0,64 a 1,03 s) y pierde la mitad de las respuestas buenas (de 30 a 15). Se queda en low.
+- Reescribir la consulta con el contexto antes de buscar (gpt-oss, unos 230 ms y luego la búsqueda en serie, unos 300 ms): mejoró 3 de 4 consultas («¿Cuándo regresaron los pandas regalados por China a México?»), pero en la de los pandas de Japón escribió una consulta rota. Sumaría unos 0,5 s, así que no está en la app.
 
 ## Decisiones abiertas
 - Dónde corre el «cerebro» (detectar, buscar, redactar): directo desde el teléfono (las claves quedan en el teléfono) o a través del daemon de Paseo en la Mac por el relay (las claves se quedan en la Mac, pero depende de la Mac).

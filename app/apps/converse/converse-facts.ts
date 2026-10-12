@@ -10,7 +10,7 @@
 export type Fact = { topic: string; source: string; text: string };
 export type FactKeys = { typesafe: string; cerebras: string; openRouter: string; perplexity: string; brave: string };
 export type Post = (url: string, headers: Record<string, string>, body: string | null, timeoutMs: number) => Promise<{ status: number; json: unknown }>;
-type SearchResult = { title: string; url: string; snippet: string };
+type SearchResult = { title: string; url: string; snippet: string; date?: string };
 /** What was said before this sentence, oldest first, and the facts already on screen. */
 export type FactContext = {
   earlier: readonly string[];
@@ -122,16 +122,16 @@ async function search(sentence: string, region: string | undefined, keys: FactKe
 async function perplexitySearch(sentence: string, region: string | undefined, key: string, post: Post): Promise<SearchResult[]> {
   const { status, json } = await post("https://api.perplexity.ai/search", { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     JSON.stringify({ query: sentence, search_type: "fast", max_results: 5, ...(region ? { country: region } : {}) }), 2500);
-  const results = (json as { results?: { title?: string; url?: string; snippet?: string }[] }).results ?? [];
-  return status === 200 ? results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: (r.snippet ?? "").slice(0, 500) })) : [];
+  const results = (json as { results?: { title?: string; url?: string; snippet?: string; date?: string | null }[] }).results ?? [];
+  return status === 200 ? results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: (r.snippet ?? "").slice(0, 500), date: r.date ?? undefined })) : [];
 }
 
 async function braveSearch(sentence: string, key: string, post: Post): Promise<SearchResult[]> {
   const { status, json } = await post(`https://api.search.brave.com/res/v1/web/search?count=5&q=${encodeURIComponent(sentence)}`,
     { "X-Subscription-Token": key, Accept: "application/json" }, null, 2000);
   if (status !== 200) return [];
-  const results = (json as { web?: { results?: { title?: string; url?: string; description?: string }[] } }).web?.results ?? [];
-  return results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: r.description ?? "" }));
+  const results = (json as { web?: { results?: { title?: string; url?: string; description?: string; page_age?: string | null }[] } }).web?.results ?? [];
+  return results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: r.description ?? "", date: r.page_age?.slice(0, 10) }));
 }
 
 function firstNonEmpty(lists: Promise<SearchResult[]>[]): Promise<SearchResult[]> {
@@ -153,11 +153,19 @@ function today(now = new Date()): string {
   return `${WEEKDAYS[now.getDay()]}, ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/** "(2023-02-28, 3 years old) ": the writer misses a bare date's age. */
+function dated(date: string | undefined, now = new Date()): string {
+  const time = date ? Date.parse(date) : NaN;
+  if (Number.isNaN(time)) return "";
+  const years = Math.floor((now.getTime() - time) / (365.25 * 24 * 3600_000));
+  return `(${date}${years >= 1 ? `, ${years} year${years > 1 ? "s" : ""} old` : ""}) `;
+}
+
 async function write(sentence: string, language: string, results: SearchResult[], context: FactContext, keys: FactKeys, post: Post): Promise<Fact | null> {
   const languageName = language === "en" ? "English" : "Spanish";
   const messages = [
-    { role: "system", content: `Today is ${today()}. Sources can be older than today: never present something that has already ended as current, and count ages and durations from today. Someone just said the utterance in a live conversation. Using only the numbered sources, give the single most useful fact about what it mentions: confirm or correct a claim, answer a question, or identify a name. Use the earlier conversation to understand what the utterance refers to. Never repeat a fact already shown; if nothing new is left, reply -. State only what a source says outright: no inferred routes or flights, and do not contradict the speaker unless a source says the opposite. When sources give different figures, give the range. Read the utterance in the speaker's dialect ("ahorita" means now) and never explain what a word they used means. Never mention sources or source numbers in the fact.${context.region ? ` The listener is in country ${context.region}: when a name could mean several places or things, prefer the one nearest to them.` : ""} Reply on one line as: topic | fact | one source number. The topic is 1 to 3 words. The fact is one complete sentence in ${languageName} that names its subject, at most ${MAX_FACT_CHARS} characters, no markdown. If the sources say nothing relevant, reply exactly: -` },
-    { role: "user", content: `${context.earlier.length ? `Earlier conversation:\n${context.earlier.join("\n")}\n\n` : ""}${context.shown.length ? `Already shown:\n${context.shown.join("\n")}\n\n` : ""}Utterance: ${sentence}\n\nSources:\n${results.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join("\n")}` },
+    { role: "system", content: `Today is ${today()}. Sources can be older than today: never present something that has already ended as current, and count ages and durations from today. Someone just said the utterance in a live conversation. Using only the numbered sources, give the single most useful fact about what it mentions: confirm or correct a claim, answer a question, or identify a name. Use the earlier conversation to understand what the utterance refers to. Never repeat a fact already shown; if nothing new is left, reply -. State only what a source says outright: no inferred routes or flights, and do not contradict the speaker unless a source says the opposite. When sources give different figures, give the range; when they disagree on whether something is still true, trust the most recent dated one. A fact taken from a source marked years old goes in the past tense with that year ("En 2023 había…"), never in the present. If the sources are about a different subject than the conversation, reply -. Read the utterance in the speaker's dialect ("ahorita" means now) and never explain what a word they used means. Never mention sources or source numbers in the fact.${context.region ? ` The listener is in country ${context.region}: when a name could mean several places or things, prefer the one nearest to them.` : ""} Reply on one line as: topic | fact | one source number. The topic is 1 to 3 words. The fact is one complete sentence in ${languageName} that names its subject, at most ${MAX_FACT_CHARS} characters, no markdown. If the sources say nothing relevant, reply exactly: -` },
+    { role: "user", content: `${context.earlier.length ? `Earlier conversation:\n${context.earlier.join("\n")}\n\n` : ""}${context.shown.length ? `Already shown:\n${context.shown.join("\n")}\n\n` : ""}Utterance: ${sentence}\n\nSources:\n${results.map((r, i) => `${i + 1}. ${dated(r.date)}${r.title}: ${r.snippet}`).join("\n")}` },
   ];
   const attempts: [string, string, object][] = [];
   if (keys.cerebras) attempts.push(["https://api.cerebras.ai/v1/chat/completions", keys.cerebras, { model: "gpt-oss-120b", reasoning_effort: "low" }]);

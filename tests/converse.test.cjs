@@ -268,3 +268,14 @@ test('a period after a preposition is a pause, not the end of the sentence', () 
   say('No había nadie ese día.', 'es');
   assert.equal(lookups.length, 2);
 });
+
+test('the writer sees how old each dated source is', async () => {
+  const { post, calls } = fakePost({
+    'https://openrouter.ai/api/alpha/decisions': () => ({ status: 200, json: { answers: { lookup: { noul: 0.9 } } } }),
+    'https://api.perplexity.ai/search': () => ({ status: 200, json: { results: [{ title: 'Pandas', url: 'https://a.com', snippet: 'Hay pandas en Ueno.', date: '2023-02-28' }] } }),
+    'https://openrouter.ai/api/v1/chat/completions': () => writer('-'),
+  });
+  await lookupFact('¿Hay pandas en Japón?', 'es', KEYS, post);
+  const prompt = calls.find((call) => call.url.includes('chat/completions')).body.messages[1].content;
+  assert.match(prompt, /1\. \(2023-02-28, \d+ years old\) Pandas: Hay pandas en Ueno\./);
+});
