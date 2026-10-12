@@ -1,0 +1,8 @@
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" xmlns:rc="phone-ui" navigatingTo="navigatingTo" loaded="loaded" unloaded="unloaded" class="fc-page">
+  <ActionBar title="{{ title }}" class="fc-action-bar">
+    <NavigationButton android.systemIcon="ic_menu_back" tap="{{ onBackTap }}" />
+  </ActionBar>
+  <ScrollView>
+    <rc:settings-groups class="fc-body" />
+  </ScrollView>
+</Page>

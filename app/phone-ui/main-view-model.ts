@@ -20,9 +20,16 @@ import {
   showBleBandwidthSetting,
 } from "../ui/dashboard-settings";
 import { sampleBleTraffic } from "../native/ble-traffic";
-import { isValidMacAddress, loadDeviceAddresses } from "../g2/device-addresses";
-import { isAutoReconnectSuppressed, resumeAutoReconnect } from "../g2/reconnect-policy";
+import { isValidMacAddress, loadDeviceAddresses, loadPairedGlassesIdentity } from "../g2/device-addresses";
+import { isAutoReconnectSuppressed } from "../g2/reconnect-policy";
 import { isPreviewOnlyMode } from "./onboarding-state";
+import { openFlashPage, openFontsCheck, openPairing } from "./device-actions";
+import type { SectionId } from "./settings-sections";
+import { GlassesHardwareIdentity } from "../g2/glasses-hardware-identity";
+import { glassesImagePath } from "../g2/glasses-artwork";
+import { shell } from "../ui/shell/shell";
+import { wearBridge } from "../native/wear-bridge";
+import { FACECLAW_VERSION } from "../version";
 import { formatErrorMessage } from "../util/format-error";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH } from "../graphics/image";
 import { type PhoneUiButton } from "../apps/evenhub/manager";
@@ -33,6 +40,7 @@ type LayoutOrientation = "portrait" | "landscape";
 
 export class MainViewModel extends RemoteControlsViewModel {
   onApiKeysTap(): void { Frame.topmost()?.navigate({ moduleName: "phone-ui/api-keys-page" }); }
+  onBackTap(): void { Frame.topmost()?.goBack(); }
   private _status = "Disconnected.";
   private _displayPreview: ImageSource | null = null;
   private _displayPreviewMessage = "";
@@ -125,7 +133,61 @@ export class MainViewModel extends RemoteControlsViewModel {
     }));
     this.syncBleBandwidthPolling();
     this.unsubscribers.push(() => this.stopBleBandwidthPolling());
+    this.unsubscribers.push(shell.onBatteryLevelsChanged(() => this.refreshHome()));
+    this.unsubscribers.push(wearBridge.onWatchConnection(() => this.refreshHome()));
   }
+
+  // ---- the portrait home: glasses, mirror, and the settings sections ----
+
+  private get glassesIdentity(): GlassesHardwareIdentity | null {
+    return GlassesHardwareIdentity.decode(loadPairedGlassesIdentity()?.serial);
+  }
+
+  get glassesImage(): string {
+    return glassesImagePath(this.glassesIdentity);
+  }
+
+  get glassesName(): string {
+    return this.glassesIdentity?.productName ?? "Even Realities G2";
+  }
+
+  get glassesState(): string {
+    const level = shell.getBatteryLevels().headset;
+    const linked = this._phase === "connected" || this._phase === "charging";
+    return linked && level !== null && Number.isFinite(level)
+      ? `${this.connectionStatusLabel} · ${Math.round(level)}%`
+      : this.connectionStatusLabel;
+  }
+
+  get controlsSummary(): string {
+    const watch = wearBridge.isAvailable() && wearBridge.getWatchConnection().reachable;
+    const ring = shell.getBatteryLevels().ring !== null;
+    return [watch && "Watch", ring && "Ring"].filter(Boolean).join(" · ");
+  }
+
+  get versionLabel(): string {
+    return FACECLAW_VERSION;
+  }
+
+  /** The home mirror sits inside the 16-DIP side margins. */
+  get homePreviewHeight(): number {
+    return (Screen.mainScreen.widthDIPs - 32) / LENS_ASPECT_RATIO;
+  }
+
+  private refreshHome(): void {
+    this.notifyPropertyChange("glassesState", this.glassesState);
+    this.notifyPropertyChange("controlsSummary", this.controlsSummary);
+  }
+
+  private openSection(section: SectionId): void {
+    Frame.topmost()?.navigate({ moduleName: "phone-ui/settings-page", context: { section } });
+  }
+
+  onDisplaySectionTap(): void { this.openSection("display"); }
+  onControlsSectionTap(): void { this.openSection("controls"); }
+  onVoiceSectionTap(): void { this.openSection("voice"); }
+  onDeviceSectionTap(): void { this.openSection("device"); }
+  onAboutSectionTap(): void { this.openSection("about"); }
 
   /** Detach from the controller and settings; the page calls this when it lets go of the model. */
   dispose(): void {
@@ -143,6 +205,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       this._status = value;
       this.notifyPropertyChange("status", value);
       this.notifyPropertyChange("connectionStatusLabel", this.connectionStatusLabel);
+      this.notifyPropertyChange("glassesState", this.glassesState);
     }
   }
 
@@ -180,6 +243,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       this._previewMode = value;
       this.notifyPropertyChange("previewMode", value);
       this.notifyPropertyChange("connectionStatusLabel", this.connectionStatusLabel);
+      this.notifyPropertyChange("glassesState", this.glassesState);
     }
   }
 
@@ -306,6 +370,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.notifyPropertyChange("landscapeLayoutVisibility", this.landscapeLayoutVisibility);
     }
     this.notifyPropertyChange("displayPreviewHeight", this.displayPreviewHeight);
+    this.notifyPropertyChange("homePreviewHeight", this.homePreviewHeight);
     this.notifyPropertyChange("landscapeDisplayPreviewWidth", this.landscapeDisplayPreviewWidth);
     this.notifyPropertyChange("landscapeDisplayPreviewHeight", this.landscapeDisplayPreviewHeight);
     this.notifyPropertyChange("warningsModalWidth", this.warningsModalWidth);
@@ -710,24 +775,9 @@ export class MainViewModel extends RemoteControlsViewModel {
     return this._fontsMissingWarningVisible ? "visible" : "collapse";
   }
 
-  /**
-   * Jump back into the onboarding firmware check, whose missing-fonts path
-   * downloads the stock firmware and extracts the G2 fonts without reflashing.
-   * The check probes the glasses itself, so drop the main connection first;
-   * like pairing, this is a detour rather than a Disconnect, so lift the
-   * auto-reconnect suppression right away.
-   */
   async onPrepareFontsTap(): Promise<void> {
     this.setWarningsModalVisible(false);
-    if (this.phase === "connected" || this.phase === "charging" || this.phase === "connecting") {
-      try {
-        await dashboardController.disconnect();
-      } catch {
-        // proceed anyway; the firmware check reports its own connection trouble
-      }
-      resumeAutoReconnect();
-    }
-    Frame.topmost()?.navigate({ moduleName: "phone-ui/onboarding-firmware-check-page" });
+    await openFontsCheck(this.phase);
   }
 
   onAllowBackgroundUsageTap(): void {
@@ -834,6 +884,7 @@ export class MainViewModel extends RemoteControlsViewModel {
       this.notifyPropertyChange("canRun", this.canRun);
       this.notifyPropertyChange("connectItemEnabled", this.connectItemEnabled);
       this.notifyPropertyChange("connectionStatusLabel", this.connectionStatusLabel);
+      this.notifyPropertyChange("glassesState", this.glassesState);
     }
   }
 
@@ -925,58 +976,18 @@ export class MainViewModel extends RemoteControlsViewModel {
     return isPreviewOnlyMode() ? "collapse" : "visible";
   }
 
-  /**
-   * Live scan that names each nearby pair by model, colour, and serial and
-   * checks both arms belong together. A connected arm stops advertising, so
-   * drop the current link first. disconnect() enters the manual-disconnected
-   * state; pairing is a detour, not a Disconnect, so lift the suppression
-   * right away — nothing dials the glasses until the main page's autoConnect
-   * runs again on the way back.
-   *
-   * In preview-only mode there are no glasses yet, so pairing is really the
-   * rest of onboarding: re-enter that chain at its "Disconnect Other Apps"
-   * step, which leads to the scan, the firmware check, and flashing. The
-   * chain's Back buttons pop history, so its first page returns here.
-   */
   async onPairGlassesTap(): Promise<void> {
     if (!this.canRun) return;
-    if (isPreviewOnlyMode()) {
-      Frame.topmost()?.navigate({ moduleName: "phone-ui/onboarding-unpair-page" });
-      return;
-    }
-    if (this.phase === "connected" || this.phase === "charging" || this.phase === "connecting") {
-      try {
-        await dashboardController.disconnect();
-      } catch {
-        // proceed anyway; the pairing page reports what it hears
-      }
-      resumeAutoReconnect();
-    }
-    Frame.topmost()?.navigate({ moduleName: "phone-ui/pairing-page", context: { onboarding: false } });
+    await openPairing(this.phase);
   }
 
   async onInstallFirmwareTap(): Promise<void> {
     this.setWarningsModalVisible(false);
-    await this.openFlashPage("install");
+    await openFlashPage("install", this.phase);
   }
 
   async onUninstallFirmwareTap(): Promise<void> {
-    await this.openFlashPage("uninstall");
-  }
-
-  private async openFlashPage(mode: "install" | "uninstall"): Promise<void> {
-    // The flasher needs the glasses to itself, so drop the main connection first.
-    if (this.phase === "connected" || this.phase === "charging") {
-      try {
-        await dashboardController.disconnect();
-      } catch {
-        // proceed anyway; the flash page surfaces any connection trouble
-      }
-    }
-    Frame.topmost()?.navigate({
-      moduleName: "phone-ui/onboarding-flash-page",
-      context: { mode, fromOnboarding: false },
-    });
+    await openFlashPage("uninstall", this.phase);
   }
 
   onTextSettingTextChange(args: { value?: string; object?: { text?: string } }): void {
