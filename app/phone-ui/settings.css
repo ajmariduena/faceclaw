@@ -103,10 +103,11 @@
   margin-left: 8;
   padding-bottom: 2;
 }
-/* Android's switch reserves a 48-DIP touch box; 32 keeps switch rows as tall as the others. */
-.fc-switch {
+/* The theme gives .ns-android Switch a 14/16 margin; 32 high keeps switch rows as tall as the others. */
+.fc-switch,
+.ns-android Switch.fc-switch {
   height: 32;
-  margin-left: 12;
+  margin: 0 0 0 12;
 }
 /* The theme's .ns-dark.ns-android Switch[checked=true] rules outrank a bare class. */
 .ns-android Switch.fc-switch,
