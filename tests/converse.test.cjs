@@ -28,10 +28,11 @@ test('a sentence worth a fact becomes topic, source host and one line', async ()
   });
   const fact = await lookupFact('¿Qué altura tiene el Chimborazo?', 'es', KEYS, post);
   assert.deepEqual({ ...fact }, { topic: 'Chimborazo', text: 'El Chimborazo mide 6.263 m sobre el nivel del mar.', source: 'es.wikipedia.org' });
-  assert.deepEqual(calls.slice(0, 2).map((call) => call.url.split('/')[2]), ['api.perplexity.ai', 'openrouter.ai'], 'the search starts with the decision, not after it');
+  assert.deepEqual(calls.slice(0, 3).map((call) => call.url.split('/')[2]), ['api.perplexity.ai', 'api.perplexity.ai', 'openrouter.ai'], 'the search starts with the decision, not after it');
+  assert.match(calls[1].body.query, /^¿Qué altura tiene el Chimborazo\? \d{4}$/, 'a second search adds the year');
   assert.equal(calls[0].body.search_type, 'fast');
-  assert.match(calls[2].body.messages[0].content, /in Spanish/);
-  assert.match(calls[2].body.messages[0].content, /^Today is [A-Z][a-z]+day, \d{4}-\d\d-\d\d\./, 'the writer knows the date');
+  assert.match(calls[3].body.messages[0].content, /in Spanish/);
+  assert.match(calls[3].body.messages[0].content, /^Today is [A-Z][a-z]+day, \d{4}-\d\d-\d\d\./, 'the writer knows the date');
 });
 
 test('small talk gets no fact and no writer call', async () => {
@@ -204,7 +205,7 @@ test('a short follow-up is searched with the one before it and written with the 
   const fact = await lookupFact('¿Sabes cuántos habitantes tiene?', 'es', { ...KEYS, typesafe: 'ts', cerebras: 'cb' }, post, context);
   assert.equal(fact.topic, 'Cuenca');
   const queries = calls.filter((call) => call.url.includes('perplexity')).map((call) => call.body);
-  assert.deepEqual(queries.map((q) => q.query), ['El mes pasado fui a Cuenca con mi familia. ¿Sabes cuántos habitantes tiene?'], 'a short follow-up is only searched with the sentence before it');
+  assert.deepEqual(queries.map((q) => q.query), ['El mes pasado fui a Cuenca con mi familia. ¿Sabes cuántos habitantes tiene?', `El mes pasado fui a Cuenca con mi familia. ¿Sabes cuántos habitantes tiene? ${new Date().getFullYear()}`], 'a short follow-up is only searched with the sentence before it');
   assert.equal(queries[0].country, 'EC');
   assert.match(calls.find((call) => call.url.includes('typesafe')).body.state, /Earlier: El mes pasado fui a Cuenca/);
   assert.match(calls.find((call) => call.url.includes('typesafe')).body.state, /Fact on screen: La catedral se terminó en 1975\./);
@@ -241,6 +242,8 @@ test('a new fact moves the one it replaces to previous', async () => {
 
 test('the writer\'s source label never reaches the glasses', () => {
   assert.equal(parseFactLine(' | Fuente 1 | 1', ['https://a.com']), null);
+  assert.equal(parseFactLine('Islas de Japón | 1‑2', ['https://a.com']), null);
+  assert.equal(parseFactLine('Akihabara | Akihabara está en Chiyoda【2】 | 2', ['https://a.com', 'https://b.com']).text, 'Akihabara está en Chiyoda');
   assert.deepEqual({ ...parseFactLine('Nagasaki | Entre 74 000 y 80 000 personas murieron. | 2, 3', ['https://a.com', 'https://b.com']) },
     { topic: 'Nagasaki', text: 'Entre 74 000 y 80 000 personas murieron.', source: 'b.com' });
   assert.equal(parseFactLine('Monte Fuji | El Monte Fuji está a unos 100 km al oeste de Tokio, según la fuente 1. | 1', ['https://a.com']).text,
@@ -269,7 +272,7 @@ test('a period after a preposition is a pause, not the end of the sentence', () 
   assert.equal(lookups.length, 2);
 });
 
-test('the writer sees how old each dated source is', async () => {
+test('the writer sees each source\'s date', async () => {
   const { post, calls } = fakePost({
     'https://openrouter.ai/api/alpha/decisions': () => ({ status: 200, json: { answers: { lookup: { noul: 0.9 } } } }),
     'https://api.perplexity.ai/search': () => ({ status: 200, json: { results: [{ title: 'Pandas', url: 'https://a.com', snippet: 'Hay pandas en Ueno.', date: '2023-02-28' }] } }),
@@ -277,5 +280,5 @@ test('the writer sees how old each dated source is', async () => {
   });
   await lookupFact('¿Hay pandas en Japón?', 'es', KEYS, post);
   const prompt = calls.find((call) => call.url.includes('chat/completions')).body.messages[1].content;
-  assert.match(prompt, /1\. \(2023-02-28, \d+ years old\) Pandas: Hay pandas en Ueno\./);
+  assert.match(prompt, /1\. \(2023-02-28\) Pandas: Hay pandas en Ueno\./);
 });
