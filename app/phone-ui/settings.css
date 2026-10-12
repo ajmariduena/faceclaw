@@ -1,9 +1,13 @@
 /* The settings-style phone UI: home, section pages, touchpad. */
-.fc-page {
+.fc-page,
+.ns-dark .fc-page,
+.ns-light .fc-page {
   background-color: #000000;
   color: #f2f2f2;
 }
-.fc-action-bar {
+.fc-action-bar,
+.ns-dark .fc-action-bar,
+.ns-light .fc-action-bar {
   background-color: #000000;
   color: #f2f2f2;
 }
@@ -66,8 +70,7 @@
   margin-top: 12;
 }
 .fc-row {
-  min-height: 54;
-  padding: 0 16 0 18;
+  padding: 15 16 15 18;
   border-top-width: 1;
   border-color: #262626;
 }
@@ -75,7 +78,7 @@
   border-top-width: 0;
 }
 .fc-row-text {
-  padding: 10 0;
+  padding: 0;
 }
 .fc-row-label {
   font-size: 16;
@@ -98,15 +101,31 @@
   padding-bottom: 2;
 }
 .fc-switch {
-  color: #000000;
-  background-color: #f2f2f2;
-  off-background-color: #2e2e2e;
   margin-left: 12;
 }
+/* The theme's .ns-dark.ns-android Switch[checked=true] rules outrank a bare class. */
+.ns-android Switch.fc-switch,
+.ns-dark.ns-android Switch.fc-switch {
+  color: #8a8a8a;
+  background-color: #2e2e2e;
+}
+.ns-android Switch.fc-switch[checked=true],
+.ns-dark.ns-android Switch.fc-switch[checked=true] {
+  color: #000000;
+  background-color: #f2f2f2;
+}
 .fc-slider {
+  margin: 0 0 8 0;
+}
+Slider.fc-slider,
+.ns-dark Slider.fc-slider {
   color: #f2f2f2;
   background-color: #2e2e2e;
-  margin: 0 0 8 0;
+}
+.ns-android Slider.fc-slider[isEnabled=false],
+.ns-dark.ns-android Slider.fc-slider[isEnabled=false] {
+  color: #4a4a4a;
+  background-color: #2e2e2e;
 }
 .fc-segments {
   margin: 0 0 16 0;

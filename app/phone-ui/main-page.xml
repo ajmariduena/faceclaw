@@ -26,32 +26,32 @@
                         <Label text="{{ displayPreviewMessage }}" textWrap="true" class="fc-mirror-message" horizontalAlignment="center" verticalAlignment="center" visibility="{{ displayPreviewMessageVisibility }}" />
                     </GridLayout>
                     <StackLayout class="fc-card fc-card-spaced">
-                        <GridLayout columns="*,auto,auto" class="fc-row fc-row-first" tap="{{ onDisplaySectionTap }}">
+                        <GridLayout columns="*,auto,auto" rows="auto" class="fc-row fc-row-first" tap="{{ onDisplaySectionTap }}">
                             <Label col="0" text="Display" class="fc-row-label" verticalAlignment="center" />
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
                         </GridLayout>
-                        <GridLayout columns="*,auto,auto" class="fc-row" tap="{{ onControlsSectionTap }}">
+                        <GridLayout columns="*,auto,auto" rows="auto" class="fc-row" tap="{{ onControlsSectionTap }}">
                             <Label col="0" text="Controls" class="fc-row-label" verticalAlignment="center" />
                             <Label col="1" text="{{ controlsSummary }}" class="fc-row-value" verticalAlignment="center" />
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
                         </GridLayout>
-                        <GridLayout columns="*,auto,auto" class="fc-row" tap="{{ onVoiceSectionTap }}">
+                        <GridLayout columns="*,auto,auto" rows="auto" class="fc-row" tap="{{ onVoiceSectionTap }}">
                             <Label col="0" text="Voice &amp; bots" class="fc-row-label" verticalAlignment="center" />
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
                         </GridLayout>
-                        <GridLayout columns="*,auto,auto" class="fc-row" tap="{{ onApiKeysTap }}">
+                        <GridLayout columns="*,auto,auto" rows="auto" class="fc-row" tap="{{ onApiKeysTap }}">
                             <Label col="0" text="API keys" class="fc-row-label" verticalAlignment="center" />
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
                         </GridLayout>
-                        <GridLayout columns="*,auto,auto" class="fc-row" tap="{{ onConversationsTap }}">
+                        <GridLayout columns="*,auto,auto" rows="auto" class="fc-row" tap="{{ onConversationsTap }}">
                             <Label col="0" text="Conversations" class="fc-row-label" verticalAlignment="center" />
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
                         </GridLayout>
-                        <GridLayout columns="*,auto,auto" class="fc-row" tap="{{ onDeviceSectionTap }}">
+                        <GridLayout columns="*,auto,auto" rows="auto" class="fc-row" tap="{{ onDeviceSectionTap }}">
                             <Label col="0" text="Device" class="fc-row-label" verticalAlignment="center" />
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
                         </GridLayout>
-                        <GridLayout columns="*,auto,auto" class="fc-row" tap="{{ onAboutSectionTap }}">
+                        <GridLayout columns="*,auto,auto" rows="auto" class="fc-row" tap="{{ onAboutSectionTap }}">
                             <Label col="0" text="About" class="fc-row-label" verticalAlignment="center" />
                             <Label col="1" text="{{ versionLabel }}" class="fc-row-value" verticalAlignment="center" />
                             <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" />
