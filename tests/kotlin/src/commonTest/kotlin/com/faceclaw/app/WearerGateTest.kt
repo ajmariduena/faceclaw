@@ -66,12 +66,21 @@ class WearerGateTest {
     }
 
     @Test
-    fun pauseStartsANewTurnThatIsVerifiedAgain() {
+    fun shortPauseAfterTheWearerPassesAtOnceUntilTheRecheck() {
         val run = Run()
         run.feed(*chunks(1000, 16))
         run.feed(*chunks(0, 14))
         run.feed(*chunks(2000, 20))
-        assertEquals(50, run.out.size)
+        assertEquals(List(15) { 2000 } + List(5) { 0 }, run.out.takeLast(20))
+    }
+
+    @Test
+    fun longPauseHoldsTheNextTurnAgain() {
+        val run = Run()
+        run.feed(*chunks(1000, 16))
+        run.feed(*chunks(0, 14 + 160))
+        run.feed(*chunks(2000, 20))
+        assertEquals(16 + 174 + 20, run.out.size)
         assertTrue(run.out.takeLast(20).all { it == 0 })
     }
 

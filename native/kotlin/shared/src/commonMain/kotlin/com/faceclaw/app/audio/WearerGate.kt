@@ -26,6 +26,8 @@ class WearerGate(
         /** New speech between re-checks of a decided turn. */
         const val RECHECK_SPEECH_MS = 500
         const val TURN_GAP_MS = 700
+        /** After a wearer turn, a new turn this soon passes at once and is only re-checked. */
+        const val CARRY_MS = 8000
         /** Similarities this far below [selfThreshold] count as someone else. */
         const val OTHER_MARGIN = 0.15
         const val MIN_NOISE_RMS = 220.0
@@ -47,6 +49,8 @@ class WearerGate(
     private var speechCount = 0
     private var turnSpeechSamples = 0
     private var speechSinceCheck = 0
+    private var checkAfterSamples = ms(RECHECK_SPEECH_MS)
+    private var carrySamples = 0
     private var gapSamples = 0
     private var noiseRms = 0.0
     private val held = ArrayList<ShortArray>()
@@ -76,6 +80,14 @@ class WearerGate(
         when (state) {
             State.PENDING -> {
                 if (held.isEmpty() && !isSpeech) {
+                    carrySamples -= count
+                    emit(chunk, count)
+                    return
+                }
+                if (held.isEmpty() && carrySamples > 0) {
+                    log("wearer gate: carried wearer verdict into a new turn")
+                    state = State.WEARER
+                    checkAfterSamples = ms(DECIDE_SPEECH_MS)
                     emit(chunk, count)
                     return
                 }
@@ -85,7 +97,7 @@ class WearerGate(
                     // to judge, so it passes rather than silencing a quick "yes".
                     log("wearer gate: short turn passed speechMs=${toMs(turnSpeechSamples)}")
                     release(emit, silence = false)
-                    startTurn()
+                    startTurn(carry = false)
                     return
                 }
                 if (turnSpeechSamples >= ms(DECIDE_SPEECH_MS) && speechSinceCheck >= ms(RECHECK_SPEECH_MS)) {
@@ -95,10 +107,10 @@ class WearerGate(
             State.WEARER, State.OTHER -> {
                 if (gapSamples >= ms(TURN_GAP_MS)) {
                     emitFor(state, chunk, emit)
-                    startTurn()
+                    startTurn(carry = state == State.WEARER)
                     return
                 }
-                if (speechSinceCheck >= ms(RECHECK_SPEECH_MS)) recheck(rms, ssr)
+                if (speechSinceCheck >= checkAfterSamples) recheck(rms, ssr)
                 emitFor(state, chunk, emit)
             }
         }
@@ -111,7 +123,7 @@ class WearerGate(
         val wearer = sim == null || sim >= (selfThreshold + otherThreshold) / 2
         log("wearer gate: flush sim=${fmt(sim)} wearer=$wearer speechMs=${toMs(turnSpeechSamples)}")
         release(emit, silence = !wearer)
-        startTurn()
+        startTurn(carry = false)
     }
 
     private fun decide(rms: Double, ssr: Int, emit: (ShortArray, Int) -> Unit) {
@@ -132,6 +144,7 @@ class WearerGate(
 
     private fun recheck(rms: Double, ssr: Int) {
         speechSinceCheck = 0
+        checkAfterSamples = ms(RECHECK_SPEECH_MS)
         val sim = similarity(speech, speechCount) ?: return
         val next = when {
             sim >= selfThreshold -> State.WEARER
@@ -142,7 +155,8 @@ class WearerGate(
         state = next
     }
 
-    private fun startTurn() {
+    private fun startTurn(carry: Boolean) {
+        carrySamples = if (carry) ms(CARRY_MS) else 0
         state = State.PENDING
         speechCount = 0
         turnSpeechSamples = 0
