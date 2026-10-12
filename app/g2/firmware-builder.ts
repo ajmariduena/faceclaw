@@ -16,12 +16,17 @@ import { File, knownFolders } from "@nativescript/core";
 import { CFW_PATCH_SET, FirmwarePatchOp } from "./firmware/cfw-patches";
 import {
   EVENHUB_RUNTIME_FONT_FILENAME,
+  STOCK_UI_FONT_FILENAME,
   extractEvenHubFontAsset,
+  extractStockUiFontAsset,
   isEvenHubFontAsset,
+  isStockUiFontAsset,
 } from "./firmware-fonts";
-import { fetchWithUserAgent } from "../util/http";
+import { downloadBinary } from "../native/binary-http";
 import { bytesToHex, hexToBytes as hexToBytesLenient } from "../util/hex-util";
 import { EvenHubFont } from "../graphics/evenhub-font";
+import { StockUiFont } from "../graphics/stock-ui-font";
+import { refreshUiFonts } from "../graphics/ui-fonts";
 
 import { firmwareSha256, writeFirmwareFile } from "../native/firmware-files";
 
@@ -54,10 +59,14 @@ export class FirmwareBuildError extends Error {}
 
 /** True only when a complete, parseable runtime extraction is present. */
 export function hasExtractedEvenHubFonts(): boolean {
-  const path = `${knownFolders.documents().path}/${EVENHUB_RUNTIME_FONT_FILENAME}`;
+  return hasAsset(EVENHUB_RUNTIME_FONT_FILENAME, isEvenHubFontAsset) && hasAsset(STOCK_UI_FONT_FILENAME, isStockUiFontAsset);
+}
+
+function hasAsset(filename: string, valid: (value: unknown) => boolean): boolean {
+  const path = `${knownFolders.documents().path}/${filename}`;
   if (!File.exists(path)) return false;
   try {
-    return isEvenHubFontAsset(JSON.parse(File.fromPath(path).readTextSync()));
+    return valid(JSON.parse(File.fromPath(path).readTextSync()));
   } catch {
     return false;
   }
@@ -165,38 +174,44 @@ async function downloadAndVerifyBase(report: (progress: FirmwareProgress) => voi
 }
 
 async function downloadFirmware(): Promise<ArrayBuffer> {
-  let response: Response;
+  let response: Awaited<ReturnType<typeof downloadBinary>>;
   try {
-    response = await fetchWithUserAgent(FIRMWARE_URL);
+    response = await downloadBinary(FIRMWARE_URL, 120_000);
   } catch (error) {
     throw new FirmwareBuildError(`Could not reach Even's firmware CDN: ${(error as Error)?.message ?? error}`);
   }
-  if (!response.ok) {
+  if (response.status < 200 || response.status >= 300) {
     throw new FirmwareBuildError(`Firmware download failed (HTTP ${response.status}).`);
   }
-  return response.arrayBuffer();
+  const { bytes } = response;
+  return bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+    ? (bytes.buffer as ArrayBuffer)
+    : (bytes.slice().buffer as ArrayBuffer);
 }
 
 function persistEvenHubFonts(base: ArrayBuffer): void {
   try {
-    const asset = extractEvenHubFontAsset(base);
-    let writeError: unknown;
-    knownFolders.documents().getFile(EVENHUB_RUNTIME_FONT_FILENAME).writeTextSync(
-      JSON.stringify(asset),
-      (error) => {
-        writeError = error;
-      },
-    );
-    if (writeError) throw writeError instanceof Error ? writeError : new Error(String(writeError));
+    writeAsset(EVENHUB_RUNTIME_FONT_FILENAME, extractEvenHubFontAsset(base));
+    writeAsset(STOCK_UI_FONT_FILENAME, extractStockUiFontAsset(base));
     // A degraded EvenHubFont (built before this extraction existed) is cached
     // per JS context; drop it so the next render picks up the real fonts
     // without an app restart.
     EvenHubFont.invalidate();
+    StockUiFont.invalidate();
+    refreshUiFonts();
   } catch (error) {
     throw new FirmwareBuildError(
       `The firmware was verified, but its EvenHub fonts could not be extracted: ${(error as Error)?.message ?? error}`,
     );
   }
+}
+
+function writeAsset(filename: string, asset: object): void {
+  let writeError: unknown;
+  knownFolders.documents().getFile(filename).writeTextSync(JSON.stringify(asset), (error) => {
+    writeError = error;
+  });
+  if (writeError) throw writeError instanceof Error ? writeError : new Error(String(writeError));
 }
 
 /**

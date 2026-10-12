@@ -5,6 +5,7 @@
  * transcript; the Java controller then only decodes LC3 to PCM and hands it
  * over via acceptPcm.
  */
+import { uint8ArrayToJavaBytes } from "./java-direct-buffer";
 
 export type CloudSttTranscriptEvent = {
   text: string;
@@ -43,12 +44,7 @@ declare const android: any;
 
 /** Copy a Uint8Array into a Java byte[] (for binary WebSocket frames etc.). */
 export function toJavaBytes(bytes: Uint8Array): any {
-  const javaBytes = Array.create("byte", bytes.length);
-  for (let i = 0; i < bytes.length; i++) {
-    const value = bytes[i]!;
-    javaBytes[i] = value > 127 ? value - 256 : value;
-  }
-  return javaBytes;
+  return uint8ArrayToJavaBytes(bytes);
 }
 
 /** Base64 for audio payloads, via the Android SDK (no JS base64 in NS core). */

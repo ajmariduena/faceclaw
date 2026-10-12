@@ -2,9 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   agentBucket, isListedAgent, sectionAgents, sectionCounts, formatAge, formatDuration, formatClock,
-  chatEntries, chatEntryFromTimeline, upsertEntry, fallbackLine, plainText, windowBlocks, sessionWorkspaceName,
+  chatEntries, chatEntryFromTimeline, upsertEntry, fallbackLine, messageText, plainText, windowBlocks, sessionWorkspaceName,
 } = require('../.test-build/app/apps/paseo/paseo-model.js');
-const { buildGlanceSnapshot, glanceWhoLine, glanceEmptyStatus, glanceVerdict, glanceUrgentAgent } = require('../.test-build/app/apps/paseo/paseo-glance.js');
+const { buildGlanceSnapshot, glanceWhoLine, glanceEmptyStatus, glanceCounts } = require('../.test-build/app/apps/paseo/paseo-glance.js');
 
 const NOW = Date.parse('2026-10-09T12:00:00.000Z');
 const iso = (offsetMs) => new Date(NOW + offsetMs).toISOString();
@@ -21,6 +21,8 @@ test('buckets follow the Paseo sidebar rules', () => {
   assert.equal(agentBucket(agent('e', { status: 'running' })), 'working');
   assert.equal(agentBucket(agent('f', { status: 'idle' })), 'done');
   assert.equal(agentBucket(agent('g', { status: 'initializing' })), 'done');
+  assert.equal(agentBucket(agent('h', { status: 'idle', backgroundTasks: [{ id: 't' }] })), 'background');
+  assert.equal(agentBucket(agent('i', { status: 'running', backgroundTasks: [{ id: 't' }] })), 'working');
 });
 
 test('subagents, archived and closed agents are hidden', () => {
@@ -105,35 +107,29 @@ test('a sent message and its daemon echo show once, whichever lands first', () =
   assert.equal(upsertEntry(repeated, { id: 'local:2', role: 'user', text: 'ok' }), true);
 });
 
-test('the card states a verdict, the agent behind it and a ledger of the rest', () => {
+test('the card counts review (needs input and failed included), working, background and done', () => {
   const line = (a) => `line ${a.id}`;
   const connected = { configured: true, connected: true, status: '' };
-  const verdict = (agents) => glanceVerdict(buildGlanceSnapshot(connected, agents, line, NOW), NOW);
-  const needs = verdict([
-    agent('w1', { status: 'running', updatedAt: iso(-30_000) }),
-    agent('n', { title: 'Fix reconnect BLE', updatedAt: iso(-600_000), pendingPermissions: [{ id: 'p', kind: 'tool', name: 'Bash' }] }),
-    agent('w2', { status: 'running', updatedAt: iso(-60_000) }),
+  const counts = (agents) => ({ ...glanceCounts(buildGlanceSnapshot(connected, agents, line, NOW)) });
+  assert.deepEqual(counts([
+    agent('w1', { status: 'running' }),
+    agent('n', { pendingPermissions: [{ id: 'p', kind: 'tool', name: 'Bash' }] }),
+    agent('e', { status: 'error' }),
+    agent('r', { requiresAttention: true, attentionReason: 'finished' }),
+    agent('b', { backgroundTasks: [{ id: 't' }] }),
     agent('d1', { updatedAt: iso(-120_000) }),
     agent('old', { updatedAt: iso(-3 * 86_400_000) }),
-  ]);
-  assert.equal(needs.verdict, '1 needs you');
-  assert.equal(needs.lead.title, 'Fix reconnect BLE', 'the agent that needs you leads even when older');
-  assert.equal(needs.ledger, '2 working · 1 done', 'done counts only the last day');
-  const working = verdict([agent('w1', { status: 'running', updatedAt: iso(-30_000) }), agent('d1', { updatedAt: iso(-120_000) })]);
-  assert.deepEqual([working.verdict, working.lead.agentId, working.ledger], ['Nothing needs you', 'w1', '1 working · 1 done']);
-  const done = verdict([agent('d1', { updatedAt: iso(-720_000) }), agent('d2', { updatedAt: iso(-1_200_000) })]);
-  assert.deepEqual([done.verdict, done.lead.agentId, done.ledger], ['All done', 'd1', '2 finished · last 12 min']);
-  assert.deepEqual([verdict([agent('old', { updatedAt: iso(-3 * 86_400_000) })]).verdict, verdict([]).verdict], ['All quiet', 'No agents']);
-  const review = verdict([agent('r', { requiresAttention: true, attentionReason: 'finished', updatedAt: iso(-60_000) }), agent('e', { status: 'error', updatedAt: iso(-90_000) })]);
-  assert.deepEqual([review.verdict, review.lead.agentId, review.ledger], ['1 failed', 'e', '1 to review']);
-
-  const live = buildGlanceSnapshot(connected, [agent('n', { pendingPermissions: [{ id: 'p', kind: 'tool', name: 'Bash' }] })], line, NOW);
-  assert.equal(glanceUrgentAgent(live), 'n');
-  assert.equal(glanceUrgentAgent(buildGlanceSnapshot(connected, [agent('w', { status: 'running' })], line, NOW)), null);
+  ]), { review: 3, needsYou: 2, working: 1, background: 1, done: 1, stale: false });
+  const live = buildGlanceSnapshot(connected, [agent('w', { status: 'running' })], line, NOW);
   const dropped = buildGlanceSnapshot({ configured: true, connected: false, status: 'Mac unreachable', lastGood: { counts: live.counts, atMs: NOW - 29 * 60_000 } }, [], line, NOW);
-  assert.deepEqual(glanceVerdict(dropped, NOW), { verdict: 'Mac unreachable', lead: null, note: 'Last seen 29 min ago', ledger: 'Was: 1 needs you' });
-  assert.equal(glanceUrgentAgent(dropped), null);
-  assert.equal(glanceVerdict(buildGlanceSnapshot({ configured: true, connected: false, status: 'Connecting…' }, [], line, NOW), NOW), null, 'no last snapshot: centred status');
+  assert.deepEqual({ ...glanceCounts(dropped) }, { review: 0, needsYou: 0, working: 1, background: 0, done: 0, stale: true });
+  assert.equal(glanceCounts(buildGlanceSnapshot({ configured: true, connected: false, status: 'Connecting…' }, [], line, NOW)), null, 'no last snapshot: centred status');
+  assert.equal(glanceCounts(buildGlanceSnapshot({ configured: false, connected: false, status: '' }, [], line, NOW)), null);
+});
+
+test('whole messages keep their paragraphs and lose the markdown', () => {
+  assert.equal(messageText('**Listo.** Agregué reintentos.\n\n1. **Uno:** a\n   - dos\n```sh\nnpm test\n```\nFin.'), 'Listo.\nAgregué reintentos.\n1. Uno: a\n  • dos\nFin.');
+  assert.equal(messageText('Mido la latencia en speakers.ts. ¿Arranco? Sí, 0,5 s. Listo'), 'Mido la latencia en speakers.ts.\n¿Arranco?\nSí, 0,5 s.\nListo');
 });
 
 test('fallback lines take the first sentence, without markdown, until the daemon summarizes', () => {

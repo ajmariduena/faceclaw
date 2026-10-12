@@ -22,26 +22,11 @@ import { CONTEXT_MENU_DIM, MenuLayer, type MenuItem } from "../menu";
 import { VoiceInputLayer, type VoiceSendTarget } from "./voice-input";
 import { KeyboardInputLayer, type KeyboardInputSession } from "./keyboard-input";
 import { voiceActivity } from "./voice-activity";
-import { AssistantLayer } from "./assistant";
-import { AssistantSession, type AssistantBackendConfig } from "../../assistant/session";
-import { resolveAssistantModel, type AssistantModel } from "../../assistant/models";
-import { AssistantConversations, type ReasoningLevel } from "../../assistant/conversations";
-import { getStringSetting, setStringSetting } from "../../native/settings-store";
-import type { AssistantContext } from "../../assistant/types";
 import { SingleNotificationLayer } from "../notifications";
 import {
-  anthropicApiKeySetting,
-  assistantBackendSetting,
-  assistantBridgeHostSetting,
-  assistantBridgePortSetting,
-  assistantBridgeTokenSetting,
-  assistantModelSetting,
-  assistantSkipConfirmationSetting,
   batteryIndicatorSettingsKey,
   brightnessSetting,
   onAnySettingChanged,
-  openAiApiKeySetting,
-  openRouterApiKeySetting,
   statusBarPositionSetting,
   statusBarVisibilitySetting,
   timeFormatSetting,
@@ -52,6 +37,7 @@ import { onAmbientCardsChanged } from "./ambient-cards";
 import { ShellChromeLayer, sidebarContentSpan, type ShellChromeState, type ShellChromeWindow } from "./chrome-layer";
 import { ShellModalLayer } from "./modal-layer";
 import { NotificationModalQueue } from "./notification-modal-queue";
+import { WindowAlertLayer, type WindowAlert } from "./window-alert-layer";
 import { ALL_NOTIFICATIONS, readActiveNotifications } from "../../native/notification-icons";
 import { shouldShowNotificationOnGlasses } from "../../native/notification-sources";
 import { ToolDebugMenuLayer } from "./tool-debug-layer";
@@ -210,18 +196,14 @@ export type ShellConfig = {
    * it. Hosts that leave it out offer no notifications to select.
    */
   openNotificationsWindow?: () => { window: InProcessWindow; opened: boolean } | null;
-  /** Launch (or focus) an app by id; the wakeword opens Bots or AI Chat through it. */
+  /** Launch (or focus) an app by id; the wakeword opens Grok Bot through it. */
   launchApp?: (appId: string) => Promise<void>;
-  /**
-   * Start AI Chat's dictation once its window is in front (the wakeword's
-   * lean action); without it the shell forwards the wakeword event to the
-   * window instead.
-   */
-  startAiChatListening?: () => boolean;
-  /** Bots can take the wakeword (a Cursor key is set); without it the wakeword opens AI Chat. */
+  /** Grok Bot can take a message (a Cursor key is set): the voice and keyboard dialogs offer Send to Grok Bot. */
   botsReady?: () => boolean;
-  /** Start dictation in the Bots chat once Bots is in front. */
+  /** Start dictation in the Grok Bot chat once it is in front. */
   startBotsListening?: () => boolean;
+  /** Send a finished dictation or typed text to Grok Bot. */
+  sendToBots?: (text: string) => void;
   /** Close the glasses connection (system menu > Disconnect). */
   disconnect?: () => Promise<void> | void;
 };
@@ -250,17 +232,6 @@ type NotificationSelection = {
 
 /** Which surfaces need re-rendering after an input event. */
 export type ShellInputOutcome = { shell: boolean; window: boolean };
-
-/**
- * Assistant overlay activity, for mirrors outside the glasses (the watch).
- * "streaming" carries the reply so far (replace semantics); "done" the final
- * reply; "error" the message; "closed" fires when the overlay leaves the
- * stack by any path.
- */
-export type AssistantActivityEvent = {
-  phase: "thinking" | "streaming" | "done" | "error" | "closed";
-  text: string;
-};
 
 export type FocusKind = "sidebar" | "window";
 
@@ -316,7 +287,7 @@ const ALERT_Y = 96;
 const ALERT_H = 96;
 
 /**
- * A brief text popup on the shell surface (the assistant's show_alert tool and
+ * A brief text popup on the shell surface (show_alert and
  * other short notices). Auto-dismisses after a few seconds; a click or
  * double-click dismisses it early.
  */
@@ -337,7 +308,7 @@ class ShellAlertLayer implements Layer {
     const alertY = minWindowTop() + ALERT_Y;
     image.fillRect(ALERT_X, alertY, ALERT_W, ALERT_H, 1);
     image.drawRect(ALERT_X, alertY, ALERT_W, ALERT_H, 90);
-    image.drawText(font, ALERT_X + 16, alertY + 12, "Assistant", 200);
+    image.drawText(font, ALERT_X + 16, alertY + 12, "Faceclaw", 200);
     image.drawTextWrapped({
       font,
       x: ALERT_X + 16,
@@ -433,31 +404,12 @@ class Shell {
     },
     sleep: () => this.sleep(),
   });
-  private conversations: AssistantConversations | null = null;
-  private get assistantSession(): AssistantSession | null {
-    return this.conversations?.current().session ?? null;
-  }
-
-  getAssistantConversations(): AssistantConversations {
-    if (!this.conversations) {
-      this.conversations = new AssistantConversations(
-        (model, reasoning) => this.resolveAssistantConfiguration(model, reasoning),
-        () => assistantModelSetting.get(),
-        (value) => setStringSetting("assistant.conversations", value),
-        getStringSetting("assistant.conversations", ""),
-      );
-    }
-    return this.conversations;
-  }
-
-  async prepareChatVoiceCapture(windowId = "ai-chat"): Promise<boolean> {
+  async prepareChatVoiceCapture(windowId: string): Promise<boolean> {
     if (this.activeVoiceLayer || this.activeKeyboardLayer || this.voiceDialogPending) return false;
     const ready = (await this.config.prepareVoiceCapture?.()) ?? true;
     return ready && !this.activeVoiceLayer && !this.activeKeyboardLayer &&
       this.stack.isAtBase() && this.isWindowFocused(windowId);
   }
-  private assistantLayer: AssistantLayer | null = null;
-  private readonly assistantActivityListeners = new Set<(event: AssistantActivityEvent) => void>();
   private readonly alertListeners = new Set<(text: string) => void>();
   private escapeMenuTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly actions: LayerActions = { ...noopActions };
@@ -469,6 +421,7 @@ class Shell {
   };
   private readonly chrome = new ShellChromeLayer(() => this.chromeState());
   private readonly stack = new LayerStack(this.chrome, this.actions);
+  private windowAlert: { layer: WindowAlertLayer; open: (key: string) => void } | null = null;
 
   // Top-bar settings we mirror into the chrome; a change to any of them
   // repaints the shell surface so the top bar reflects it immediately.
@@ -812,12 +765,9 @@ class Shell {
     // has no button presses, but the screen must stay on for it. Sliding
     // lastInputAtMs forward also restarts the full timeout when it closes.
     // The keyboard dialog likewise: typing happens on the phone, not the
-    // ring. An in-flight assistant turn suspends it for the same reason (a
-    // tool loop can run for a while with no input); once the turn ends and
-    // the Done/Follow-up menu is showing, the normal idle timeout resumes.
-    // A foreground window that is playing video holds it off the same way.
+    // ring. A foreground window that is playing video holds it off the same way.
     const foreground = this.foregroundWindow();
-    if (this.activeVoiceLayer || this.activeKeyboardLayer || this.assistantSession?.isTurnActive() ||
+    if (this.activeVoiceLayer || this.activeKeyboardLayer ||
         foreground?.isVoiceCapturing?.() || foreground?.keepsScreenOn?.()) {
       this.lastInputAtMs = nowMs;
       return false;
@@ -966,15 +916,8 @@ class Shell {
       this.lastInputAtMs = Date.now();
       const wokeScreen = !this.screenOn && this.wake("sidebar");
       if (action === "voice-input" && !this.activeVoiceLayer && !this.activeKeyboardLayer) {
-        if (this.home && this.config.launchApp) {
-          await this.openBotsListening(event, frameId);
-        } else if (this.assistantLayer) {
-          // The assistant overlay is up; a wakeword continues that conversation.
-          this.startAssistantFollowUp(true);
-        } else {
-          // Wakeword defaults the highlight to Send to Assistant.
-          this.openVoiceDialog({ handsFree: true, defaultTarget: "assistant" });
-        }
+        if (this.home && this.config.launchApp) await this.openBotsListening();
+        else this.openVoiceDialog({ handsFree: true, defaultTarget: "bots" });
       }
       return { shell: wokeScreen || action === "voice-input", window: false };
     }
@@ -1368,7 +1311,7 @@ class Shell {
   private openVoiceDialog(options: {
     finishOnClick?: boolean;
     handsFree?: boolean;
-    defaultTarget: "assistant" | "app";
+    defaultTarget: "bots" | "app";
   }): void {
     if (this.config.voiceInputEnabled === false || this.voiceDialogPending) return;
     this.voiceDialogPending = true;
@@ -1392,18 +1335,11 @@ class Shell {
   private openVoiceDialogNow(options: {
     finishOnClick?: boolean;
     handsFree?: boolean;
-    defaultTarget: "assistant" | "app";
+    defaultTarget: "bots" | "app";
   }): void {
     const targets = this.buildVoiceSendTargets();
     let defaultIndex = targets.findIndex((target) => target.id === options.defaultTarget);
     if (defaultIndex < 0) defaultIndex = 0;
-    // Skip the menu only for a hands-free (wakeword) capture aimed at the
-    // assistant, when the user has opted into it.
-    const autoSend =
-      Boolean(options.handsFree) &&
-      options.defaultTarget === "assistant" &&
-      targets[defaultIndex]?.id === "assistant" &&
-      assistantSkipConfirmationSetting.get();
 
     const layer = new VoiceInputLayer({
       actions: this.config.actions,
@@ -1422,7 +1358,6 @@ class Shell {
       defaultTargetIndex: defaultIndex,
       finishOnClick: options.finishOnClick ?? false,
       handsFree: options.handsFree ?? false,
-      autoSend,
     });
     this.activeVoiceLayer = layer;
     voiceActivity.setActive(true);
@@ -1431,18 +1366,15 @@ class Shell {
   }
 
   /**
-   * The send destinations offered by the voice dialog: the assistant (when an
-   * API key is configured) and/or typing into the foreground window (when it
+   * The send destinations offered by the voice dialog: Grok Bot (when a
+   * Cursor key is set) and/or typing into the foreground window (when it
    * accepts text). Order fixes the menu row order.
    */
   private buildVoiceSendTargets(): VoiceSendTarget[] {
     const targets: VoiceSendTarget[] = [];
-    if (this.isAssistantAvailable()) {
-      targets.push({
-        id: "assistant",
-        label: "Send to Assistant",
-        onSend: (text) => this.sendToAssistant(text),
-      });
+    const sendToBots = this.config.sendToBots;
+    if (sendToBots && this.config.botsReady?.()) {
+      targets.push({ id: "bots", label: "Send to Grok Bot", onSend: sendToBots });
     }
     if (this.foregroundWindow()?.receiveTextInput) {
       targets.push({
@@ -1490,9 +1422,7 @@ class Shell {
   /**
    * Open the keyboard dialog: the voice dialog's typed twin, driven by the
    * phone's keyboard button (beside the mic button, whose wakeword this
-   * mirrors: it wakes a dark screen too). Over the assistant overlay the text
-   * continues that conversation; otherwise it goes to the usual destinations
-   * with Send to Assistant highlighted. Returns the session the phone types
+   * mirrors: it wakes a dark screen too), with Send to Grok Bot highlighted. Returns the session the phone types
    * into (the already-open one if there is one), or null while a voice
    * dialog is up.
    */
@@ -1500,22 +1430,8 @@ class Shell {
     if (this.activeKeyboardLayer) return this.activeKeyboardLayer;
     if (this.activeVoiceLayer || this.foregroundWindow()?.isVoiceCapturing?.()) return null;
     if (!this.screenOn) this.wake("sidebar");
-    const assistantLayer = this.assistantLayer;
-    const assistantSession = this.assistantSession;
-    let targets: VoiceSendTarget[];
-    let defaultIndex = 0;
-    if (assistantLayer && assistantSession) {
-      targets = [
-        {
-          id: "assistant",
-          label: "Send",
-          onSend: (text) => this.runAssistantTurn(assistantSession, assistantLayer, text),
-        },
-      ];
-    } else {
-      targets = this.buildVoiceSendTargets();
-      defaultIndex = Math.max(0, targets.findIndex((target) => target.id === "assistant"));
-    }
+    const targets = this.buildVoiceSendTargets();
+    const defaultIndex = Math.max(0, targets.findIndex((target) => target.id === "bots"));
     const layer = new KeyboardInputLayer({
       actions: this.config.actions,
       onClosed: () => {
@@ -1542,19 +1458,6 @@ class Shell {
     return layer;
   }
 
-  isAssistantAvailable(): boolean {
-    const current = this.getAssistantConversations().current();
-    return this.resolveAssistantConfiguration(current.model, current.reasoning) !== null;
-  }
-
-  /** Observe assistant turns (see AssistantActivityEvent). */
-  onAssistantActivity(listener: (event: AssistantActivityEvent) => void): () => void {
-    this.assistantActivityListeners.add(listener);
-    return () => {
-      this.assistantActivityListeners.delete(listener);
-    };
-  }
-
   /** Observe showAlert popups (mirrored to the watch). */
   onAlertShown(listener: (text: string) => void): () => void {
     this.alertListeners.add(listener);
@@ -1563,175 +1466,46 @@ class Shell {
     };
   }
 
-  private emitAssistantActivity(event: AssistantActivityEvent): void {
-    for (const listener of Array.from(this.assistantActivityListeners)) {
-      try {
-        listener(event);
-      } catch (error) {
-        console.warn("assistant activity listener failed", error);
-      }
-    }
-  }
-
   /**
-   * Dismiss the assistant overlay (cancelling any in-flight turn), as Done
-   * would. Returns whether an overlay was actually open to close.
+   * A window's alert in Even's notification box, only while the screen is
+   * off: it wakes the screen to show it, and dismissing it sleeps again. A
+   * newer alert replaces the open one; with the screen on otherwise, nothing.
+   * The window under it stays hidden so the alert shows alone.
    */
-  closeAssistant(): boolean {
-    return this.closeAssistantLayer();
-  }
-
-  private ensureAssistantSession(): AssistantSession | null {
-    return this.getAssistantConversations().ensureSession();
-  }
-
-  private resolveAssistantConfiguration(
-    model: AssistantModel = this.conversations?.current().model ?? assistantModelSetting.get(),
-    reasoning: ReasoningLevel = this.conversations?.current().reasoning ?? "default",
-  ): AssistantBackendConfig | null {
-    if (assistantBackendSetting.get() === "external") {
-      const host = assistantBridgeHostSetting.get().trim();
-      const token = assistantBridgeTokenSetting.get();
-      if (!host || !token) return null;
-      const port = parseInt(assistantBridgePortSetting.get(), 10) || 8790;
-      return { kind: "external", bridge: { host, port, token } };
-    }
-    const llm = resolveAssistantModel(model, {
-      anthropic: anthropicApiKeySetting.get(),
-      openai: openAiApiKeySetting.get(),
-      openrouter: openRouterApiKeySetting.get(),
-    });
-    if (llm && reasoning !== "default" && llm.effort) llm.effort = reasoning;
-    return llm ? { kind: "direct", llm } : null;
-  }
-
-  private buildAssistantContext(): AssistantContext {
-    const foreground = this.getForegroundApp();
-    return {
-      foregroundApp: foreground?.appId ?? null,
-      foregroundTitle: foreground?.title ?? null,
-      screenOn: this.screenOn,
-      localTime: formatAssistantTime(new Date()),
-      headsetBattery: this.battery.headset,
-    };
-  }
-
-  /**
-   * Start (or continue) an assistant conversation from a finalized utterance.
-   * Opens the assistant overlay if it isn't already up; a follow-up reuses the
-   * existing session and overlay.
-   */
-  sendToAssistant(text: string, showOverlay = true): void {
-    text = text.trim();
-    if (!text) return;
-    const session = this.ensureAssistantSession();
-    if (!session) {
-      this.showAlert(
-        assistantBackendSetting.get() === "external"
-          ? "Configure the agent bridge host and token in Settings."
-          : global.isIOS ? "Set an OpenAI or Anthropic API key in Settings." : "Set an API key or download the on-phone model in Settings.",
-      );
+  showWindowAlert(alert: WindowAlert, open: (key: string) => void): void {
+    if (this.windowAlert) {
+      this.windowAlert.layer.alert = alert;
+      this.windowAlert.open = open;
+      this.config.requestShellRender();
       return;
     }
-    if (session.isTurnActive()) {
-      this.showAlert("The assistant is still working on the previous request");
-      return;
-    }
-    if (!this.screenOn) this.wake("sidebar");
-    if (!showOverlay || this.foregroundWindow()?.appId === "ai-chat") {
-      this.runAssistantTurn(session, null, text);
-      return;
-    }
-    let layer = this.assistantLayer;
-    if (!layer) {
-      const created = new AssistantLayer(this.config.actions, {
-        onFollowUp: () => this.startAssistantFollowUp(),
-        onCancel: () => this.assistantSession?.cancel(),
-        onClose: () => this.closeAssistantLayer(),
-        onRemoved: () => {
-          // Removed by any path (Done, or the screen sleeping mid-conversation):
-          // stop the turn and drop the overlay reference; keep shared history.
-          this.assistantSession?.cancel();
-          if (this.assistantLayer === created) this.assistantLayer = null;
-          this.emitAssistantActivity({ phase: "closed", text: "" });
+    if (this.screenOn) return;
+    this.foregroundWindow()?.setForeground?.(false);
+    this.wake("window");
+    // The shell surface can't be opaque full-screen (64 KiB cap), so the window is hidden instead.
+    const hidden = this.foregroundWindow();
+    hidden?.setForeground?.(false);
+    const entry: { layer: WindowAlertLayer; open: (key: string) => void } = {
+      open,
+      layer: new WindowAlertLayer(alert, {
+        open: () => {
+          this.stack.remove(entry.layer);
+          entry.open(entry.layer.alert.key);
+          this.config.requestShellRender();
         },
-      });
-      layer = created;
-      this.assistantLayer = created;
-      this.stack.push(created);
-    }
-    this.runAssistantTurn(session, layer, text);
+        dismiss: () => {
+          this.sleep();
+          this.config.requestShellRender();
+        },
+        removed: () => {
+          if (this.windowAlert === entry) this.windowAlert = null;
+          if (hidden && this.foregroundWindow() === hidden) hidden.setForeground?.(true);
+        },
+      }),
+    };
+    this.windowAlert = entry;
+    this.stack.push(entry.layer);
     this.config.requestShellRender();
-  }
-
-  private runAssistantTurn(session: AssistantSession, layer: AssistantLayer | null, text: string): void {
-    if (session.isTurnActive()) return;
-    layer?.startTurn();
-    let replySoFar = "";
-    this.emitAssistantActivity({ phase: "thinking", text: "" });
-    session.sendUtterance(text, this.buildAssistantContext(), {
-      onTextDelta: (delta, textSoFar) => {
-        replySoFar = textSoFar;
-        layer?.onTextDelta(delta, textSoFar);
-        this.emitAssistantActivity({ phase: "streaming", text: textSoFar });
-      },
-      onToolActivity: (label) => layer?.onToolActivity(label),
-      onTurnDone: () => {
-        layer?.onTurnDone();
-        this.emitAssistantActivity({ phase: "done", text: replySoFar });
-      },
-      onError: (message) => {
-        layer?.onError(message);
-        this.emitAssistantActivity({ phase: "error", text: message });
-      },
-    });
-  }
-
-  /**
-   * Record another utterance in the current assistant conversation. handsFree
-   * (from a wakeword over the overlay) starts the mic immediately; otherwise
-   * (the Follow-up menu button) a click ends the utterance.
-   */
-  private startAssistantFollowUp(handsFree = false): void {
-    const layer = this.assistantLayer;
-    const session = this.assistantSession;
-    if (!layer || !session || this.activeVoiceLayer || this.activeKeyboardLayer) return;
-    const voice = new VoiceInputLayer({
-      actions: this.config.actions,
-      onClosed: () => {
-        if (this.activeVoiceLayer === voice) {
-          this.activeVoiceLayer = null;
-          voiceActivity.setActive(false);
-          this.noteUserActivity();
-        }
-      },
-      dismiss: () => {
-        this.stack.popIfTop((top) => top === voice);
-      },
-      sendTargets: [
-        { id: "assistant", label: "Send", onSend: (text) => this.runAssistantTurn(session, layer, text) },
-      ],
-      finishOnClick: !handsFree,
-      handsFree,
-      autoSend: handsFree && assistantSkipConfirmationSetting.get(),
-    });
-    this.activeVoiceLayer = voice;
-    voiceActivity.setActive(true);
-    this.stack.push(voice);
-    voice.startCapture();
-    this.config.requestShellRender();
-  }
-
-  private closeAssistantLayer(): boolean {
-    // Popping fires the layer's onRemoved, which cancels the turn and clears
-    // this.assistantLayer. popThrough also closes anything stacked above the
-    // overlay (a follow-up voice dialog, an alert), so a close command works
-    // no matter what the conversation is showing.
-    const layer = this.assistantLayer;
-    const closed = layer ? this.stack.popThrough(layer) : false;
-    this.noteUserActivity();
-    this.config.requestShellRender();
-    return closed;
   }
 
   /** Show a brief text popup on the lenses (assistant show_alert / notices). */
@@ -1883,38 +1657,15 @@ class Shell {
     this.config.requestShellRender();
   }
 
-  /** The wakeword's lean action: the default bot's chat (or the one on screen) listening; AI Chat when Bots can't take it. */
-  private async openBotsListening(event: InputEvent, frameId: number): Promise<void> {
-    if (!this.config.startBotsListening || !this.config.botsReady?.()) {
-      await this.openAiChatListening(event, frameId);
-      return;
-    }
+  /** The wakeword's lean action: Grok Bot in front, listening (it asks for a Cursor key when there is none). */
+  private async openBotsListening(): Promise<void> {
     try {
       await this.config.launchApp!("bots");
     } catch (error) {
-      console.warn(`wakeword: Bots launch failed: ${error}`);
-      await this.openAiChatListening(event, frameId);
+      console.warn(`wakeword: Grok Bot launch failed: ${error}`);
       return;
     }
-    if (this.foregroundWindow()?.appId !== "bots") {
-      await this.openAiChatListening(event, frameId);
-      return;
-    }
-    if (this.stack.isAtBase()) this.config.startBotsListening();
-  }
-
-  /** The wakeword's lean action: AI Chat in front, then listening. */
-  private async openAiChatListening(event: InputEvent, frameId: number): Promise<void> {
-    try {
-      await this.config.launchApp!("ai-chat");
-    } catch (error) {
-      console.warn(`wakeword: AI Chat launch failed: ${error}`);
-      return;
-    }
-    const window = this.foregroundWindow();
-    if (window?.appId !== "ai-chat" || !this.stack.isAtBase()) return;
-    if (this.config.startAiChatListening) this.config.startAiChatListening();
-    else await window.handleInput(event, frameId);
+    if (this.foregroundWindow()?.appId === "bots" && this.stack.isAtBase()) this.config.startBotsListening?.();
   }
 
   /**
@@ -1959,20 +1710,6 @@ class Shell {
 }
 
 export const shell = new Shell();
-
-const ASSISTANT_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const ASSISTANT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** Human-readable local time for the assistant's per-turn context. */
-function formatAssistantTime(date: Date): string {
-  let hours = date.getHours();
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-  const meridiem = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12;
-  if (hours === 0) hours = 12;
-  const day = `${ASSISTANT_WEEKDAYS[date.getDay()]} ${ASSISTANT_MONTHS[date.getMonth()]} ${date.getDate()}`;
-  return `${day}, ${hours}:${minutes} ${meridiem}`;
-}
 
 export function rawInputEventToInputEvent(event: RawInputEvent): InputEvent {
   return { ...makeInputEvent(rawInputEventToPayload(event)),

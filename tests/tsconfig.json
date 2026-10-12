@@ -63,6 +63,7 @@
     "../app/apps/t3code/t3-transcript.ts",
     "../app/apps/t3code/t3-glance.ts",
     "../app/apps/paseo/paseo-model.ts",
+    "../app/apps/paseo/paseo-orchestrator.ts",
     "../app/apps/paseo/paseo-glance.ts",
     "../app/apps/paseo/paseo-pairing.ts",
     "../app/apps/paseo/paseo-client.ts",

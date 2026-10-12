@@ -30,14 +30,14 @@ export function registerNavigateTools(
           destination: { type: "string", description: "Where to navigate to." },
           profile: {
             type: "string",
-            enum: ["driving", "walking", "cycling"],
-            description: "Travel mode (default driving).",
+            enum: ["driving", "walking", "two-wheeler"],
+            description: "Travel mode (default: the user's Navigate setting).",
           },
         },
         required: ["destination"],
         additionalProperties: false,
       },
-      // Launch + GPS fix + geocode + route can add up; stay above the app
+      // Launch + Google search + route can add up; stay above the app
       // tool's own 14 s budget.
       timeoutMs: 25_000,
     },

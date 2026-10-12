@@ -6,13 +6,13 @@ const ts = require('typescript');
 const { loader } = require('./helpers/load-typescript.cjs');
 const { HomeModel } = loader()('app/apps/home/home-model.ts');
 
-function harness({ wakeAction = 'voice-input', startAiChatListening = null, bots = null } = {}) {
+function harness({ wakeAction = 'voice-input', botsLaunch = true } = {}) {
   const source = ts.createSourceFile('shell.ts', fs.readFileSync('app/ui/shell/shell.ts', 'utf8'), ts.ScriptTarget.Latest, true);
   const klass = source.statements.find(node => ts.isClassDeclaration(node) && node.name.text === 'Shell');
   const names = ['registerWindow', 'registerHomeWindow', 'showHome', 'focusWindow', 'wake', 'sleep', 'routeInput',
     'receiveInput', 'isFocusTarget', 'inputTargetWindow', 'syncInputFocus', 'setSelectedIndex', 'noteWindowVisible',
     'foregroundWindow', 'isScreenOn', 'getFocus', 'yieldFocusToSidebar', 'overlayClosed', 'openLeanSystemMenu',
-    'openAiChatListening', 'openBotsListening', 'removeWindow', 'mostRecentWindowIndex', 'closeWindow', 'openNotificationModal', 'returnToWindowId'];
+    'openBotsListening', 'removeWindow', 'mostRecentWindowIndex', 'closeWindow', 'openNotificationModal', 'returnToWindowId'];
   const methods = names.map(name => klass.members.find(node => node.name?.getText(source) === name).getText(source));
   const pushed = [];
   class OverlayMenu { constructor(items, footer, onClosed) { this.items = items; this.footer = footer; this.onClosed = onClosed; } }
@@ -25,12 +25,11 @@ function harness({ wakeAction = 'voice-input', startAiChatListening = null, bots
   }).outputText, context);
   const shell = new context.exports.Harness();
   const model = new HomeModel();
-  let overlay = false, overlayInputs = 0, sleeps = 0, wakes = 0, menus = 0, disconnects = 0, posted = 0, listening = 0, botListening = 0;
+  let overlay = false, overlayInputs = 0, sleeps = 0, wakes = 0, menus = 0, disconnects = 0, posted = 0, botListening = 0;
   const window = id => ({ windowId: id, appId: id, surfaceId: `window:${id}`, title: id,
     inputs: [], closes: 0, renders: 0, visible: false, screen: true, closeable: id !== 'home',
     requestRender() { this.renders++; }, handleInput(e) { this.inputs.push(e.type); },
     setForeground(v) { this.visible = v; }, setScreenOn(v) { this.screen = v; }, close() { this.closes++; } });
-  const aiChat = window('ai-chat');
   const botsWindow = window('bots');
   Object.assign(shell, {
     windows: [], selectedIndex: 0, focus: 'sidebar', screenOn: true, mruWindowIds: [], attention: new Map(),
@@ -38,13 +37,12 @@ function harness({ wakeAction = 'voice-input', startAiChatListening = null, bots
     config: { requestShellRender() {}, onScreenStateChanged(on) { on ? wakes++ : sleeps++; },
       disconnect: () => { disconnects++; },
       launchApp: async appId => {
-        const target = appId === 'ai-chat' ? aiChat : appId === 'bots' && bots?.launches !== false ? botsWindow : null;
+        const target = appId === 'bots' && botsLaunch ? botsWindow : null;
         if (!target) return;
         if (!shell.windows.includes(target)) shell.registerWindow(target);
         shell.focusWindow(appId);
       },
-      startAiChatListening: startAiChatListening && (() => { listening++; return startAiChatListening(); }),
-      ...(bots ? { botsReady: () => bots.ready, startBotsListening: () => { botListening++; return true; } } : {}) },
+      startBotsListening: () => { botListening++; return true; } },
     stack: { isAtBase: () => !overlay, clearToBase: () => { overlay = false; },
       handleInput: () => { overlayInputs++; overlay = false; }, popIfTop: () => false,
       push: layer => { pushed.push(layer); overlay = true; }, pop: () => { overlay = false; } },
@@ -59,8 +57,8 @@ function harness({ wakeAction = 'voice-input', startAiChatListening = null, bots
   const app = window('calendar');
   shell.registerWindow(app);
   const input = type => shell.receiveInput({ type, source: 'ring', timestampMs: Date.now() });
-  return { shell, home, app, aiChat, botsWindow, model, input, pushed, setOverlay: () => { overlay = true; },
-    counts: () => ({ overlayInputs, sleeps, wakes, menus, disconnects, posted, listening, botListening }) };
+  return { shell, home, app, botsWindow, model, input, pushed, setOverlay: () => { overlay = true; },
+    counts: () => ({ overlayInputs, sleeps, wakes, menus, disconnects, posted, botListening }) };
 }
 
 test('home owns boot focus; an app gets the double tap first and its root back-out returns home', async () => {
@@ -158,43 +156,28 @@ test('closing the foreground window returns home, and notification popups stay o
   assert.equal(h.counts().posted, 0);
 });
 
-test('"Hey Even" wakes the screen and opens AI Chat listening, except while an app captures voice', async () => {
+test('"Hey Even" wakes the screen and opens Grok Bot listening, except while an app captures voice', async () => {
   const h = harness();
   h.shell.sleep();
   await h.input('wakeword');
   assert.equal(h.shell.isScreenOn(), true);
-  assert.equal(h.shell.foregroundWindow(), h.aiChat);
-  assert.deepEqual(h.aiChat.inputs, ['wakeword'], 'without a dictation seam the wakeword is forwarded');
-  h.aiChat.isVoiceCapturing = () => true;
+  assert.equal(h.shell.foregroundWindow(), h.botsWindow);
+  assert.equal(h.counts().botListening, 1);
+  assert.deepEqual(h.botsWindow.inputs, []);
+  h.botsWindow.isVoiceCapturing = () => true;
   await h.input('wakeword');
-  assert.deepEqual(h.aiChat.inputs, ['wakeword']);
-  h.aiChat.isVoiceCapturing = () => false;
-  const seamed = harness({ startAiChatListening: () => true });
-  await seamed.input('wakeword');
-  assert.equal(seamed.counts().listening, 1);
-  assert.deepEqual(seamed.aiChat.inputs, []);
+  assert.equal(h.counts().botListening, 1);
   const off = harness({ wakeAction: 'off' });
   off.shell.sleep();
   await off.input('wakeword');
   assert.equal(off.shell.isScreenOn(), false);
 });
 
-test('"Hey Even" opens the Bots chat listening with a Cursor key, and falls back to AI Chat without one', async () => {
-  const h = harness({ startAiChatListening: () => true, bots: { ready: true } });
-  h.shell.sleep();
+test('"Hey Even" leaves home alone when Grok Bot does not come to the front', async () => {
+  const h = harness({ botsLaunch: false });
   await h.input('wakeword');
-  assert.equal(h.shell.isScreenOn(), true);
-  assert.equal(h.shell.foregroundWindow(), h.botsWindow);
-  assert.equal(h.counts().botListening, 1);
-  assert.equal(h.counts().listening, 0);
-  const noKey = harness({ startAiChatListening: () => true, bots: { ready: false } });
-  await noKey.input('wakeword');
-  assert.equal(noKey.shell.foregroundWindow(), noKey.aiChat);
-  assert.deepEqual([noKey.counts().botListening, noKey.counts().listening], [0, 1]);
-  const missing = harness({ startAiChatListening: () => true, bots: { ready: true, launches: false } });
-  await missing.input('wakeword');
-  assert.equal(missing.shell.foregroundWindow(), missing.aiChat, 'a Bots launch that does not land falls back to AI Chat');
-  assert.deepEqual([missing.counts().botListening, missing.counts().listening], [0, 1]);
+  assert.equal(h.shell.foregroundWindow(), h.home);
+  assert.equal(h.counts().botListening, 0);
 });
 
 test('startup stays on home instead of restoring workers that can steal focus later', async () => {

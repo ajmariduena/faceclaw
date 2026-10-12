@@ -183,7 +183,7 @@ test('Stop interrupts the turn and leaves a Stopped line; a routine message mark
     headers: { Authorization: 'Bearer cursor-key', 'Content-Type': 'application/json' }, body: { reason: 'Stopped from the glasses' } });
   const glasses = h.hub.bot('Glasses');
   assert.equal(glasses.working, false);
-  eq(model.chatLines(glasses, '').at(-1), { role: 'assistant', text: '> Stopped · Glasses', action: true });
+  eq(model.chatLines(glasses, '').at(-1), { role: 'assistant', text: '> Stopped', action: true });
   h.pages.push({ entries: [], turn: busy });
   h.hub.setWatching(['Glasses']);
   await new Promise(setImmediate);
@@ -223,7 +223,7 @@ test('a rejected key stops polling until the key changes; network failures back 
   h.state.offline = true;
   await h.hub.refresh();
   assert.equal(h.hub.error, OFFLINE);
-  assert.equal(model.chatEmptyMessage(h.hub.bot('Glasses'), h.hub), 'Ask Glasses anything', 'a loaded chat stays; the footer says Offline');
+  assert.equal(model.chatEmptyMessage(h.hub.bot('Glasses'), h.hub), 'Ask Grok Bot anything', 'a loaded chat stays; the footer says Offline');
   assert.equal(h.nextDelay(), 3000);
   await h.hub.refresh();
   assert.equal(h.nextDelay(), 6000, 'watched backoff doubles');
@@ -254,22 +254,21 @@ test('a just-created session means the name matched no bot: "new empty bot" unti
   assert.equal(typo.newEmpty, false);
 });
 
-test('the home card glance: unread first, then working, then the latest; empty and setup states', async () => {
-  const h = harness({ names: 'Glasses, Research, Inbox' });
+test('the home card glance: the bot face, its last reply and age; working shows the question dim; empty and setup states', async () => {
+  const h = harness({ names: 'Glasses' });
   h.hub.start();
   await new Promise(setImmediate);
-  eq({ ...model.botsGlance(h.hub, NOW) }, { updates: [], status: 'Ask Glasses anything' });
-  const [glasses, research, inbox] = h.hub.list();
-  glasses.messages.push({ role: 'bot', text: 'Sale 06:20 desde GYE.', createdAtMs: NOW - 60 * 60_000, seq: 2 });
-  research.messages.push({ role: 'user', text: 'Compara Google y Mapbox', createdAtMs: NOW - 5 * 60_000, seq: 4 });
-  Object.assign(research, { working: true, workingSince: NOW - 4 * 60_000 });
-  inbox.messages.push({ role: 'bot', text: '3 urgentes: Fly pide respuesta hoy.', createdAtMs: NOW - 2 * 60 * 60_000, seq: 9 });
-  inbox.unread = 1;
-  const glance = model.botsGlance(h.hub, NOW);
-  eq(glance.updates.map(update => [update.who, update.line]), [
-    ['Inbox · 2 h', '3 urgentes: Fly pide respuesta hoy.'],
-    ['Research · working 4 min', 'You: Compara Google y Mapbox'],
-  ]);
+  eq({ ...model.botsGlance(h.hub, NOW) }, { face: 'idle', line: '', lineDim: false, age: '', status: 'Ask Grok Bot anything' });
+  const glasses = h.hub.bot('Glasses');
+  glasses.messages.push({ role: 'bot', text: 'Sale **06:20** desde GYE.', createdAtMs: NOW - 60 * 60_000, seq: 2 });
+  eq({ ...model.botsGlance(h.hub, NOW) }, { face: 'idle', line: 'Sale 06:20 desde GYE.', lineDim: false, age: '1 h', status: 'Ask Grok Bot anything' });
+  glasses.unread = 1;
+  assert.equal(model.botsGlance(h.hub, NOW).face, 'unread');
+  glasses.unread = 0;
+  glasses.messages.push({ role: 'user', text: 'Compara Google y Mapbox', createdAtMs: NOW - 5 * 60_000, seq: 4 });
+  Object.assign(glasses, { working: true, workingSince: NOW - 4 * 60_000 });
+  const working = model.botsGlance(h.hub, NOW);
+  eq([working.face, working.line, working.lineDim, working.age], ['working', 'Compara Google y Mapbox', true, 'working 4 min']);
   assert.equal(model.elapsedClock(12_000), '0:12');
   assert.equal(model.elapsedClock(16 * 60_000 + 5000), '16:05');
 });

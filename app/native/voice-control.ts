@@ -6,7 +6,7 @@ import { SpeechPauseDetector } from "./speech-pause";
 import { ElevenLabsSttClient } from "./elevenlabs-stt";
 import { OpenAiRealtimeSttClient } from "./openai-stt";
 import { SonioxSttClient } from "./soniox-stt";
-import { toUint8Array } from "../util/array-util";
+import { javaBytesToUint8Array } from "./java-direct-buffer";
 
 declare const com: any;
 
@@ -63,9 +63,9 @@ export type PushToTalkOptions = {
    */
   endpointing?: boolean;
   /**
-   * "My voice only": verify the captured utterance against the enrolled
-   * wearer voice-print, and suppress the final transcript when someone else
-   * spoke. wearerEmbedding is the L2-normalized profile centroid.
+   * "My voice only": speech that does not match the enrolled wearer
+   * voice-print is silenced before it reaches the recognizer.
+   * wearerEmbedding is the L2-normalized profile centroid.
    */
   speakerVerification?: {
     speakerModelPath: string;
@@ -132,11 +132,6 @@ export class FaceclawVoiceControlBridge {
   private readonly rawPcmListeners = new Set<RawPcmListener>();
   private readonly frameMetaListeners = new Set<FrameMetaListener>();
   private rawActive = false;
-  // Set when the current capture session runs "my voice only" verification;
-  // a non-wearer verdict arrives just before the final transcript and makes
-  // the bridge swallow it.
-  private verificationActive = false;
-  private verificationRejected = false;
 
   onStatus(listener: (state: VoiceControlState) => void): () => void {
     this.statusListeners.add(listener);
@@ -297,16 +292,13 @@ export class FaceclawVoiceControlBridge {
     } else {
       this.controller?.setBeamFilter(false, 0, 180);
     }
-    this.verificationRejected = false;
     if (options.speakerVerification) {
-      this.verificationActive = true;
       this.controller?.setSpeakerVerification(
         options.speakerVerification.speakerModelPath,
         toJavaFloats(options.speakerVerification.wearerEmbedding),
         options.speakerVerification.threshold,
       );
     } else {
-      this.verificationActive = false;
       this.controller?.clearSpeakerVerification();
     }
 
@@ -506,9 +498,11 @@ export class FaceclawVoiceControlBridge {
         this.nativeCaptureResolvers.delete(captureId);
       },
       onPcm: (pcm: any) => {
-        const bytes = toUint8Array(pcm);
+        const pauses = !this.cloudClient && this.captureHolders.has("continuous");
+        if (!this.cloudClient && !pauses && this.rawPcmListeners.size === 0) return;
+        const bytes = javaBytesToUint8Array(pcm);
         this.cloudClient?.acceptPcm(bytes);
-        if (!this.cloudClient && this.captureHolders.has("continuous") && this.speechPause.accept(bytes)) {
+        if (pauses && this.speechPause.accept(bytes)) {
           for (const listener of this.speechPauseListeners) listener();
         }
         if (this.rawPcmListeners.size > 0) {
@@ -525,28 +519,11 @@ export class FaceclawVoiceControlBridge {
           listener();
         }
       },
-      onSpeakerVerified: (isWearer: boolean, similarity: number) => {
-        if (!this.verificationActive) return;
-        this.verificationRejected = !isWearer;
-        if (!isWearer) {
-          this.setStatus(
-            `Ignored — not your enrolled voice (match ${Math.round(Number(similarity) * 100)}%).`,
-          );
-        }
-      },
     });
     this.controller.setListener(this.listenerProxy);
   }
 
   private emitTranscript(text: string, isFinal: boolean, metadata?: CloudSttTranscriptEvent): void {
-    // "My voice only": a rejected session's final transcript is emptied so
-    // nothing downstream (assistant, dictation) acts on another speaker's
-    // words. The verification verdict is posted before the final, and cloud
-    // finals arrive over the network later still, so the flag is settled.
-    if (isFinal && this.verificationActive && this.verificationRejected) {
-      text = "";
-      metadata = undefined;
-    }
     const event = { ...metadata, text, isFinal };
     for (const listener of this.transcriptListeners) {
       listener(event);

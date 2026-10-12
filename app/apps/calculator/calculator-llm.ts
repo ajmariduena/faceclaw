@@ -1,5 +1,5 @@
 /**
- * One-shot completion against the assistant's configured model, used by the
+ * One-shot completion against the first configured model, used by the
  * Calculator's optional rewrite fallback (see MathCoordinator.answerSpoken:
  * the deterministic parser runs first; the model only ever translates words
  * into notation). Resolves to null when no provider is configured or the
@@ -13,13 +13,12 @@ import { resolveAssistantModel } from "../../assistant/models";
 import { type LlmStreamOptions } from "../../assistant/llm-protocol";
 import {
   anthropicApiKeySetting,
-  assistantModelSetting,
   openAiApiKeySetting,
 } from "../../ui/dashboard-settings";
 import { CALCULATOR_REWRITE_SYSTEM_PROMPT, buildCalculatorRewriteUserMessage } from "../../prompts";
 
 export function rewriteSpokenProblem(spoken: string): Promise<string | null> {
-  const resolved = resolveAssistantModel(assistantModelSetting.get(), {
+  const resolved = resolveAssistantModel("auto", {
     anthropic: anthropicApiKeySetting.get(),
     openai: openAiApiKeySetting.get(),
   });

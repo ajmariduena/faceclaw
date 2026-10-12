@@ -5,13 +5,13 @@
  * swipe/crown scrolls, "Hey Even") which feed the exact synthetic-ring path
  * the phone UI's test buttons use, plus higher-level commands the ring has no
  * way to express: launch an app, switch or close a window, wake/sleep/lock
- * the display, send a spoken or typed query straight to the assistant, or
+ * the display, send a spoken or typed query straight to Grok Bot, or
  * type text into the foreground app.
  *
  * Outbound, the dashboard state (connection, battery, screen, lock, open
  * windows, launchable apps) is mirrored into a Data Layer item so the watch
- * UI can show it and offer the right actions; assistant replies and alerts
- * stream to the watch as events so a query made from the wrist can be read
+ * UI can show it and offer the right actions; Grok Bot's reply to a watch
+ * query and alerts go to the watch as events so a query made from the wrist can be read
  * from the wrist.
  *
  * The watch's own battery flows the other way for the glasses' top-bar and
@@ -35,7 +35,9 @@ import {
   watchMirrorAssistantSetting,
   watchRemoteEnabledSetting,
 } from "../ui/dashboard-settings";
-import { shell, type AssistantActivityEvent } from "../ui/shell/shell";
+import { shell } from "../ui/shell/shell";
+import { grokBotHub } from "../assistant/grokbot/grokbot";
+import { plainText } from "../apps/bots/bots-model";
 import { voiceActivity } from "../ui/shell/voice-activity";
 import { FACECLAW_VERSION } from "../version";
 
@@ -95,7 +97,6 @@ const MAX_SCROLL_STEPS = 12;
 const MAX_TEXT_LENGTH = 2000;
 const STATE_PUBLISH_DEBOUNCE_MS = 150;
 const STATE_REFRESH_INTERVAL_MS = 30_000;
-const ASSISTANT_STREAM_MIN_INTERVAL_MS = 250;
 // Each poll wakes the watch app's process for a moment; the level changes
 // slowly, and a charger being plugged in is pushed at once whenever the
 // watch app is open, so a leisurely cadence is enough.
@@ -124,6 +125,8 @@ export type WearRemoteHost = {
     lastHeadsetBattery: number | null;
   };
   appendLog: (line: string) => void;
+  /** Grok Bot in front on the glasses, with this text sent from its chat. */
+  sendToBots: (text: string) => void;
 };
 
 export class WearRemote {
@@ -131,11 +134,8 @@ export class WearRemote {
   private publishTimer: ReturnType<typeof setTimeout> | null = null;
   private watchReachable = false;
   private watchName = "";
-  // Assistant text streams as deltas many times a second; the watch gets a
-  // snapshot every ASSISTANT_STREAM_MIN_INTERVAL_MS plus every phase change.
-  private assistantStreamTimer: ReturnType<typeof setTimeout> | null = null;
-  private assistantPendingText: string | null = null;
-  private lastAssistantSentAtMs = 0;
+  /** Grok Bot's newest reply seq when the watch sent its query; null when no watch query awaits a reply. */
+  private watchQuerySeq: number | null = null;
   private lastWatchBatteryPollAtMs = 0;
   private watchBatteryKnown = false;
   // Urgent polls that got no answer; a watch app too old to answer them
@@ -173,7 +173,7 @@ export class WearRemote {
         this.setWatchBattery(null, null);
       }
     });
-    shell.onAssistantActivity((event) => this.forwardAssistantActivity(event));
+    grokBotHub.onChanged(() => this.forwardBotReply());
     shell.onAlertShown((text) => {
       if (this.watchReachable && watchMirrorAssistantSetting.get()) {
         wearBridge.sendEvent({ type: "alert", text });
@@ -280,7 +280,7 @@ export class WearRemote {
       crownClockwiseNext: watchCrownClockwiseNextSetting.get(),
       canUnlock: watchCanUnlockSetting.get(),
       mirrorAssistant: watchMirrorAssistantSetting.get(),
-      assistantAvailable: shell.isAssistantAvailable(),
+      assistantAvailable: grokBotHub.configured,
     };
   }
 
@@ -339,12 +339,14 @@ export class WearRemote {
           ack(false, "Nothing to send.");
           return;
         }
-        if (!shell.isAssistantAvailable()) {
-          ack(false, "Set up the assistant in Faceclaw's Settings first.");
+        if (!grokBotHub.configured) {
+          ack(false, "Add a Cursor key in Faceclaw first.");
           return;
         }
-        this.host.appendLog(`watch: assistant query (${text.length} chars)`);
-        shell.sendToAssistant(text);
+        this.host.appendLog(`watch: Grok Bot query (${text.length} chars)`);
+        this.watchQuerySeq = grokBotHub.bot(grokBotHub.defaultBot)?.latestBot?.seq ?? -1;
+        this.sendAssistantEvent("thinking", "");
+        this.host.sendToBots(text);
         ack(true);
         return;
       }
@@ -515,9 +517,9 @@ export class WearRemote {
         ack(true);
         return;
       case "close-assistant":
-        // Idempotent: closing an assistant that isn't open still succeeds,
-        // but tell the watch which of the two happened.
-        ack(true, shell.closeAssistant() ? "" : "The assistant was not open.");
+        // Kept for older watch builds; there is no assistant overlay to close.
+        this.watchQuerySeq = null;
+        ack(true);
         return;
       case "display-mode": {
         const value = String(payload.value ?? "");
@@ -535,37 +537,18 @@ export class WearRemote {
     }
   }
 
-  private forwardAssistantActivity(event: AssistantActivityEvent): void {
-    if (!watchMirrorAssistantSetting.get()) return;
-    // No watch to mirror to: sending anyway is not free — with no known
-    // watch nodes the Java side runs a capability lookup per event, which a
-    // streaming reply would repeat several times a second.
-    if (!this.watchReachable) return;
-    if (event.phase === "streaming") {
-      // Coalesce: the newest text wins, sent no more often than the interval.
-      this.assistantPendingText = event.text;
-      if (this.assistantStreamTimer) return;
-      const wait = Math.max(0, ASSISTANT_STREAM_MIN_INTERVAL_MS - (Date.now() - this.lastAssistantSentAtMs));
-      this.assistantStreamTimer = setTimeout(() => {
-        this.assistantStreamTimer = null;
-        if (this.assistantPendingText === null) return;
-        this.sendAssistantEvent("streaming", this.assistantPendingText);
-        this.assistantPendingText = null;
-      }, wait);
-      return;
-    }
-    // A phase change supersedes any queued stream snapshot.
-    if (this.assistantStreamTimer) {
-      clearTimeout(this.assistantStreamTimer);
-      this.assistantStreamTimer = null;
-    }
-    this.assistantPendingText = null;
-    this.sendAssistantEvent(event.phase, event.text);
-    this.schedulePublish();
+  private forwardBotReply(): void {
+    if (this.watchQuerySeq === null) return;
+    const bot = grokBotHub.bot(grokBotHub.defaultBot);
+    const reply = bot?.latestBot;
+    if (!bot || bot.working || !reply || reply.seq <= this.watchQuerySeq) return;
+    this.watchQuerySeq = null;
+    this.sendAssistantEvent("done", plainText(reply.text));
   }
 
-  private sendAssistantEvent(phase: AssistantActivityEvent["phase"], text: string): void {
-    this.lastAssistantSentAtMs = Date.now();
+  private sendAssistantEvent(phase: "thinking" | "done", text: string): void {
+    // With no known watch nodes the Java side runs a capability lookup per event.
+    if (!this.watchReachable || !watchMirrorAssistantSetting.get()) return;
     wearBridge.sendEvent({ type: "assistant", phase, text });
   }
 }

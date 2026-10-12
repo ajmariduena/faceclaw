@@ -91,7 +91,7 @@ export async function handleRequest(body: string, tokens: TokenStore, host: Remo
       if (!host.acceptsText()) return error('unavailable', 'The foreground window does not accept text.');
       host.text(request.text, request.submit !== false);
     } else {
-      if (!host.assistantAvailable()) return error('unavailable', 'Set up the voice assistant in Settings first.');
+      if (!host.assistantAvailable()) return error('unavailable', 'Add a Cursor key for Grok Bot first.');
       host.assistant(request.text);
     }
     return { ok: true };

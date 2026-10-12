@@ -23,8 +23,7 @@ import { firmwareIncompatibilityMessage, hasCompatibleFirmware } from "./firmwar
 import { hasExtractedEvenHubFonts } from "./firmware-builder";
 import { isHaltedSessionPhase, resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
 import { WearRemote, type WearRemoteInputKind } from "./wear-remote";
-import { startAiChatDictation } from "../apps/ai-chat/ai-chat-app";
-import { startBotsListening } from "../apps/bots/bots-app";
+import { sendToBots, startBotsListening } from "../apps/bots/bots-app";
 import { grokBotHub } from "../assistant/grokbot/grokbot";
 
 /** Who a synthetic (non-firmware) input stands for. */
@@ -54,6 +53,7 @@ import { type GlanceEvent } from "./glance-state";
 import { isPreviewOnlyMode, isWelcomeSoundPending, setWelcomeSoundPending } from "../phone-ui/onboarding-state";
 import { beginRenderPass, endRenderPass } from "../util/render-freshness";
 import { voiceControlBridge } from "../native/voice-control";
+import { VoiceDraft } from "../ui/voice-draft";
 import { encodeBase64 } from "../util/base64";
 import { G2_LENS_HEIGHT, G2_LENS_WIDTH, GrayImage } from "../graphics/image";
 import { flattenPlanesWithDraws, planesFingerprint, type Plane } from "../graphics/plane";
@@ -66,7 +66,6 @@ import { updateGlassesPresence } from "./glasses-presence";
 import { timerEngine } from "../apps/timer/timer-engine";
 import { registerNavigateTools } from "../assistant/navigate-tools";
 import { registerRoamTools } from "../assistant/roam-tools";
-import { assistantBridge } from "../assistant/bridge-client";
 import { registerWindowTools } from "../assistant/window-tools";
 import { WorkerAppHost } from "../ui/shell/worker-window";
 import { ALL_APPS } from "../apps/all-apps";
@@ -77,7 +76,7 @@ import { loadPersistedOpenApps, savePersistedOpenApps } from "../ui/shell/open-a
 import { appViewportRect, isOnSwitcherEdge, sidebarStripVisible, type WindowHeightMode } from "../ui/shell/geometry";
 import { type LayerActions, type TextSettingsEditToggle } from "../ui/layers";
 import { type KeyboardInputSession } from "../ui/shell/keyboard-input";
-import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, assistantAllowProactiveSetting, assistantBackendSetting, assistantBridgeHostSetting, assistantBridgePortSetting, assistantBridgeTokenSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
+import { appSwitcherPositionSetting, statusBarPositionSetting, statusBarVisibilitySetting, windowBorderSetting, getBrightnessPreferences, displayModeSetting, navigateDisplayModeSetting, navigateVerticalPositionSetting, terminalDisplayModeSetting, terminalVerticalPositionSetting, elevenLabsApiKeySetting, getStringSettingById, openAiApiKeySetting, nightscoutApiTokenSetting, firmwareDebugFlagsSetting, lockScreenEnabledSetting, nightscoutSiteUrlSetting, onAnySettingChanged, previewColorSetting, ringConnectionModeSetting, saveVoiceRecordingsSetting, sonioxApiKeySetting, screenTimeoutSetting, screenTimeoutSettingToMs, suspendEvenHubWhenScreenOffSetting, verticalPositionSetting, voiceProviderSetting, wakeWordActionSetting, type ConfigSettingString } from "../ui/dashboard-settings";
 import { isIgnoringBatteryOptimizations, requestIgnoreBatteryOptimizations } from "../native/battery-optimization";
 import {
   getInstalledEvenHubAppById,
@@ -430,9 +429,9 @@ class DashboardController {
       openNotificationsWindow: () =>
         this.openInProcessAppInBackground(NOTIFICATIONS_WINDOW_ID, NOTIFICATIONS_SURFACE_ID, createNotificationsAppWindow),
       launchApp: (appId) => this.launchApp(appId),
-      startAiChatListening: () => startAiChatDictation(),
       botsReady: () => grokBotHub.configured,
       startBotsListening: () => startBotsListening(),
+      sendToBots: (text) => this.sendToBots(text),
       disconnect: () => this.disconnect(),
       onScreenStateChanged: (on) => {
         // Any wake of the regular UI replaces a showing Glanceboard.
@@ -467,16 +466,11 @@ class DashboardController {
       this.applyDisplayModeIfChanged();
       this.applyVerticalPositionIfChanged();
       this.applyAppLayoutsIfChanged();
-      this.syncAssistantBridgeIfChanged();
       this.syncLockScreenSettingIfChanged();
       // A Preview color change should show on the mirror at once, not at the
       // next composited frame (cheap: floor-limited, dedup'd on the Java side).
       this.schedulePreviewUpdate();
     });
-    // Connect to the external agent bridge at boot if configured; the
-    // connection stays up (with re-dial) so proactive tool calls work
-    // outside voice turns.
-    this.syncAssistantBridge();
     // The watch drives the same synthetic-input path as the phone UI's test
     // buttons, plus app/window/lock commands; it mirrors the state below.
     startRemoteInput({
@@ -485,8 +479,8 @@ class DashboardController {
       input: (gesture, source) => this.injectSyntheticRingInput(gesture, source),
       acceptsText: () => !!shell.foregroundWindow()?.receiveTextInput,
       text: (text, submit) => { if (!shell.isScreenOn()) shell.wake("window"); shell.sendTextToForegroundWindow(text, { submit }); this.requestShellRender(); },
-      assistantAvailable: () => shell.isAssistantAvailable(),
-      assistant: text => shell.sendToAssistant(text),
+      assistantAvailable: () => grokBotHub.configured,
+      assistant: text => this.sendToBots(text),
     });
     this.wearRemote = new WearRemote({
       apps: LAUNCHABLE_APPS,
@@ -505,42 +499,15 @@ class DashboardController {
         lastHeadsetBattery: this.lastHeadsetBattery,
       }),
       appendLog: (line) => this.appendLog(line),
+      sendToBots: (text) => this.sendToBots(text),
     });
   }
 
-  // Bridge settings changes re-dial the connection; unrelated setting changes
-  // must not, so the config it was last started with is tracked.
-  private lastBridgeConfigKey = "";
-
-  private bridgeConfigKey(): string {
-    return JSON.stringify([
-      assistantBackendSetting.get(),
-      assistantBridgeHostSetting.get().trim(),
-      assistantBridgePortSetting.get().trim(),
-      assistantBridgeTokenSetting.get(),
-    ]);
-  }
-
-  private syncAssistantBridgeIfChanged(): void {
-    if (this.bridgeConfigKey() === this.lastBridgeConfigKey) return;
-    this.syncAssistantBridge();
-  }
-
-  private syncAssistantBridge(): void {
-    this.lastBridgeConfigKey = this.bridgeConfigKey();
-    const host = assistantBridgeHostSetting.get().trim();
-    const token = assistantBridgeTokenSetting.get();
-    if (assistantBackendSetting.get() !== "external" || !host || !token) {
-      assistantBridge.stop();
-      return;
-    }
-    assistantBridge.configure({
-      host,
-      port: parseInt(assistantBridgePortSetting.get(), 10) || 8790,
-      token,
-      deviceName: "faceclaw",
-      allowProactive: () => assistantAllowProactiveSetting.get(),
-    });
+  /** Grok Bot in front (waking the screen), then the text sent from its chat. */
+  private sendToBots(text: string): void {
+    if (!shell.isScreenOn()) shell.wake("window");
+    void this.launchApp("bots").catch((error) => console.warn(`Grok Bot launch failed: ${error}`))
+      .finally(() => sendToBots(text));
   }
 
   // Vertical-position changes (and moving the app switcher between the left
@@ -2055,9 +2022,8 @@ class DashboardController {
       openAiApiKey: openAiApiKeySetting.get(),
       sonioxApiKey: sonioxApiKeySetting.get(),
       saveRecording: saveVoiceRecordingsSetting.get(),
-      // "My voice only" (Microphones app): verify command utterances
-      // against the enrolled wearer voice-print; non-matching speakers'
-      // finals are suppressed by the bridge.
+      // "My voice only" (Microphones app): other speakers reach the
+      // recognizer as silence.
       speakerVerification: wearerVerificationOptions() ?? undefined,
       // The Microphones app's processing config applies to every capture:
       // spectral noise suppression and the Sonic Radar listening beam.
@@ -2439,6 +2405,7 @@ class DashboardController {
           this.appendLog(`settings launch failed: ${this.formatError(error)}`);
         });
       },
+      launchApp: async () => { await this.launchApp(appId); },
       startTextSettingEdit: (settingId) => {
         const setting = getStringSettingById(settingId);
         if (setting) {
@@ -2449,6 +2416,10 @@ class DashboardController {
       },
       endTextSettingEdit: () => this.endTextSettingEdit(),
       startRawMic: (deliver) => this.startRawMicTap(deliver),
+      createVoiceDraft: (prepare, changed, send) => new VoiceDraft({
+        startVoiceCapture: (endpointing) => this.startVoiceCapture(endpointing),
+        stopVoiceCapture: () => this.stopVoiceCapture(),
+      }, prepare, changed, send),
     });
     this.appHosts.set(appId, host);
     return host;
@@ -2641,17 +2612,24 @@ class DashboardController {
     const { image, draws } = frameTimings.span(frameId, "flatten", () => flattenPlanesWithDraws(planes));
     const buffer = frameTimings.span(frameId, "to8bpp", () => image.to8bppBuffer());
     const preparedDraws = frameTimings.span(frameId, "prepareFrameDraws", () => prepareFrameDraws(draws));
-    await frameTimings.spanAsync(frameId, "submit", () =>
-      display.submitSurfaceFrame(
-        surfaceId,
-        buffer,
-        { x: 0, y: 0, width: image.width, height: image.height },
-        fingerprint,
-        paintMs,
-        frameId,
-        preparedDraws,
-      ),
-    );
+    try {
+      await frameTimings.spanAsync(frameId, "submit", () =>
+        display.submitSurfaceFrame(
+          surfaceId,
+          buffer,
+          { x: 0, y: 0, width: image.width, height: image.height },
+          fingerprint,
+          paintMs,
+          frameId,
+          preparedDraws,
+        ),
+      );
+    } catch (error) {
+      // At connect the display is published before its window surfaces are
+      // registered; configuring them renders each window again.
+      if (!String(error).includes(`unknown surface ${surfaceId}`)) throw error;
+      frameTimings.finishFrame(frameId, "discarded: surface not registered yet");
+    }
   }
 
   /** Flip a window surface's compositor visibility; fire-and-forget. */

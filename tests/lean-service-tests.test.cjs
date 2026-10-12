@@ -6,7 +6,8 @@ function serviceEnv() {
   const timers = new Map(), messages = [];
   const load = loader({ setTimeout(cb, ms) { timers.set(++next, { cb, ms }); return next; }, clearTimeout(id) { timers.delete(id); } }, {
     '../apps/paseo/paseo-polyfills': {}, '@nativescript/core': {},
-    '../native/socket': { openSocket(_url, l) { listener = l; return { sendText: text => messages.push(text), close() { closed++; } }; } },
+    '../native/socket': { openSocket(_url, l) { listener = l; return { sendText: text => messages.push(text), sendBinary: bytes => messages.push(bytes), close() { closed++; } }; } },
+    '../native/java-direct-buffer': { uint8ArrayToJavaBytes: bytes => bytes },
     '../apps/paseo/paseo-socket': {}, '../apps/paseo/vendor/paseo-transport': {},
     '../apps/paseo/paseo-store': { loadPairing: () => ({ kind: 'relay' }) },
     '../apps/paseo/paseo-client': { PaseoDaemonClient: class {
@@ -23,7 +24,8 @@ function serviceEnv() {
 test('Soniox test waits for authenticated finished, closes the short v5 session and releases timers', async () => {
   const h = serviceEnv(); const pending = h.api.testApiKey('soniox', 'fixture');
   h.listener().onOpen(); assert.equal(JSON.parse(h.messages[0]).model, 'stt-rt-v5');
-  h.tick(1000); assert.equal(h.messages[1], '');
+  assert.equal(h.messages[1].length, 3200, 'Soniox needs some audio before the end of stream');
+  h.tick(1000); assert.equal(h.messages[2], '');
   h.listener().onTextMessage('{"finished":true}'); const result = await pending;
   assert.equal(result.status.state, 'ok'); assert.equal(h.closed(), 1); assert.equal(h.timers.size, 0);
 });

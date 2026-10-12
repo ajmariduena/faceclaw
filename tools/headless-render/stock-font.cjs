@@ -13,9 +13,12 @@ function extract(firmwarePath) {
   const expected = load('app/g2/firmware/cfw-patches.ts').CFW_PATCH_SET.baseSha256;
   const actual = crypto.createHash('sha256').update(firmware).digest('hex');
   if (actual !== expected) throw new Error('Firmware SHA-256 does not match the fork base');
-  const asset = load('app/g2/firmware-fonts.ts').extractEvenHubFontAsset(firmware.buffer.slice(firmware.byteOffset, firmware.byteOffset + firmware.byteLength));
+  const fonts = load('app/g2/firmware-fonts.ts');
+  const buffer = firmware.buffer.slice(firmware.byteOffset, firmware.byteOffset + firmware.byteLength);
+  const asset = fonts.extractEvenHubFontAsset(buffer);
   fs.mkdirSync(path.dirname(assetPath), { recursive: true });
   fs.writeFileSync(assetPath, JSON.stringify(asset));
+  fs.writeFileSync(path.join(path.dirname(assetPath), fonts.STOCK_UI_FONT_FILENAME), JSON.stringify(fonts.extractStockUiFontAsset(buffer)));
   return { path: assetPath, sha256: actual, glyphs: Object.keys(asset.glyphs).length };
 }
 

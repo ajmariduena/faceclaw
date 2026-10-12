@@ -1111,16 +1111,30 @@ internal fun GlassesSessionCore.updateChargingModeLocked(charging: Boolean, batt
 
 /**
  * Leave charging mode, whether a battery poll or putting the glasses on
- * (they can't be worn in the case) said charging is over. The rebuild goes
- * through the normal reconnect loop.
+ * (they can't be worn in the case) said charging is over. The arms stayed
+ * connected through charging, so the connect sequence reruns on the live
+ * links: no GATT teardown and no backoff. A link that did drop fails that
+ * sequence and takes the normal transport-failure path.
  */
 internal fun GlassesSessionCore.endChargingModeLocked(why: String) {
     if (!chargingMode) {
         return
     }
     chargingMode = false
-    logLine("$why; reconnecting")
-    handleTransportFailure("charging ended")
+    logLine("$why; restarting the session on the existing links")
+    sessionReady = false
+    fixedLayoutCreated = false
+    startupProbePending = false
+    shutdownRequested = false
+    imageRetryAfterMs = 0
+    displayedFingerprint = ""
+    faceclawWakePendingNonce = -1
+    lastFaceclawWakeLeaseQueuedAtMs = 0
+    faceclawWakeControlSentCount = 0
+    clearAllMessagesLocked("charging ended")
+    reconnectAfterMs = 0
+    consecutiveReconnects = 0
+    interruptibleSleep.interrupt()
 }
 
 /**

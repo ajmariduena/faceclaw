@@ -17,7 +17,7 @@ function buzz(play: (payload: Uint8Array) => Promise<void> | void): void {
 
 const botsApp: AppDefinition = {
   appId: "bots",
-  title: "Bots",
+  title: "Grok Bot",
   icon: "sparkles",
   boot: (ctx) => {
     grokBotHub.onReply(() => {

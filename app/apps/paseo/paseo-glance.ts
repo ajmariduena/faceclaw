@@ -1,7 +1,6 @@
 /**
- * What the home's Paseo card shows: a verdict ("1 needs you", "Nothing needs
- * you", "All done"), the agent that justifies it, and a dim ledger of the
- * other buckets (research/paseo-card-fable.md). The Paseo worker builds it
+ * What the home's Paseo card shows: how many agents are to review, working,
+ * in background and done, plus the newest agents. The Paseo worker builds it
  * from its live connection and publishes it through the host's worker-state
  * channel; the home paints it on the main thread. Plain JSON (it crosses
  * postMessage) with timestamps rather than formatted ages.
@@ -14,9 +13,6 @@ export const PASEO_GLANCE_STATE_KEY = "paseo:glance";
 
 /** How many updates the snapshot carries; the first is the card's lead agent. */
 export const GLANCE_UPDATES = 2;
-
-/** Buckets that make the card say the user should go in; a tap then opens that agent. */
-export const URGENT_BUCKETS: readonly Bucket[] = ["needs", "failed", "review"];
 
 export type BucketCounts = Record<Bucket, number>;
 
@@ -49,7 +45,7 @@ export type PaseoGlanceSnapshot = {
 };
 
 export function emptyCounts(): BucketCounts {
-  return { needs: 0, failed: 0, review: 0, working: 0, done: 0 };
+  return { needs: 0, failed: 0, review: 0, working: 0, background: 0, done: 0 };
 }
 
 export function buildGlanceSnapshot(
@@ -90,54 +86,30 @@ export function buildGlanceSnapshot(
   };
 }
 
-const LEDGER_WORDS: Record<Bucket, string> = { needs: "needs you", failed: "failed", review: "to review", working: "working", done: "done" };
-
-function ledger(counts: BucketCounts, skip: Bucket | null): string {
-  return BUCKET_ORDER.filter((bucket) => counts[bucket] > 0 && bucket !== skip)
-    .map((bucket) => `${counts[bucket]} ${LEDGER_WORDS[bucket]}`).join(" · ");
-}
-
-function ago(thenMs: number, nowMs: number): string {
-  const age = formatAge(thenMs, nowMs);
-  return age === "now" ? "just now" : `${age} ago`;
-}
-
-export type GlanceVerdict = {
-  /** White, first row. */
-  verdict: string;
-  /** The agent that justifies the verdict (title dim, line white). */
-  lead: PaseoGlanceUpdate | null;
-  /** Dim line under the verdict when there is no lead ("Last seen 29 min ago"). */
-  note: string;
-  /** Dim, last row. */
-  ledger: string;
+export type GlanceCounts = {
+  /** Needs input, failed and ready to review together; `needsYou` counts the first two. */
+  review: number;
+  needsYou: number;
+  working: number;
+  background: number;
+  done: number;
+  /** The Mac dropped: these are the counts it had when last seen. */
+  stale: boolean;
 };
 
-/** The connected or unreachable card; null when the card shows a centred status instead (not paired, connecting). */
-export function glanceVerdict(snapshot: PaseoGlanceSnapshot | null | undefined, nowMs: number): GlanceVerdict | null {
+/** The home card's four counts; null when it shows a centred status instead (not paired, connecting). */
+export function glanceCounts(snapshot: PaseoGlanceSnapshot | null | undefined): GlanceCounts | null {
   if (!snapshot?.configured) return null;
-  if (snapshot.status) {
-    if (typeof snapshot.lastSeenMs !== "number") return null;
-    const was = snapshot.lastCounts ? ledger(snapshot.lastCounts, "done") : "";
-    return { verdict: snapshot.status, lead: null, note: `Last seen ${ago(snapshot.lastSeenMs, nowMs)}`, ledger: was ? `Was: ${was}` : "" };
-  }
-  const counts = snapshot.counts ?? { ...emptyCounts(), needs: snapshot.needs, working: snapshot.working };
-  const lead = snapshot.updates[0] ?? null;
-  if (counts.needs) return { verdict: `${counts.needs} need${counts.needs === 1 ? "s" : ""} you`, lead, note: "", ledger: ledger(counts, "needs") };
-  if (counts.failed) return { verdict: `${counts.failed} failed`, lead, note: "", ledger: ledger(counts, "failed") };
-  if (counts.review) return { verdict: `${counts.review} to review`, lead, note: "", ledger: ledger(counts, "review") };
-  if (counts.working) return { verdict: "Nothing needs you", lead, note: "", ledger: ledger(counts, null) };
-  if (counts.done && lead) {
-    const age = formatAge(lead.activityMs, nowMs);
-    return { verdict: "All done", lead, note: "", ledger: `${counts.done} finished · ${age === "now" ? "just now" : `last ${age}`}` };
-  }
-  return { verdict: lead ? "All quiet" : "No agents", lead: null, note: "", ledger: "" };
-}
-
-/** The agent a tap on the card should open: the lead, when the verdict asks the user to go in. */
-export function glanceUrgentAgent(snapshot: PaseoGlanceSnapshot | null | undefined): string | null {
-  const lead = snapshot?.status ? null : snapshot?.updates[0];
-  return lead && URGENT_BUCKETS.includes(lead.bucket) ? lead.agentId : null;
+  const counts = snapshot.status ? snapshot.lastCounts : snapshot.counts;
+  if (!counts) return null;
+  return {
+    review: counts.needs + counts.failed + counts.review,
+    needsYou: counts.needs + counts.failed,
+    working: counts.working,
+    background: counts.background ?? 0,
+    done: counts.done,
+    stale: Boolean(snapshot.status),
+  };
 }
 
 /** "Fix reconnect BLE · 1 min" */

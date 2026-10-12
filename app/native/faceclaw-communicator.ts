@@ -286,7 +286,7 @@ export class FaceclawCommunicatorBridge {
    * content nor leaves a change waiting for a later composite (it composites
    * itself), so having it queued does not make isSurfaceCurrent answer false.
    */
-  private enqueueJavaCall<T>(operation: () => T, inlineWhenIdle = false, preservesSurfaces = false): Promise<T> {
+  private enqueueJavaCall<T>(operation: () => T | Promise<T>, inlineWhenIdle = false, preservesSurfaces = false): Promise<T> {
     if (inlineWhenIdle && this.queuedJavaCalls === 0) {
       try {
         return Promise.resolve(operation());
@@ -299,13 +299,29 @@ export class FaceclawCommunicatorBridge {
     const run = () =>
       new Promise<T>((resolve, reject) => {
         setTimeout(() => {
-          this.queuedJavaCalls--;
-          if (!preservesSurfaces) this.queuedSurfaceChanges--;
+          const settle = () => {
+            this.queuedJavaCalls--;
+            if (!preservesSurfaces) this.queuedSurfaceChanges--;
+          };
+          let result: T | Promise<T>;
           try {
-            resolve(operation());
+            result = operation();
           } catch (error) {
+            settle();
             reject(error);
+            return;
           }
+          if (!(result instanceof Promise)) {
+            settle();
+            resolve(result);
+            return;
+          }
+          // An off-thread call still counts as queued until it answers, so no
+          // inline call overtakes it.
+          result.then(
+            (value) => { settle(); resolve(value); },
+            (error: unknown) => { settle(); reject(error instanceof Error ? error : new Error(String(error))); },
+          );
         }, 0);
       });
 
@@ -706,7 +722,7 @@ export class FaceclawCommunicatorBridge {
    * sent after the layout and image path have been recreated.
    */
   async resumeEvenHubSession(): Promise<boolean> {
-    return this.enqueueJavaCall(() => Boolean(this.communicator.resumeEvenHubSession()));
+    return this.enqueueJavaCall(() => booleanResult((listener) => this.communicator.resumeEvenHubSessionAsync(listener)));
   }
 
   /**
@@ -724,8 +740,9 @@ export class FaceclawCommunicatorBridge {
    * are visible. CFW's deferred-dashboard READY is emitted from this barrier.
    */
   async awaitEvenHubSessionReady(timeoutMs: number): Promise<boolean> {
+    const waitMs = Math.round(nonNegativeNumber(timeoutMs));
     return this.enqueueJavaCall(() =>
-      Boolean(this.communicator.awaitEvenHubSessionReady(Math.round(nonNegativeNumber(timeoutMs)))),
+      booleanResult((listener) => this.communicator.awaitEvenHubSessionReadyAsync(waitMs, listener)),
     );
   }
 
@@ -744,4 +761,14 @@ export class FaceclawCommunicatorBridge {
       this.communicator.close();
     });
   }
+}
+
+/** Run a Kotlin call that answers on the main Looper through a FaceclawBooleanResultListener. */
+function booleanResult(start: (listener: unknown) => void): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    start(new com.faceclaw.app.FaceclawBooleanResultListener({
+      onResult: (value: boolean) => resolve(Boolean(value)),
+      onError: (message: string) => reject(new Error(String(message))),
+    }));
+  });
 }

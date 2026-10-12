@@ -2,10 +2,11 @@ import * as graphics from "../../graphics/image";
 import type { GrayImage } from "../../graphics/image";
 import { HOME_CARDS, homeColumnState, emptyCardStatus, clockTime, type HomeBattery, type HomeCalendar } from "./home-model";
 import { renderIcon, type IconName } from "../../graphics/icons";
-import { paintHomeColumn } from "./column-painter";
+import { dotNumberWidth, paintDotNumber, paintHomeColumn } from "./column-painter";
 import type { HomeWeatherReading } from "./home-weather";
-import { glanceEmptyStatus, glanceVerdict, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
+import { glanceCounts, glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import type { BotsGlance } from "../bots/bots-model";
+import { BOT_MARK_WIDTH, botMark } from "../bots/bot-mark";
 
 export type HomeFace = {
   readonly lineHeight: number;
@@ -20,6 +21,8 @@ export type HomeSnapshot = {
   bots?: BotsGlance | null;
   /** A Soniox key is stored, so Translate can start. */
   translateReady?: boolean;
+  /** Every key Converse needs is stored (missingConverseKey), so it can start. */
+  converseReady?: boolean;
   /** Ring and glasses levels from the shell; null (or absent) while unknown. */
   battery?: HomeBattery;
   /** The last Open-Meteo reading; null (or absent) hides the complication. */
@@ -28,7 +31,9 @@ export type HomeSnapshot = {
 
 export const HOME_DOTS_TOP = 115;
 const DIM = 153;
+const FAINT = 85;
 const CARD_TEXT_WIDTH = 278;
+const BOT_LINE_WIDTH = 270;
 
 function icon(image: GrayImage, name: IconName, x: number, y: number, size = 24) {
   const rendered = renderIcon(name, size);
@@ -103,40 +108,33 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
         text(20, y + 54, time, DIM);
       } else text(20, y + 27, time, DIM);
     });
-  } else if (card.id === "paseo" && glanceVerdict(data.paseo, data.now.getTime())) {
-    // Verdict, the agent behind it (title dim, line white), and the ledger pinned to the last row.
-    const paseo = glanceVerdict(data.paseo, data.now.getTime())!;
-    const pitch = Math.max(27, face.lineHeight + 4);
-    const rows: number[] = [];
-    for (let y = 62; y + face.lineHeight <= 254; y += pitch) rows.push(y);
+  } else if (card.id === "paseo" && glanceCounts(data.paseo)) {
+    // Four counts in a 2×2 grid; the dot after Review means an agent is waiting on an answer.
+    const counts = glanceCounts(data.paseo)!;
     header();
-    text(20, rows[0]!, paseo.verdict);
-    if (paseo.lead) {
-      text(20, rows[1]!, paseo.lead.title, DIM);
-      const max = Math.min(2, rows.length - 3);
-      const lines = wrapped(face, paseo.lead.line, CARD_TEXT_WIDTH, max + 1);
-      if (lines.length > max) { lines.length = max; lines[max - 1] = `${lines[max - 1]}…`; }
-      lines.forEach((line, i) => text(20, rows[2 + i]!, line));
-    } else if (paseo.note) text(20, rows[1]!, paseo.note, DIM);
-    if (paseo.ledger) text(20, rows[rows.length - 1]!, paseo.ledger, DIM);
-  } else if (card.id === "bots" && data.bots?.updates.length) {
-    const pitch = Math.max(27, face.lineHeight + 4);
-    const fits = (y: number) => y + face.lineHeight <= 254;
-    header();
-    let y = 62;
-    for (const update of data.bots.updates) {
-      if (!fits(y + pitch)) break;
-      text(20, y, update.who, DIM);
-      y += pitch;
-      const lines = wrapped(face, update.line, CARD_TEXT_WIDTH, 3);
-      if (lines.length > 2) { lines.length = 2; lines[1] = `${lines[1]}…`; }
-      for (const line of lines) {
-        if (!fits(y)) break;
-        text(20, y, line);
-        y += pitch;
-      }
-      y += 14;
-    }
+    if (counts.stale) face.drawText(panel, 298 - face.measureLine("Offline"), 16, "Offline", DIM);
+    const cells: [string, number, boolean][] = [["Review", counts.review, counts.needsYou > 0], ["Working", counts.working, false],
+      ["Background", counts.background, false], ["Done", counts.done, false]];
+    cells.forEach(([label, n, needsYou], i) => {
+      const cx = 20 + (i % 2) * 139 + 70, y = 66 + Math.floor(i / 2) * 96;
+      paintDotNumber(panel, n, Math.round(cx - dotNumberWidth(n, 5) / 2), y, 5, n ? (counts.stale ? DIM : 255) : FAINT);
+      const line = fitted(face, label, 139);
+      const width = face.measureLine(line);
+      face.drawText(panel, Math.round(cx - width / 2), y + 46, line, n ? DIM : FAINT);
+      if (needsYou) panel.fillRoundedRect(Math.round(cx + width / 2) + 6, y + 46 + Math.round(face.lineHeight / 2) - 3, 6, 6, 255, 3);
+    });
+  } else if (card.id === "bots") {
+    // The bot's own mark, its face following its state, over its last reply.
+    const bots = data.bots;
+    panel.bitBlt(botMark(bots?.face ?? "idle"), Math.round((318 - BOT_MARK_WIDTH) / 2), 14);
+    if (bots?.line) {
+      const pitch = Math.max(27, face.lineHeight + 4);
+      const lines = wrapped(face, bots.line, BOT_LINE_WIDTH, 4);
+      if (lines.length > 3) { lines.length = 3; lines[2] = fitted(face, `${lines[2]}…`, BOT_LINE_WIDTH); }
+      const top = 124 + Math.round((3 - lines.length) * pitch / 2);
+      lines.forEach((line, i) => centered(top + i * pitch, line, bots.lineDim ? DIM : 255));
+      centered(222, bots.age, DIM);
+    } else centered(150, bots?.status ?? emptyCardStatus(card.id), DIM);
   } else if (card.id === "translate") {
     glance(() => {
       const left = "ES ", right = " EN";
@@ -146,10 +144,9 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
       face.drawText(panel, x + face.measureLine(left) + 20, 136, right, 255);
     }, data.translateReady ? "Ready" : "Setup required");
   } else if (card.id === "converse") {
-    glance(() => centered(136, "Live facts · ES/EN"), emptyCardStatus(card.id));
+    glance(() => centered(136, "Live facts · ES/EN"), data.converseReady ? "Ready" : "Setup required");
   } else generic(card.id === "calendar" ? data.calendar.status ?? emptyCardStatus(card.id)
-    : card.id === "paseo" ? glanceEmptyStatus(data.paseo)
-    : card.id === "bots" ? data.bots?.status ?? emptyCardStatus(card.id) : emptyCardStatus(card.id));
+    : card.id === "paseo" ? glanceEmptyStatus(data.paseo) : emptyCardStatus(card.id));
 
   image.bitBlt(paintHomeColumn(homeColumnState(data.now, data.battery, data.weather, data.paseo, data.calendar), face), 0, 0);
   image.bitBlt(panel.withDrawsBaked(), 230, 14);

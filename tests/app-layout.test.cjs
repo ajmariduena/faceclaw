@@ -562,15 +562,15 @@ test('Navigate resize preserves its active route and window, and remeasures an o
   let menuSize;
   const window = { windowId: 'test', viewportWidth: 640, viewportHeight: 452,
     menu: { resize: (size) => { menuSize = size; } }, lastSubmittedFingerprint: 'old' };
-  const route = { destination: 'Home' };
+  const target = { title: 'Casa' };
   const resize = resizeHandler('app/apps/navigate/navigate-app.worker.ts', {
-    window, route, phase: 'navigating', render: () => { paints++; },
+    window, target, phase: 'guiding', render: () => { paints++; },
   });
   resize({ width: 576, height: 260 });
   assert.equal(window.viewportHeight, 260);
   assert.equal(window.viewportWidth, 576);
   assert.equal(window.lastSubmittedFingerprint, '');
-  assert.equal(route.destination, 'Home');
+  assert.equal(target.title, 'Casa');
   assert.deepEqual(menuSize, { width: 576, height: 260 });
   resize({ width: 576, height: 260 });
   assert.equal(paints, 1);

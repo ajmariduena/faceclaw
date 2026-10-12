@@ -353,6 +353,8 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
 
     private var blanked: Boolean = false
 
+    private var lastShown: Composite? = null
+
     /** See setUnderlayDim: surfaces with zOrder below this are dimmed by underlayDim/256. */
     private var underlayDimBelowZOrder: Int = Int.MIN_VALUE
 
@@ -514,8 +516,9 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
     }
 
     /**
-     * While blanked (screen off), composites are all-zero regardless of surface content; retained
-     * state is untouched, so unblanking restores the screen without asking sources to repaint.
+     * While blanked (screen off), preview pixels are all-zero and the wire frame stays the last
+     * shown one regardless of surface changes; retained state is untouched, so unblanking restores
+     * the screen without asking sources to repaint.
      */
     fun setBlanked(blanked: Boolean): Unit {
         lock.withLock {
@@ -691,7 +694,7 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
             }
             val seq = nextCompositeSeq
             val changed = changedSinceComposite
-            val result = compositeLocked(includePreview = true)
+            val result = compositeLocked(includePreview = true, keep = false)
             nextCompositeSeq = seq
             changedSinceComposite = changed
             return result
@@ -713,21 +716,24 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
         return gray
     }
 
-    private fun compositeLocked(includePreview: Boolean = includePreviewInFrames): Composite {
+    private fun compositeLocked(includePreview: Boolean = includePreviewInFrames, keep: Boolean = true): Composite {
         changedSinceComposite = false
         var gray: ByteArray = ByteArray((screenWidth * screenHeight))
         if (blanked) {
             animatedPreview?.player?.stop()
             animatedPreview = null
             previewKey = null
+            // The firmware blacks the panel while hidden and recomposes the whole staged screen on
+            // the wake PRESENT, so keeping the shown pixels makes waking send only the sleep delta.
+            val shown = lastShown?.takeIf { it.width == screenWidth && it.height == screenHeight }
             return Composite(
                 gray,
                 screenWidth,
                 screenHeight,
-                ((("blanked:" + screenWidth) + "x") + screenHeight),
+                "blanked:" + (shown?.fingerprint ?: "${screenWidth}x$screenHeight"),
                 nextCompositeSeq++,
-                NO_DRAWS,
-            )
+                shown?.draws ?: NO_DRAWS,
+            ).also { if (shown != null) { it.screenGray = shown.screenGray; it.shellScene = shown.shellScene } }
         }
         var ordered: MutableList<Surface> = ArrayList(surfaces.values)
         ordered.sortWith(compareBy<Surface> { it.zOrder }.thenBy { it.id })
@@ -807,7 +813,10 @@ class SurfaceCompositor @JvmOverloads constructor(private val includePreviewInFr
             gray
         }
         return Composite(preview, screenWidth, screenHeight, sceneKey,
-            nextCompositeSeq++, draws.toTypedArray()).also { it.screenGray = gray; it.shellScene = scene }
+            nextCompositeSeq++, draws.toTypedArray()).also {
+            it.screenGray = gray; it.shellScene = scene
+            if (keep) lastShown = it
+        }
     }
 
     private fun placedSelectionsLocked(surface: Surface): List<RetainedDrawing> {

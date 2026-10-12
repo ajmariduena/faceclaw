@@ -32,10 +32,16 @@ function fakeBackend() {
         remaining() {
           return this.limitValue - this.position;
         },
-        get(dst, offset, length) {
+        get(dst, offset = 0, length = dst.length) {
           if (length > this.remaining()) throw new Error("BufferUnderflowException");
           dst.set(memory.subarray(this.position, this.position + length), offset);
           this.position += length;
+          return this;
+        },
+        put(src) {
+          if (src.length > this.remaining()) throw new Error("BufferOverflowException");
+          memory.set(Uint8Array.from(src, (value) => value & 0xff), this.position);
+          this.position += src.length;
           return this;
         },
       };
@@ -119,4 +125,22 @@ test("copyToJavaByteBuffer gives each crossing its own exact-length buffer", () 
   assert.deepEqual(consume(first, 20), whole.slice(10, 30));
   assert.deepEqual(consume(second, 7), frame(7, 1));
   assert.equal(consume(copyToJavaByteBuffer(new Uint8Array(0), backend), 0).length, 0);
+});
+
+test("Java byte[] crossings copy in bulk both ways and survive the next call", () => {
+  const backend = fakeBackend();
+  const pool = new JavaDirectBuffer(0, backend);
+  Array.create = (_type, length) => new Int8Array(length);
+  try {
+    const signed = Int8Array.from([-128, -1, 0, 1, 127]);
+    const first = pool.copyFromJava(signed);
+    assert.deepEqual([...first], [128, 255, 0, 1, 127]);
+    pool.copyFromJava(Int8Array.from([9, 9, 9]));
+    assert.deepEqual([...first], [128, 255, 0, 1, 127]);
+    assert.deepEqual([...pool.copyToJavaArray(Uint8Array.from([200, 5]))], [-56, 5]);
+    assert.equal(pool.copyFromJava(null).length, 0);
+    assert.equal(backend.allocated.length, 1);
+  } finally {
+    delete Array.create;
+  }
 });

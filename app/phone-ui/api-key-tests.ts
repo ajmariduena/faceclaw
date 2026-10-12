@@ -1,6 +1,7 @@
 import "../apps/paseo/paseo-polyfills";
 import { Http } from "@nativescript/core";
 import { openSocket } from "../native/socket";
+import { uint8ArrayToJavaBytes } from "../native/java-direct-buffer";
 import { apiError, resetApiStatus, testHttpApiKey, type ApiKeyStatus, type ApiService } from "../ui/api-key-status";
 import { PaseoDaemonClient } from "../apps/paseo/paseo-client";
 import { createGlassesWebSocket } from "../apps/paseo/paseo-socket";
@@ -42,6 +43,8 @@ function testSoniox(key: string): Promise<string> {
         onOpen() {
           try {
             socket?.sendText(JSON.stringify({ api_key: key, model: "stt-rt-v5", audio_format: "pcm_s16le", sample_rate: 16000, num_channels: 1 }));
+            // Soniox rejects a session that ends without audio (400 "No audio received"); 100 ms of silence.
+            socket?.sendBinary(uint8ArrayToJavaBytes(new Uint8Array(3200)));
             finishTimer = setTimeout(() => { try { socket?.sendText(""); } catch { finish(); } }, 1000);
           } catch { finish(); }
         },

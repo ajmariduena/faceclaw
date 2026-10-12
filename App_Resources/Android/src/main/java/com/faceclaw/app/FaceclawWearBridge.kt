@@ -7,6 +7,8 @@ import android.util.Log
 
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.CapabilityInfo
 import com.google.android.gms.wearable.DataMap
@@ -111,7 +113,7 @@ class FaceclawWearBridge private constructor(context: Context) {
     }
 
     private val context: Context
-    private val available: Boolean
+    @Volatile private var available: Boolean
     private val lock = Any()
     private var listener: FaceclawWearListener? = null
     private var listenerHandler: Handler? = null
@@ -150,6 +152,16 @@ class FaceclawWearBridge private constructor(context: Context) {
         if (!available) {
             Log.i(TAG, "Google Play services unavailable; watch integration disabled")
         }
+    }
+
+    /** Play services can be present without the Wearable API (no Wear OS app); stop calling it then. */
+    private fun onWearableFailure(what: String, error: Exception) {
+        if (error is ApiException && error.statusCode == CommonStatusCodes.API_NOT_CONNECTED) {
+            if (available) Log.i(TAG, "Wearable API unavailable on this phone; watch integration disabled")
+            available = false
+            return
+        }
+        Log.w(TAG, what, error)
     }
 
     /** Whether the Wearable Data Layer can be used on this phone at all. */
@@ -210,7 +222,7 @@ class FaceclawWearBridge private constructor(context: Context) {
             Wearable.getCapabilityClient(context)
                 .getCapability(CAPABILITY_WATCH, CapabilityClient.FILTER_REACHABLE)
                 .addOnSuccessListener { info -> updateWatchNodes(info) }
-                .addOnFailureListener { error -> Log.w(TAG, "capability query failed", error) }
+                .addOnFailureListener { error -> onWearableFailure("capability query failed", error) }
         } catch (error: Throwable) {
             Log.w(TAG, "capability query failed", error)
         }
@@ -255,7 +267,7 @@ class FaceclawWearBridge private constructor(context: Context) {
             val put: PutDataRequest = request.asPutDataRequest().setUrgent()
             Wearable.getDataClient(context)
                 .putDataItem(put)
-                .addOnFailureListener { error -> Log.w(TAG, "state publish failed", error) }
+                .addOnFailureListener { error -> onWearableFailure("state publish failed", error) }
         } catch (error: Throwable) {
             Log.w(TAG, "state publish failed", error)
         }
@@ -279,7 +291,7 @@ class FaceclawWearBridge private constructor(context: Context) {
                             sendToNode(node.id, path, json)
                         }
                     }
-                    .addOnFailureListener { error -> Log.w(TAG, "capability query failed", error) }
+                    .addOnFailureListener { error -> onWearableFailure("capability query failed", error) }
             } catch (error: Throwable) {
                 Log.w(TAG, "capability query failed", error)
             }
@@ -297,7 +309,7 @@ class FaceclawWearBridge private constructor(context: Context) {
             val payload = (json ?: "{}").toByteArray(StandardCharsets.UTF_8)
             Wearable.getMessageClient(context)
                 .sendMessage(nodeId, path, payload)
-                .addOnFailureListener { error -> Log.w(TAG, "send $path to $nodeId failed", error) }
+                .addOnFailureListener { error -> onWearableFailure("send $path to $nodeId failed", error) }
         } catch (error: Throwable) {
             Log.w(TAG, "send $path failed", error)
         }

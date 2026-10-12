@@ -6,6 +6,7 @@ import { sonioxApiKeySetting } from "../../ui/dashboard-settings";
 import { voiceActivity } from "../../ui/shell/voice-activity";
 import { activeCommunicator } from "../evenhub/mic-router";
 import { TranslationTranscript } from "./translate-model";
+import { WearerVoice } from "./wearer-voice";
 
 export type TranslateState =
   | { kind: "connecting" }
@@ -19,6 +20,8 @@ export type TranslateState =
 
 export const SILENCE_AUTO_STOP_MS = 3 * 60_000;
 const TRANSLATION = { type: "two_way", language_a: "es", language_b: "en" } as const;
+/** Shared so a reopened Translate already knows how loud the wearer is. */
+const wearerVoice = new WearerVoice();
 
 /**
  * One two-way ES⇄EN translation: the glasses mic through the shared raw-PCM
@@ -28,7 +31,7 @@ const TRANSLATION = { type: "two_way", language_a: "es", language_b: "en" } as c
  * so nothing is billed or captured while paused.
  */
 export class TranslateSession {
-  readonly transcript = new TranslationTranscript();
+  readonly transcript = new TranslationTranscript(wearerVoice);
   state: TranslateState = { kind: "paused" };
   private client: CloudSttClient | null = null;
   private draining: CloudSttClient | null = null;
@@ -49,8 +52,7 @@ export class TranslateSession {
     if (!communicator) return this.setState({ kind: "no-glasses" });
     this.draining?.stop();
     this.draining = null;
-    this.transcript.dropLive();
-    this.transcript.close();
+    this.transcript.newSession();
     this.offPcm = voiceControlBridge.onRawPcm((pcm) => this.client?.acceptPcm(pcm));
     if (!voiceControlBridge.startRawCapture({ communicator })) {
       this.releaseMic();
@@ -63,6 +65,7 @@ export class TranslateSession {
     const options: SonioxSttOptions = {
       apiKey,
       translation: TRANSLATION,
+      measureLoudness: true,
       onTokens: (tokens) => {
         // A paused session still delivers the finals of what was already said.
         if (client !== this.client && client !== this.draining) return;
@@ -107,9 +110,7 @@ export class TranslateSession {
   private handleStatus(status: string): void {
     if (status.startsWith("Listening")) this.setState({ kind: "translating" });
     else if (status.startsWith("Connection lost")) {
-      // The reconnect is a new Soniox session: its tokens start a new segment.
-      this.transcript.dropLive();
-      this.transcript.close();
+      this.transcript.newSession();
       this.setState({ kind: "reconnecting" });
     }
   }

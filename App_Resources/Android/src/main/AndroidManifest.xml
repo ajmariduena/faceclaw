@@ -111,6 +111,10 @@
 			android:enabled="true"
 			android:exported="false"
 			android:foregroundServiceType="connectedDevice|microphone|location" />
+		<!-- Google Navigation SDK binds here to push its turn-by-turn feed; see FaceclawGoogleNav. -->
+		<service
+			android:name="com.faceclaw.app.FaceclawNavInfoService"
+			android:exported="false" />
 		<service
 			android:name="com.faceclaw.app.FaceclawMediaNotificationListenerService"
 			android:enabled="true"

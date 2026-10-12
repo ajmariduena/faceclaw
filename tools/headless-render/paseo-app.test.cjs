@@ -87,20 +87,19 @@ function tracing(face) {
   };
 }
 
-test('home card: two latest updates, dim agent line and white summary, six dots', async () => {
+test('home card: four counts in a grid, six dots', async () => {
   const face = await facePromise;
   const clockFont = TtfFont.load(adapter.fontPath, 80);
   const clockFace = { lineHeight: clockFont.lineHeight, measureLine: (t) => clockFont.measureText(t), drawText: (...a) => clockFont.drawText(...a) };
   const events = [{ title: 'Daily con el equipo', startMs: new Date(2026, 9, 9, 9, 30).getTime(), endMs: new Date(2026, 9, 9, 10, 0).getTime(), allDay: false }];
   const lines = { a1: '¿Apruebas correr los tests de BLE?', a4: 'Estoy midiendo la latencia entre workspaces.' };
   const paseo = buildGlanceSnapshot({ configured: true, connected: true, status: '' }, AGENTS, (a) => lines[a.id] ?? 'Listo para fusionar a producción.');
-  assert.equal(JSON.stringify(paseo.updates.map((u) => u.agentId)), JSON.stringify(['a1', 'a4']));
   const { face: traced, draws } = tracing(face);
-  const home = paintHome(1, { now: NOW, calendar: calendarCardState(true, events, NOW.getTime()), music: null, notifications: [], paseo }, traced, clockFace);
+  const home = paintHome(0, { now: NOW, calendar: calendarCardState(true, events, NOW.getTime()), music: null, notifications: [], paseo }, traced, clockFace);
   save(home, 'paseo-app-widget');
-  assert.ok(draws.some((d) => /^Fix reconnect after BLE drop · 1 min$|^Fix reconnect.*… · 1 min$/.test(d.text) && d.value === 153));
-  assert.ok(draws.some((d) => d.text.startsWith('¿Apruebas correr') && d.value === 255));
-  for (let i = 0; i < 6; i++) assert.equal(home.getPixel(218, 115 + i * 11), i === 1 ? 255 : 85);
+  for (const label of ['Review', 'Working', 'Background', 'Done']) assert.ok(draws.some((d) => d.text === label), label);
+  assert.ok(!draws.some((d) => d.text.startsWith('¿Apruebas correr')), 'no agent lines');
+  for (let i = 0; i < 6; i++) assert.equal(home.getPixel(218, 115 + i * 11), i === 0 ? 255 : 85);
   const empty = paintHome(1, { now: NOW, calendar: calendarCardState(true, [], NOW.getTime()), music: null, notifications: [], paseo: null }, face, clockFace);
   save(empty, 'paseo-app-widget-unpaired');
 });

@@ -17,7 +17,6 @@ User-facing documentation lives at https://faceclaw.org/.
 ![App launcher](website/screenshots/launcher.png)
 ![Music player](website/screenshots/music-player.png)
 ![Customization settings](website/screenshots/settings-customization.png)
-![Assistant settings](website/screenshots/settings-assistant.png)
 ![Compass](website/screenshots/compass.png)
 ![Blocks](website/screenshots/blocks.png)
 
@@ -61,11 +60,9 @@ import it into the new version.
 
 <!-- Generated from website/content/features.md by scripts/sync-site.mjs; edit there. -->
 <!-- BEGIN GENERATED: features -->
- * **A voice assistant** that wakes up when you say "Hey Even", transcribes
-   text with an on-device model, OpenAI Whisper, ElevenLabs, or Soniox API,
-   and responds to queries and commands using an onboard model (Qwen3 4B,
-   slow) or with an Anthropic or OpenAI model (requires an API key), or using
-   your own long-running OpenClaw agent.
+ * **Grok Bot on the glasses.** Say "Hey Even" to dictate to your Grok Bot
+   (requires a Cursor API key); its replies show in full on the glasses, and a
+   late reply buzzes and wakes them.
  * **Multitasking**, with an app-switcher sidebar and app launcher.
  * **Glanceboard**, a dashboard with widgets that you can quickly view with a
  * **Mostly-compatible with EvenHub.** Install and runapps from the Even app
@@ -78,7 +75,7 @@ import it into the new version.
    icons your phone does, and popups when notifications arrive.
  * **Terminal mirroring.** Mirror terminal apps such as Claude Code or Codex
    CLI with [g2mirror](https://github.com/jimrandomh/g2mirror), view them on
-   the glasses, and send them inputs with the voice assistant.
+   the glasses, and send them inputs by voice.
  * **Media player controls** including playlist and media library navigation,
    compatible with most Android media players.
  * **Turn-by-turn directions** (requires a Mapbox API token).
@@ -89,7 +86,7 @@ import it into the new version.
    battery life similar to the stock Even app.
  * **A Wear OS watch app** that replaces (and outdoes) the R1 ring: tap,
    swipe, hold and crown gestures, side buttons, app launching and window
-   switching, voice or keyboard queries to the assistant with the reply on
+   switching, voice or keyboard questions to Grok Bot with the reply on
    your wrist, typing into apps, and glasses status/lock/display control.
  * **On-phone screen mirroring**: Your phone screen shows the same contents as
    the glasses, and you can use the phone touchscreen as an input device..
@@ -101,8 +98,8 @@ The `wear/` directory holds a companion app for Wear OS 3+ watches that turns
 the watch into a remote for the glasses. The whole watch face is a touchpad
 that mirrors the ring (tap, double-tap, hold, swipe, crown scrolling, side
 buttons), and beyond the ring it can launch apps, switch and close windows,
-wake/sleep/lock the display, send spoken or typed queries straight to the
-assistant (using the watch's own microphone) and show the reply on the wrist,
+wake/sleep/lock the display, send spoken or typed questions straight to
+Grok Bot (using the watch's own microphone) and show the reply on the wrist,
 and type text into apps such as the terminal. Its swipes are a spatial
 control scheme the ring never had, with no mode to enter first: the
 launcher highlights one app and moves it by rows and columns, right goes
@@ -114,25 +111,6 @@ unchanged — watch input is tagged as a separate source. Faceclaw's Settings > 
 section has the phone-side switches. See [wear/README.md](wear/README.md) for
 building and installing it; it is a separate Gradle build, sideloaded over
 adb, and needs no Play Store. The phone side requires Google Play services.
-
-## Connecting an external agent (OpenClaw)
-
-Instead of calling an LLM API directly from the phone, the voice assistant
-can route queries to your own long-running agent, which also gets access to
-the glasses' tools (show alerts, read notifications, control media, type
-into apps including terminals) both during conversations and proactively. This
-works through the faceclaw-agent-bridge OpenClaw plugin
-(https://github.com/jimrandomh/faceclaw-agent-bridge): the phone dials out to
-it over a websocket (typically across a tailnet).
-
-Setup lives in the faceclaw-agent-bridge repository's README. It covers
-both the OpenClaw-host side (plugin install and configuration) and the
-phone side, which can be configured either by hand in Settings > Assistant
-on the glasses, or over adb using scripts/pull_config.sh and
-scripts/push_config.sh from this repo; the instructions are written so an
-OpenClaw agent with the phone plugged into its host can perform the whole
-setup itself. Note that a pulled settings file contains your API keys, so
-treat it as a secret (the default output path is gitignored here).
 
 ## EvenHub App Notes
 

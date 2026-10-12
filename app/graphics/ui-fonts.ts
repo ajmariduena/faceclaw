@@ -10,11 +10,13 @@
  */
 import { getFont, type BdfFont } from "./bdffont";
 import type { UiFont } from "./image";
+import { StockUiFont } from "./stock-ui-font";
 import { TtfFont } from "./ttf-font";
 import { ensurePreinstalledFonts, getInstalledFont, installedFontPath } from "./installed-fonts";
 import { getStringSetting, onSettingsStoreChanged, setStringSetting } from "../native/settings-store";
 
-export type BitmapFace = "terminus" | "terminusv";
+/** "even" is stock's system font, extracted from the firmware (stock-ui-font.ts). */
+export type BitmapFace = "even" | "terminus" | "terminusv";
 
 export type UiFontSelection =
   | { kind: "bitmap"; face: BitmapFace }
@@ -32,10 +34,10 @@ const LARGE_MIN_LINE_HEIGHT = 26;
 const MAX_SIZE_GROWTH = 48;
 
 /**
- * Guaranteed line-height range of getDefaultSmallFont, which UI layouts may
- * rely on (getDefaultMediumFont's range follows: 16..29). The font picker
- * hides sizes outside it, and resolution falls back to the bitmap face if
- * a stored selection somehow lands outside (e.g. the font file changed).
+ * Guaranteed line-height range of a TTF getDefaultSmallFont (getDefaultMediumFont's
+ * range follows: 16..29). The font picker hides sizes outside it, and
+ * resolution falls back to the bitmap face if a stored selection somehow
+ * lands outside (e.g. the font file changed). The Even face is 29 px tall.
  */
 export const SMALL_FONT_MIN_LINE_HEIGHT = 8;
 export const SMALL_FONT_MAX_LINE_HEIGHT = 21;
@@ -56,7 +58,7 @@ export function parseFontSelection(raw: string): UiFontSelection | null {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return null;
     const sel = parsed as Record<string, unknown>;
-    if (sel.kind === "bitmap" && (sel.face === "terminus" || sel.face === "terminusv")) {
+    if (sel.kind === "bitmap" && (sel.face === "even" || sel.face === "terminus" || sel.face === "terminusv")) {
       return { kind: "bitmap", face: sel.face };
     }
     if (
@@ -73,7 +75,9 @@ export function parseFontSelection(raw: string): UiFontSelection | null {
 }
 
 /** Default UI font when the user has never picked one. */
-const DEFAULT_UI_FONT: UiFontSelection = { kind: "ttf", file: "Roboto-Light.ttf", size: 16 };
+const DEFAULT_UI_FONT: UiFontSelection = { kind: "bitmap", face: "even" };
+/** Stands in for the Even face until the firmware fonts are extracted. */
+const EVEN_FALLBACK: UiFontSelection = { kind: "ttf", file: "Roboto-Light.ttf", size: 16 };
 
 export function getUiFontSelection(): UiFontSelection {
   const parsed = parseFontSelection(getStringSetting(UI_FONT_SELECTION_KEY, ""));
@@ -102,7 +106,7 @@ export function setTerminalFontSelection(selection: UiFontSelection): void {
 /** Human label for a selection, e.g. "Inter Light 16" or "Terminus". */
 export function fontSelectionLabel(selection: UiFontSelection): string {
   if (selection.kind === "bitmap") {
-    return selection.face === "terminusv" ? "TerminusV" : "Terminus";
+    return selection.face === "even" ? "Even" : selection.face === "terminusv" ? "TerminusV" : "Terminus";
   }
   const installed = getInstalledFont(selection.file);
   const face = installed ? `${installed.family}${installed.style ? ` ${installed.style}` : ""}` : selection.file;
@@ -177,6 +181,10 @@ function resolveTtf(selection: UiFontSelection, minLineHeight = 0): TtfFont | nu
 }
 
 function resolveRole(selection: UiFontSelection, role: UiFontRole): UiFont {
+  if (selection.kind === "bitmap" && selection.face === "even") {
+    // Stock draws every role in the one system font.
+    return StockUiFont.get() ?? resolveRole(EVEN_FALLBACK, role);
+  }
   // Enforce the guaranteed small-font range even against a stale or
   // hand-edited selection: an out-of-range selection falls back to bitmap for
   // every role (medium/large derive from small, so their documented ranges
@@ -197,6 +205,11 @@ function bitmapForRole(face: BitmapFace, role: UiFontRole): BdfFont {
   if (role === "medium") return getFont("terminus16");
   if (role === "large") return getFont("terminus24");
   return getFont(face === "terminusv" ? "terminusv12" : "terminus12");
+}
+
+/** Drop every resolved role font, e.g. once the Even face has been extracted. */
+export function refreshUiFonts(): void {
+  for (const fonts of roleFontSets) fonts.clear();
 }
 
 export function getDefaultSmallFont(): UiFont {

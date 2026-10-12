@@ -83,7 +83,7 @@ export function paintTimersList(image: GrayImage, face: Face, view: TimersListVi
   paintFooter(image, face, footer.left, footer.right);
 }
 
-/** The lean Timers app: the active countdowns, view and cancel. Creation stays with the AI Chat tools. */
+/** The lean Timers app: the active countdowns, view and cancel. */
 export class TimersListLayer implements Layer {
   readonly acceptsDirectional = true;
   private selected = 0;

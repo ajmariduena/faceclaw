@@ -31,13 +31,6 @@ import {
   statusBarVisibilitySetting,
   windowBorderSetting,
   uiDepthSetting,
-  assistantAllowProactiveSetting,
-  assistantBackendSetting,
-  assistantBridgeHostSetting,
-  assistantBridgePortSetting,
-  assistantBridgeTokenSetting,
-  assistantModelSetting,
-  assistantSkipConfirmationSetting,
   batteryDisplayModeSetting,
   brightnessSetting,
   autoBrightnessMinSetting,
@@ -121,23 +114,7 @@ function settingsSections(): SettingsSection[] {
         enumSettingMenuItem(voiceProviderSetting),
         asrModelMenuItem("moonshine"),
         asrModelMenuItem("whisper-base-en"),
-      ],
-    },
-    {
-      label: "Assistant",
-      items: [
-        // iOS offers cloud APIs; Android also supports local models and the bridge.
-        enumSettingMenuItem(assistantBackendSetting),
-        enumSettingMenuItem(assistantModelSetting),
         ...(!global.isIOS ? [localModelMenuItem()] : []),
-        toggleSettingMenuItem(assistantSkipConfirmationSetting),
-        // iOS has no local LLM or agent bridge yet.
-        ...(!global.isIOS ? [
-          textSettingMenuItem(assistantBridgeHostSetting),
-          textSettingMenuItem(assistantBridgePortSetting),
-          textSettingMenuItem(assistantBridgeTokenSetting),
-          toggleSettingMenuItem(assistantAllowProactiveSetting),
-        ] : []),
       ],
     },
     {
@@ -206,7 +183,7 @@ function settingsSections(): SettingsSection[] {
       ],
     },
   ];
-  const hidden = new Set(["Customization", "Voice", "Assistant", "Watch"]);
+  const hidden = new Set(["Customization", "Voice", "Watch"]);
   const developer = sections.find(section => section.label === "Developer")!;
   developer.items.push(...sections.filter(section => hidden.has(section.label)).map(section =>
     submenuItem(section.label, ctx => { openSettingsSubMenu(ctx, section.label, section.items); })));
@@ -367,9 +344,8 @@ function localModelMenuItem(): MenuItem {
     label: "On-phone model",
     description:
       `${LOCAL_MODEL.label} (${LOCAL_MODEL_GB} download over Wi-Fi recommended). ` +
-      "Answers assistant queries on the phone itself, with no API key or cloud service. " +
-      "Slower and simpler than the cloud models, but free and private. " +
-      "Used automatically when no API key is set. An interrupted download resumes where it left off.",
+      "Runs Microphones' speaker notes and questions on the phone itself, with no API key or cloud service. " +
+      "An interrupted download resumes where it left off.",
     onSelect: (ctx) => {
       const state = localModelState();
       const action: MenuItem =

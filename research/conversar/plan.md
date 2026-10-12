@@ -24,9 +24,45 @@ Latencia objetivo: unos 1,5–2,5 s desde que termina la frase hasta que aparece
 - **Falta medir:** cuánto tarda Soniox en entregar la frase final, el envío a las gafas y la calidad de los datos (vienen de las fuentes y pueden estar mal).
 - Ejemplos reales: «Guayaquil tiene alrededor de 3 007 696 habitantes.», «Sí, la independencia de Guayaquil se celebró el 9 de octubre de 1820.»
 
+## Medición de punta a punta (11 oct, `tools/conversar-probe/e2e.mjs`)
+- Conversación sintética de 8 frases en español e inglés (voces de macOS) mandada a Soniox `stt-rt-v5` en tiempo real, con detección de fin de frase. En cada frase cerrada se corre decidir → buscar → redactar. Se hicieron 3 corridas desde la Mac.
+- **Soniox:** la frase final llega unos 380 ms (mediana; 250–560 ms) después de la última palabra. La última palabra y el fin de frase llegan juntos, así que adelantarse al fin de frase no ahorra nada. Transcribió bien las 8 frases, solo cambió la puntuación.
+- **Decidir, buscar y redactar:** entre 0,9 y 1,4 s. Parallel `fast` tarda unos 800–900 ms de mediana y marca el ritmo. Brave tardó unos 460 ms y esta vez no dio 429.
+- **Del fin de la frase a la línea con el dato:** unos 1,55–1,75 s de mediana (rango 1,2–2,1 s). Jev acertó en las 8 frases: dijo sí a las 5 con datos y no a las 3 de charla.
+- **Envío a las gafas** (frame-timings del Nubia en uso real): de render a pantalla, unos 200 ms de mediana y 290 ms en el p90.
+- **Total estimado, desde que la persona termina de hablar hasta ver el dato:** unos 1,8–2,0 s con Parallel. Con Brave serían unos 1,4–1,6 s (estimación). Falta medirlo con red móvil y con audio real con ruido.
+
+## Buscadores más rápidos (11 oct, `tools/conversar-probe/search-apis.mjs`)
+- openbenchmarks.com (300 preguntas, 19 sep 2026) mide estas medianas: Parallel `turbo` 315 ms, Exa `instant` 386 ms, Firecrawl 471 ms, Brave 590–613 ms, Parallel `fast` 861 ms. Perplexity Fast Search (`search_type: "fast"`, lanzado el 24 sep 2026, $1 por 1.000) anuncia 160 ms de mediana, pero no está en esa tabla.
+- **Medido desde la Mac** (6 frases × 3 corridas): Perplexity Fast 433 ms, Brave 509 ms, TinyFish 533 ms, Parallel `turbo` 611 ms (ya acepta español), Firecrawl 803 ms y Parallel `fast` 843 ms. Exa no tiene crédito. Todos dieron el dato en 6 de 6 frases. Con los fragmentos de Brave, el redactor dio una fecha mal (8 de noviembre de 1820); con Firecrawl y TinyFish a veces respondió en otro idioma (hindi, coreano), y hay que fijar el idioma en el prompt.
+- **Con Perplexity Fast en la cadena completa:** la búsqueda tarda 280–360 ms y la línea con el dato sale unos 1,19 s después de que termina la frase (antes 1,55–1,75 s). Con el envío a las gafas serían unos 1,4 s en total.
+- Ahora el tiempo se reparte en: Soniox detectando el fin de frase (~380 ms), la búsqueda o Jev (~350 ms, en paralelo), el redactor (~300 ms) y el envío a las gafas (~200 ms).
+
+## Proveedores directos (11 oct)
+- Jev directo (`POST https://api.typesafe.ai/v1/systemone`, `jev-latest`): unos 350 ms y la misma decisión que por OpenRouter (0,95 contra 0,05 en las frases de prueba).
+- Cerebras directo (`gpt-oss-120b`, `reasoning_effort: low`): 360–490 ms.
+- La cadena de la app (`converse-facts.ts`) con Jev y Cerebras directos y Perplexity Fast tarda unos 0,5–0,6 s de mediana desde que tiene el texto de la frase hasta la línea (por OpenRouter eran unos 1,2 s desde que termina la frase). Con Soniox (~0,4 s) y el envío a las gafas (~0,2 s) serían unos 1,1 s en total (estimado).
+- OpenRouter queda solo de respaldo si falta la clave de TypeSafe o de Cerebras, o si Cerebras falla.
+
+## Pantalla (11 oct)
+Elegida la variante «solo texto» (`tools/headless-render/live-facts.cjs`, `texto`): sin recuadro, el tema en tenue (sin fuente) y el dato en blanco. El dato anterior queda debajo, más tenue (`anterior-abajo`). Cada búsqueda lleva las frases anteriores de la conversación y los datos ya mostrados. Entre un dato y otro, la pantalla queda vacía con una marca tenue de «Live facts».
+
+## Primera conversación real (11 oct, `tools/conversar-probe/replay.cjs`)
+- Log de 106 frases (19:30–20:07). Antes salían 64 datos: unos 12 eran eco (Alexander leía el dato en voz alta y se volvía a buscar), y además había búsquedas de frases que no eran preguntas («territorio», «ahorita»), «Fuente 1» como dato y datos falsos (Kokura, «Sapporo no es una cerveza», un vuelo Fuji–Osaka).
+- Jev ahora recibe los datos que ya están en pantalla, con un criterio que dice no a repetir, asentir o señalar algo («mira, esto es…»), y el umbral sube de 0,5 a 0,6. Pasó de 73 a 29 síes, sin perder preguntas reales. Tarda unos 315 ms.
+- El código descarta un dato si el 70 % de sus palabras ya estaba en uno mostrado, quita «según la fuente N» y toma la primera fuente cuando el redactor cita varias («1,2,5»).
+- Si el redactor recibía la regla «si las fuentes no coinciden, responde -», callaba en las preguntas con cifras (Hiroshima, Nagasaki, Chile). Ahora da el rango.
+- Una pregunta corta de seguimiento (≤ 5 palabras) se busca solo junto a la frase anterior; sola, «¿Ahorita los regresaron?» encontraba qué significa «ahorita».
+- Una frase que termina en un punto después de una preposición, un artículo o una conjunción («…o sea, por.») espera el resto.
+- Repetido con la cadena nueva: 30 datos, sin ecos ni «Fuente N». Siguen mal: los pandas de Ueno (las fuentes están desactualizadas) y «¿Son originales…?», que encuentra falsificaciones.
+- Pendientes (mismo día): el redactor ahora recibe la fecha y la antigüedad de cada fuente («2023-02-28, 3 years old») y responde - si las fuentes hablan de otro tema. «¿Son originales…?» a veces ya no responde, pero sigue fallando en algunas corridas. Lo de los pandas no se arregla: la única fuente sobre pandas en Japón era de 2023 y el redactor, con esfuerzo low, sigue escribiendo en presente.
+- Con el esfuerzo en medium, el redactor sí calla en el caso de los pandas, pero suma unos 400 ms (mediana de 0,64 a 1,03 s) y pierde la mitad de las respuestas buenas (de 30 a 15). Se queda en low.
+- Reescribir la consulta con el contexto antes de buscar (gpt-oss, unos 230 ms y luego la búsqueda en serie, unos 300 ms): mejoró 3 de 4 consultas («¿Cuándo regresaron los pandas regalados por China a México?»), pero en la de los pandas de Japón escribió una consulta rota. Sumaría unos 0,5 s, así que no está en la app.
+- Lo que sí entró: una tercera búsqueda, en paralelo, con el año al final («… 2026»). Esa búsqueda encuentra lo vigente: tras «En Japón hay pandas en Ueno», el dato ahora es «No hay pandas gigantes en el zoológico de Ueno actualmente». Si se pone el año a la única búsqueda, las preguntas de historia traen noticias del año («¿bombas en el sur?» encontró un terremoto de 2026). Una vez que vuelven las otras búsquedas, la del año tiene 150 ms para llegar; si no, se descarta. Repitiendo el log, la mediana fue de 835 ms sin ella y de 814 ms con ella, o sea, no suma latencia. También se quitaron la regla de «tiempo pasado con el año» (fallaba con las fechas de creación de Wikipedia), las marcas «【1】» y los datos sin letras («1‑2»).
+
 ## Decisiones abiertas
 - Dónde corre el «cerebro» (detectar, buscar, redactar): directo desde el teléfono (las claves quedan en el teléfono) o a través del daemon de Paseo en la Mac por el relay (las claves se quedan en la Mac, pero depende de la Mac).
-- Qué búsqueda usar (Parallel, Brave o Perplexity) y qué modelo en Cerebras.
+- ~~Qué búsqueda usar~~ Decidido el 11 oct: Perplexity Fast Search (`search_type: "fast"`), con Brave de respaldo si falla o tarda.
 - Si mostrar también la traducción en la misma pantalla o dejarla solo para Traducir.
 - Privacidad: avisar o tener un modo «solo notas» sin enviar audio.
 

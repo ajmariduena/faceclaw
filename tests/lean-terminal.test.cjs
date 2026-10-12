@@ -95,43 +95,43 @@ test('terminal list helpers: fit, scroll window, selectable stepping and row pai
   assert.deepEqual(e.texts(), ['Nothing here', '· Test']);
 });
 
-test('More: four fixed rows, scroll stops at the ends, tap launches, double tap returns home', async () => {
+test('More: three fixed rows, scroll stops at the ends, tap launches, double tap returns home', async () => {
   const e = env();
   const { MoreListLayer, MORE_ROWS, moreRows, paintMoreList } = e.load('app/apps/launcher/more-list.ts');
-  assert.equal(MORE_ROWS.map(row => row.label).join('|'), 'AI Chat|Timers|Navigate|Settings');
-  assert.equal(MORE_ROWS.map(row => row.appId).join('|'), 'ai-chat|timer|navigate|settings');
-  assert.equal(moreRows(false).length, 4);
+  assert.equal(MORE_ROWS.map(row => row.label).join('|'), 'Timers|Navigate|Settings');
+  assert.equal(MORE_ROWS.map(row => row.appId).join('|'), 'timer|navigate|settings');
+  assert.equal(moreRows(false).length, 3);
   assert.equal(moreRows(true).at(-1).appId, 'developer');
   const layer = new MoreListLayer(async appId => e.launched.push(appId));
   layer.paint(e.ctx);
-  assert.deepEqual(e.texts(), ['>', 'AI Chat', 'Timers', 'Navigate', 'Settings', '· More', '1/4']);
-  assert.equal(e.draws.find(d => d.text === 'AI Chat').value, 255);
-  assert.equal(e.draws.find(d => d.text === 'Timers').value, 136);
+  assert.deepEqual(e.texts(), ['>', 'Timers', 'Navigate', 'Settings', '· More', '1/3']);
+  assert.equal(e.draws.find(d => d.text === 'Timers').value, 255);
+  assert.equal(e.draws.find(d => d.text === 'Navigate').value, 136);
   await layer.handleInput({ type: 'scroll-up' });
   assert.equal(layer.selectedIndex, 0);
   for (let i = 0; i < 6; i++) await layer.handleInput({ type: 'scroll-down' });
-  assert.equal(layer.selectedIndex, 3);
+  assert.equal(layer.selectedIndex, 2);
   e.draws.length = 0;
   layer.paint(e.ctx);
-  assert.ok(e.texts().includes('4/4'));
+  assert.ok(e.texts().includes('3/3'));
   await layer.handleInput({ type: 'click' });
   assert.deepEqual(e.launched, ['settings']);
   await layer.handleInput({ type: 'double-click' });
   assert.equal(e.yields.length, 1);
   assert.equal(await layer.hitTest(200, 24 + 46 + 10), true);
-  assert.deepEqual(e.launched, ['settings', 'timer']);
+  assert.deepEqual(e.launched, ['settings', 'navigate']);
   assert.equal(await layer.hitTest(200, 280), false);
   const { GrayImage } = e.load('app/graphics/image.ts');
   e.draws.length = 0;
-  paintMoreList(new GrayImage(576, 288), e.face, 4, moreRows(true));
+  paintMoreList(new GrayImage(576, 288), e.face, 3, moreRows(true));
   assert.ok(e.texts().includes('Developer'));
-  assert.ok(e.texts().includes('5/5'));
+  assert.ok(e.texts().includes('4/4'));
 });
 
 test('Settings: status rows read batteries, the Paseo link and the phone\'s key tests; brightness and Disconnect act', async () => {
   const statuses = {
     'apiKeys.status.openrouter': JSON.stringify({ state: 'ok', at: 1, ms: 320, error: null }),
-    'apiKeys.status.parallel': JSON.stringify({ state: 'failed', at: 1, ms: null, error: 'Invalid key (401)' }),
+    'apiKeys.status.perplexity': JSON.stringify({ state: 'failed', at: 1, ms: null, error: 'Invalid key (401)' }),
     'apiKeys.status.soniox': JSON.stringify({ state: 'ok', at: 1, ms: 200, error: null }),
   };
   const e = env({ statuses, soniox: '', brightness: '50', paseo: { configured: true, status: '', updates: [], needs: 0, working: 0 } });
@@ -154,7 +154,7 @@ test('Settings: status rows read batteries, the Paseo link and the phone\'s key 
   assert.equal(row('Paseo'), 'connected');
   assert.equal(row('Soniox'), 'missing', 'no key stored beats the phone\'s stale ok');
   assert.equal(row('OpenRouter'), 'ok');
-  assert.equal(row('Parallel'), 'failed');
+  assert.equal(row('Perplexity'), 'failed');
   assert.equal(row('Brightness'), '50%');
   assert.equal(e.draws.find(d => d.text === '>').y, e.draws.find(d => d.text === 'Brightness').y, 'opens on the first actionable row');
   assert.ok(e.texts().includes('· Settings'));
@@ -270,16 +270,6 @@ test('Timers: lists active countdowns with remaining time, cancels after a neste
   assert.deepEqual(e.texts(), ['No active timers', '· Timers']);
 });
 
-test('Converse placeholder paints the frame with Not built yet', () => {
-  const e = env();
-  const { paintConversePlaceholder } = e.load('app/apps/converse/converse-app.ts');
-  const { GrayImage } = e.load('app/graphics/image.ts');
-  paintConversePlaceholder(new GrayImage(576, 288), e.face);
-  assert.deepEqual(e.texts(), ['Not built yet', 'Live facts · ES/EN', '· Converse']);
-  assert.equal(e.draws[0].value, 255);
-  assert.equal(e.draws[1].value, 136);
-});
-
 test('the registry hides the spec\'s apps from the lean UI without dropping them, and adds Converse', () => {
   const ids = [];
   const load = loader({}, new Proxy({}, { get: (_, name) => (name.startsWith('./') && name !== './app-definition'
@@ -288,7 +278,7 @@ test('the registry hides the spec\'s apps from the lean UI without dropping them
   const { LEAN_HIDDEN_APP_IDS } = loader()('app/lean.ts');
   for (const app of ALL_APPS) ids.push(app.appId);
   assert.ok(ids.includes('converse'));
-  for (const id of ['paseo', 'calendar', 'ai-chat', 'timer', 'navigate', 'settings', 'launcher', 'home']) assert.ok(!LEAN_HIDDEN_APP_IDS.has(id), id);
+  for (const id of ['paseo', 'calendar', 'bots', 'timer', 'navigate', 'settings', 'launcher', 'home']) assert.ok(!LEAN_HIDDEN_APP_IDS.has(id), id);
   for (const id of ['music', 'notifications', 'teleprompter', 'microphones', 'evenhub', 'glanceboard', 'developer', 'flappy']) {
     assert.ok(LEAN_HIDDEN_APP_IDS.has(id), id);
     assert.ok(ids.includes(id), `${id} stays registered`);

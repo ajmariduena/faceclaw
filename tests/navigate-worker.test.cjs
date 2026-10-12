@@ -7,195 +7,266 @@ const path = require('node:path');
 const { loader } = require('./helpers/load-typescript.cjs');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-const route = { coordinates: [[-122.4, 37.7], [-122.4, 37.71]], distanceMeters: 1112, durationSec: 600,
-  steps: [{ distanceMeters: 1112, durationSec: 600, instruction: 'Head north', maneuverType: 'depart' },
-    { distanceMeters: 0, durationSec: 0, instruction: 'Arrive', maneuverType: 'arrive' }] };
-const fix = latitude => ({ latitude, longitude: -122.4, timestampMs: Date.now(), bearingDeg: 0, speedMps: 1.5, accuracyMeters: 5 });
-function fixture() {
-  const messages = [], timers = new Set(), timeouts = new Set(), holds = [], maps = [], errors = [], requests = [];
-  let callbacks, compass, delayRoute = null, delayMap = null, routeError = null;
-  const routeMath = loader()('app/apps/navigate/route-follower.ts');
+function fixture({ key = 'test-key' } = {}) {
+  const messages = [], chats = [], menus = [], timeouts = new Set(), intervals = new Set(), holds = [], errors = [], searches = [], trips = [], calls = [];
+  let callbacks, compass, onNavEvent = null;
   const tracker = { running: false, isRunning() { return this.running; }, start() { this.running = true; }, stop() { this.running = false; } };
   const sensor = { LocationTracker: function (value) { callbacks = value; return tracker; }, COMPASS_CHANGED: 15,
     addCompassListener: fn => { compass = fn; return () => { compass = null; }; },
     setCompassEnabled: value => holds.push(value), magneticDeclinationDegrees: () => 12,
     handleNavigationSensorEvent: event => { if (event.kind === 'location') callbacks.onLocation(event.location); } };
+  const setting = value => ({ value, id: 'x', label: 'x', get() { return this.value; }, set(next) { this.value = next; return next; }, toggle() { this.value = !this.value; return this.value; }, displayValue: v => String(v ?? value) });
   const modules = {
     '@nativescript/core/globals': {},
-    '../../graphics/bdffont': { getFont: () => ({}) }, '../../graphics/ui-fonts': { getDefaultSmallFont: () => ({}) },
+    '../../ui/shell/worker-lifecycle': { finishWorkerShutdown() {} },
+    '../../graphics/ui-fonts': { getDefaultSmallFont: () => ({}) },
+    '../../graphics/installed-fonts': { ensurePreinstalledFonts() {}, installedFontPath: name => name },
     '../../native/settings-store': { onSettingsStoreChanged() {} },
+    '../../ui/dashboard-settings': {
+      enumSettingMenuItem: () => ({}),
+      navigateTravelModeSetting: setting('driving'),
+      navigateSearchDraftSetting: setting(''),
+      navigateDestinationNameDraftSetting: setting(''),
+      navigateDestinationAddressDraftSetting: setting(''),
+      navigateRememberRecentSetting: setting(true),
+      navigateDisplayModeSetting: setting('auto'),
+      navigateVerticalPositionSetting: setting('middle'),
+    },
     './navigation-sensors': sensor,
-    './route-follower': routeMath,
-    './destinations': { findSavedDestinationByName: () => null, rememberRecentDestination() {},
-      loadSavedDestinations: () => [{ name: 'Home', address: '123 Main St' }], loadRecentDestinations: () => [] },
-    '../compass/calibration': { calibrateHeading: value => value + 5, normalizeHeading: value => (value + 360) % 360 },
+    './heading-model': loader({ Math, Number, Object })('app/apps/navigate/heading-model.ts'),
+    './destinations': { findSavedDestinationByName: name => name === 'Casa' ? { id: 'home', name: 'Casa', address: 'Av. 1 y Calle 2', builtin: true } : null,
+      rememberRecentDestination: entry => calls.push(['remember', entry]),
+      loadSavedDestinations: () => [{ id: 'home', name: 'Casa', address: 'Av. 1 y Calle 2', builtin: true }], loadRecentDestinations: () => [] },
+    '../compass/calibration': { calibrateHeading: value => value + 5, normalizeHeading: value => ((value % 360) + 360) % 360 },
     '../../native/frame-timings': { startFrame: () => 1, finishFrame() {}, logFrame() {}, span: (_id, _name, fn) => fn(), runWithFrame: (_id, fn) => fn() },
     '../../native/active-display': { getActiveDisplay: () => null },
-    '../../ui/menu-core': require('../.test-build/app/ui/menu-core.js'),
-    '../../ui/window-menu': { WindowMenu: class { paint() { return []; } isOpen() { return false; } resize() {} } },
+    '../../ui/window-menu': { WindowMenu: class { constructor(options) { menus.push(options); } paint() { return []; } isOpen() { return false; } resize() {} open() { calls.push(['menu']); } }, WindowMenuLayer: class {} },
+    '../../graphics/image': { GrayImage: class {} },
+    '../../graphics/ttf-font': { TtfFont: { load: () => ({}) } },
+    '../../ui/terminal-face': { terminalFace: () => ({}) },
+    '../../ui/clock-format': { formatClockTime: () => '18:52' },
+    './nav-render': { paintGuidance() {}, formatDistance: meters => [String(meters), 'm'], formatRemaining: seconds => `${Math.round(seconds / 60)} min` },
+    '../../ui/terminal': { listScrollTop: () => 0, paintTerminalList() {}, stepSelection: (rows, selected, direction) => { for (let i = selected + direction; i >= 0 && i < rows.length; i += direction) if (rows[i].selectable !== false) return i; return selected; } },
     '../../graphics/plane': { planesFingerprint: () => 'frame' },
-    '../../native/mapbox': {
-      isMapboxConfigured: () => true,
-      geocodeForward: async () => { requests.push('geocode'); return [{ name: 'Test park', placeFormatted: 'San Francisco', latitude: 37.71, longitude: -122.4 }]; },
-      fetchRoute: async () => { requests.push('route'); if (routeError) throw routeError; return delayRoute ? await delayRoute : route; },
-      fetchStaticMapGray: async options => { maps.push(options); return delayMap ? await delayMap : { pixels: new Uint8Array([0, 128, 255]) }; },
+    '../../graphics/terminal-painter': { fitLine: (_face, text) => text, paintChat: (_image, _face, view) => chats.push(view) },
+    '../../ui/chat-draft': loader({ Math })('app/ui/chat-draft.ts'),
+    '../../native/google-maps': {
+      GOOGLE_MAPS_KEY_SETTING_KEY: 'maps.googleApiKey',
+      getGoogleMapsKey: () => key,
+      newSearchSession: () => 'session',
+      autocompletePlaces: async input => { searches.push(input); return [{ placeId: `place:${input}`, name: `Lugar ${input}`, detail: 'Guayaquil', distanceMeters: 1200 }]; },
+      nearbyPlaces: async type => { searches.push(`nearby:${type}`); return [{ placeId: `near:${type}`, name: 'Farmacia Cruz Azul', detail: 'Av. 9 de Octubre', distanceMeters: 300 }]; },
+      RoadTiles: class { tile() { return null; } clear() {} },
+      worldPixel: (lat, lng, zoom) => [lng * 2 ** zoom, -lat * 2 ** zoom],
+    },
+    '../../native/google-navigation': {
+      GoogleNavigation: class {
+        start(_key, onEvent) { onNavEvent = onEvent; calls.push(['start']); }
+        navigateTo(target, mode) { trips.push({ ...target, mode }); }
+        stop() { calls.push(['stop']); }
+        detach() { calls.push(['detach']); onNavEvent = null; }
+      },
     },
   };
   const global = { postMessage: message => messages.push(message) };
   const source = fs.readFileSync(path.join(__dirname, '../app/apps/navigate/navigate-app.worker.ts'), 'utf8') +
-    '\nexports.probe = { startNavigation, startMap, stopNavigation, idleEntries, describeRouteStatus, state: () => ({ phase, headHeadingDeg, progress, mapImage, mapInFlight, mapLastError }) };';
+    '\nexports.probe = { handleNavigateTool, describeRouteStatus, headingNow: () => heading.output(Date.now()), state: () => ({ phase, statusMessage, suggestions, query, target, rerouting, voice, review, searchMessage: searchMessage() }) };';
   const exports = {};
   vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, {
-    exports, global, Uint8Array,
+    exports, global, Uint8Array, Date, Math, JSON, Promise, Error, Number, String,
     setTimeout: fn => { timeouts.add(fn); return fn; }, clearTimeout: fn => timeouts.delete(fn),
-    setInterval: fn => { timers.add(fn); return fn; }, clearInterval: fn => timers.delete(fn),
+    setInterval: fn => { intervals.add(fn); return fn; }, clearInterval: fn => intervals.delete(fn),
     console: { log() {}, warn() {}, error: error => errors.push(error) }, require: id => modules[id] ?? {},
   });
   const send = data => global.onmessage({ data });
-  send({ type: 'open-window', windowId: 'navigate:main', surfaceId: 'window:navigate:main', title: 'Navigate', viewport: { width: 576, height: 480 } });
+  send({ type: 'open-window', windowId: 'navigate:main', surfaceId: 'window:navigate:main', title: 'Navigate', viewport: { width: 576, height: 288 } });
   send({ type: 'foreground', windowId: 'navigate:main', foreground: true, focused: true });
-  return { ...exports.probe, send, timers, holds, maps, errors, tracker, requests,
+  return { ...exports.probe, send, messages, intervals,
+    view: () => { menus.at(-1).paintBase(); return chats.at(-1); }, holds, errors, tracker, searches, trips, calls,
+    nav: event => onNavEvent?.(event),
     input: type => send({ type: 'input', windowId: 'navigate:main', focused: true, frameId: 1, event: { type } }),
-    tick: () => { for (const callback of timers) callback(); },
-    expireFix: () => { for (const callback of timeouts) callback(); timeouts.clear(); },
-    failRoute: () => { routeError = new Error('Route unavailable'); },
-    fix: latitude => send({ type: 'navigation-sensors', event: { kind: 'location', location: fix(latitude), id: 1 } }),
-    heading: value => compass?.({ command: 15, headingDegrees: value }),
-    holdMap: () => { let resolve, reject; delayMap = new Promise((done, fail) => { resolve = done; reject = fail; });
-      return { resolve: () => resolve({ pixels: new Uint8Array([0, 128, 255]) }), reject }; },
-    holdRoute: () => { let resolve; delayRoute = new Promise(done => { resolve = done; }); return () => resolve(route); } };
+    runTimers: () => { const pending = [...timeouts]; timeouts.clear(); for (const callback of pending) callback(); },
+    heading: value => compass?.({ command: 15, headingDegrees: value }) };
 }
 
-test('shared Navigate worker follows streamed GPS, uses calibrated true heading and stops at arrival', async () => {
-  const h = fixture(); const starting = h.startNavigation('Test park', 'walking');
-  h.fix(37.7); assert.match(await starting, /Navigating to Test park/); await flush();
-  assert.equal(h.state().phase, 'navigating'); assert.ok(h.maps.length > 0);
-  h.heading(90); assert.equal(h.state().headHeadingDeg, 107);
-  h.send({ type: 'screen', on: false }); assert.equal(h.holds.at(-1), false); assert.equal(h.tracker.running, true);
-  h.fix(37.705); assert.ok(h.state().progress.remainingMeters < 600);
-  h.fix(37.71); assert.equal(h.state().phase, 'arrived'); assert.equal(h.tracker.running, false);
-  assert.equal(h.timers.size, 0); assert.deepEqual(h.errors, []);
-});
-
-test('closing Navigate while a route request is pending cannot restart guidance or GPS', async () => {
-  const h = fixture(), release = h.holdRoute();
-  const starting = h.startNavigation('Test park', 'walking');
-  h.fix(37.7); await flush(); assert.equal(h.state().phase, 'routing');
-  h.send({ type: 'close-window', windowId: 'navigate:main' }); release();
-  await assert.rejects(starting, /Navigation cancelled/);
-  assert.equal(h.state().phase, 'idle'); assert.equal(h.tracker.running, false); assert.equal(h.timers.size, 0);
-});
-
-test('front page map entry follows location without routing, supports zoom and returns to destinations', async () => {
+test('start_route searches Google, guides with calibrated true heading and returns home after arrival', async () => {
   const h = fixture();
-  assert.equal(h.idleEntries()[0].label, 'Map around me');
-  assert.equal(h.idleEntries()[1].destination.name, 'Home');
-  h.input('click');
-  assert.equal(h.state().phase, 'acquiring');
-  assert.equal(h.tracker.running, true);
-  h.fix(37.7); await flush();
-  assert.equal(h.state().phase, 'map');
-  assert.deepEqual(h.requests, []);
-  assert.equal(h.maps.at(-1).width, 576);
-  assert.equal(h.maps.at(-1).height, 450);
-  assert.equal(h.maps.at(-1).routePath, undefined);
-  assert.equal(h.maps.at(-1).camera.latitude, 37.7);
-  assert.equal(h.maps.at(-1).camera.bearingDeg, 0);
-  assert.match(h.describeRouteStatus(), /No destination/);
-  h.heading(90); assert.equal(h.state().headHeadingDeg, 107);
-  h.fix(37.705); await flush();
-  assert.equal(h.maps.at(-1).camera.latitude, 37.705);
-  const zoom = h.maps.at(-1).camera.zoom;
-  h.input('scroll-up'); await flush();
-  assert.equal(h.maps.at(-1).camera.zoom, zoom + 0.5);
-  h.input('click');
-  assert.equal(h.state().phase, 'idle');
-  assert.equal(h.tracker.running, false);
-  assert.equal(h.holds.at(-1), false);
-  assert.equal(h.timers.size, 0);
-  const count = h.maps.length;
-  h.send({ type: 'foreground', foreground: true, focused: true });
-  assert.equal(h.maps.length, count);
-  assert.deepEqual(h.errors, []);
-});
-
-test('map suspends fetching and compass while hidden and resizes to the viewport', async () => {
-  const h = fixture(), starting = h.startMap();
-  h.fix(37.7); await starting; await flush();
-  const count = h.maps.length;
-  h.send({ type: 'screen', on: false });
-  h.fix(37.71); h.tick(); await flush();
-  assert.equal(h.maps.length, count);
-  assert.equal(h.holds.at(-1), false);
-  h.send({ type: 'screen', on: true }); await flush();
-  assert.equal(h.maps.at(-1).camera.latitude, 37.71);
-  h.send({ type: 'resize-window', windowId: 'navigate:main', viewport: { width: 540, height: 260 } }); await flush();
-  assert.equal(h.maps.at(-1).width, 540);
-  assert.equal(h.maps.at(-1).height, 230);
-  h.send({ type: 'close-window' });
-  assert.equal(h.tracker.running, false);
-  assert.equal(h.timers.size, 0);
-  assert.deepEqual(h.errors, []);
-});
-
-test('starting a destination from map mode switches to route guidance', async () => {
-  const h = fixture(), starting = h.startMap();
-  h.fix(37.7); await starting; await flush();
-  await h.startNavigation('Test park', 'walking'); await flush();
-  assert.equal(h.state().phase, 'navigating');
-  assert.deepEqual(h.requests, ['geocode', 'route']);
-  assert.equal(h.maps.at(-1).width, 260);
-  assert.ok(h.maps.at(-1).routePath.length >= 2);
-  assert.deepEqual(h.errors, []);
-});
-
-test('failed destination lookup keeps map mode and tracking active', async () => {
-  const h = fixture(), starting = h.startMap();
-  h.fix(37.7); await starting; await flush();
-  h.failRoute();
-  await assert.rejects(h.startNavigation('Test park', 'walking'), /Route unavailable/);
-  assert.equal(h.state().phase, 'map');
-  assert.equal(h.tracker.running, true);
-  h.fix(37.705); await flush();
-  assert.equal(h.maps.at(-1).routePath, undefined);
-  assert.match(h.describeRouteStatus(), /No destination/);
-});
-
-test('map requires a fresh fix and releases tracking when GPS times out', async () => {
-  const h = fixture(), starting = h.startMap();
-  h.send({ type: 'navigation-sensors', event: { kind: 'location', location: { ...fix(37.7), timestampMs: Date.now() - 120000 } } });
+  const call = h.handleNavigateTool('start_route', { query: 'Mall del Sol', profile: 'walking' });
   await flush();
-  assert.equal(h.state().phase, 'acquiring');
-  assert.equal(h.maps.length, 0);
-  h.expireFix(); await starting;
-  assert.equal(h.state().phase, 'idle');
+  assert.deepEqual(h.searches, ['Mall del Sol']);
+  assert.equal(h.state().phase, 'starting');
   assert.equal(h.tracker.running, false);
-  assert.equal(h.timers.size, 0);
+  h.nav({ type: 'ready' });
+  assert.deepEqual(h.trips.map(t => [t.placeId, t.mode]), [['place:Mall del Sol', 'walking']]);
+  h.nav({ type: 'status', status: 'OK' });
+  assert.deepEqual({ ...(await call) }, { ok: true, content: 'Navigating to Lugar Mall del Sol (Guayaquil) by walking.' });
+  assert.equal(h.state().phase, 'guiding');
+  assert.equal(h.holds.at(-1), true);
+
+  h.nav({ type: 'route', points: [[-2.1, -79.9], [-2.2, -79.8]] });
+  assert.equal(h.calls.find(c => c[0] === 'remember')[1].placeId, 'place:Mall del Sol');
+  h.nav({ type: 'location', lat: -2.1, lng: -79.9, bearing: -1, speed: 0.5, accuracy: 5, bearingAccuracy: -1 });
+  h.heading(90);
+  assert.deepEqual({ ...h.headingNow() }, { bearingDeg: 107, source: 'head', showChevron: true, compassPoor: false });
+  assert.equal(h.intervals.size, 1);
+  h.nav({ type: 'nav', state: 'ENROUTE', stepMeters: 120, stepSeconds: 90, destMeters: 2400, destSeconds: 1800,
+    step: { maneuver: 'TURN_RIGHT', road: 'Av. Joaquín Orrantia', simpleRoad: 'Orrantia', instruction: 'Gira a la derecha', roundabout: -1 } });
+  assert.match(h.describeRouteStatus(), /Gira a la derecha in 120 m.*2\.4 km and 30 min left/);
+
+  h.nav({ type: 'arrived', final: true });
+  assert.equal(h.state().phase, 'arrived');
+  assert.equal(h.holds.at(-1), false);
+  assert.equal(h.intervals.size, 0);
+  assert.ok(h.calls.some(c => c[0] === 'stop'));
+  h.runTimers();
+  assert.equal(h.state().phase, 'idle');
+  assert.equal(h.tracker.running, true);
+  assert.deepEqual(h.errors, []);
 });
 
-test('closing map during GPS acquisition cannot reopen it on a late fix', async () => {
-  const h = fixture(), starting = h.startMap();
-  h.send({ type: 'close-window' });
-  h.fix(37.7); h.expireFix(); await starting;
-  assert.equal(h.state().phase, 'idle');
-  assert.equal(h.tracker.running, false);
-  assert.equal(h.maps.length, 0);
-  assert.equal(h.timers.size, 0);
+test('saved destinations route through their address and are not added to recents', async () => {
+  const h = fixture();
+  const call = h.handleNavigateTool('start_route', { query: 'home' });
+  await flush();
+  assert.deepEqual(h.searches, ['Av. 1 y Calle 2']);
+  h.nav({ type: 'ready' });
+  assert.equal(h.trips[0].mode, 'driving');
+  h.nav({ type: 'status', status: 'OK' });
+  assert.equal(h.holds.includes(true), false, 'no compass while driving');
+  assert.equal(h.intervals.size, 1);
+  assert.match((await call).content, /Navigating to Casa/);
+  h.nav({ type: 'route', points: [[-2.1, -79.9], [-2.2, -79.8]] });
+  assert.equal(h.calls.some(c => c[0] === 'remember'), false);
 });
 
-for (const completion of ['resolve', 'reject']) {
-  test(`old map fetch ${completion} cannot overwrite a new mode or clear its pending fetch`, async () => {
-    const h = fixture(), oldMap = h.holdMap(), starting = h.startMap();
-    h.fix(37.7); await starting;
-    h.input('click');
-    const newMap = h.holdMap();
-    await h.startMap();
-    oldMap[completion](new Error('Old map failed')); await flush();
-    assert.equal(h.state().mapInFlight, true);
-    assert.equal(h.state().mapImage, null);
-    assert.equal(h.state().mapLastError, '');
-    newMap.resolve(); await flush();
-    assert.ok(h.state().mapImage);
-    assert.equal(h.state().mapInFlight, false);
-  });
-}
+test('a failed route returns to the list with a Spanish message and fails the tool call', async () => {
+  const h = fixture();
+  const call = h.handleNavigateTool('start_route', { query: 'Nowhere' });
+  await flush();
+  h.nav({ type: 'ready' });
+  h.nav({ type: 'status', status: 'NO_ROUTE_FOUND' });
+  assert.deepEqual({ ...(await call) }, { ok: false, error: 'No encontré una ruta.' });
+  assert.equal(h.state().phase, 'idle');
+  assert.equal(h.state().statusMessage, 'No encontré una ruta.');
+});
+
+test('closing the window mid-route stops guidance and ignores late Google events', async () => {
+  const h = fixture();
+  const call = h.handleNavigateTool('start_route', { query: 'Malecón' });
+  await flush();
+  h.send({ type: 'close-window', windowId: 'navigate:main' });
+  assert.equal((await call).ok, false);
+  assert.ok(h.calls.some(c => c[0] === 'detach'));
+  h.nav({ type: 'status', status: 'OK' });
+  assert.equal(h.state().phase, 'idle');
+  assert.equal(h.tracker.running, false);
+  assert.equal(h.holds.includes(true), false);
+});
+
+const voiceDrafts = h => h.messages.filter(m => m.type === 'voice-draft').map(m => m.action);
+const voiceState = (h, state) => h.send({ type: 'voice-draft', windowId: 'navigate:main', text: '', status: '', ...state });
+
+test('searching from the glasses: tap dictates, tap stops, Send searches and a tap starts the trip', async () => {
+  const h = fixture();
+  h.input('click');
+  assert.equal(h.state().phase, 'search');
+  assert.deepEqual(voiceDrafts(h), ['start']);
+  assert.equal(h.messages.some(m => m.type === 'start-text-setting-edit'), false);
+  voiceState(h, { phase: 'listening', text: 'Parque' });
+  assert.equal(h.view().lines[0].text, 'Parque');
+  assert.equal(h.view().footer.left, '· Listening');
+  h.input('click');
+  assert.deepEqual(voiceDrafts(h), ['start', 'release']);
+  voiceState(h, { phase: 'idle', final: 'Parque Histórico' });
+  assert.equal(h.state().voice, null);
+  assert.equal(h.view().permission.question, 'Draft');
+  assert.deepEqual([...h.view().permission.options], ['Send', 'Edit', 'Discard']);
+  h.input('click');
+  assert.deepEqual(h.searches, []);
+  h.runTimers();
+  await flush();
+  assert.deepEqual(h.searches, ['Parque Histórico']);
+  assert.equal(h.state().suggestions.length, 1);
+  h.input('click');
+  assert.equal(h.state().phase, 'starting');
+  assert.equal(h.state().target.placeId, 'place:Parque Histórico');
+  h.input('double-click');
+  assert.equal(h.messages.at(-1).type, 'yield-focus');
+});
+
+test('a dictated destination can be edited on the phone or discarded back to the list', () => {
+  const h = fixture();
+  h.input('click');
+  voiceState(h, { phase: 'idle', final: 'Malecon' });
+  h.input('scroll-down');
+  h.input('click');
+  const edit = h.messages.find(m => m.type === 'start-text-setting-edit');
+  assert.ok(edit);
+  assert.equal(h.state().review.editing, true);
+  assert.equal(h.view().permission.question, 'Edit on phone');
+  h.input('scroll-down');
+  h.input('click');
+  assert.equal(h.state().phase, 'idle');
+  assert.equal(h.messages.at(-1).type, 'end-text-setting-edit');
+});
+
+test('dictation that hears nothing, or is cancelled, never searches', () => {
+  const h = fixture();
+  h.input('click');
+  voiceState(h, { phase: 'idle', status: 'No speech detected' });
+  assert.equal(h.state().phase, 'search');
+  assert.match(h.state().searchMessage, /No speech detected/);
+  h.input('click');
+  assert.deepEqual(voiceDrafts(h), ['start', 'start']);
+  h.input('double-click');
+  assert.deepEqual(voiceDrafts(h), ['start', 'start', 'cancel']);
+  assert.equal(h.state().phase, 'idle');
+  voiceState(h, { phase: 'idle', final: 'late' });
+  assert.equal(h.state().review.active, false);
+  assert.deepEqual(h.searches, []);
+});
+
+test('without a Google key the list explains what to do instead of searching', async () => {
+  const h = fixture({ key: '' });
+  h.input('click');
+  assert.equal(h.state().phase, 'idle');
+  assert.match(h.state().statusMessage, /clave de Google Maps/);
+  assert.equal((await h.handleNavigateTool('start_route', { query: 'x' })).ok, false);
+});
+
+test('home lists dictation, saved places and nearby shortcuts; a shortcut searches nearest first', async () => {
+  const h = fixture();
+  h.send({ type: 'navigation-sensors', windowId: 'navigate:main', event: { kind: 'location', location: { latitude: -2.17, longitude: -79.92, accuracy: 5 } } });
+  for (let i = 0; i < 3; i++) h.input('scroll-down');
+  h.input('click');
+  assert.equal(h.state().phase, 'search');
+  await flush();
+  assert.deepEqual(h.searches, ['nearby:pharmacy']);
+  assert.equal(h.state().suggestions[0].placeId, 'near:pharmacy');
+  assert.equal(h.messages.some(m => m.type === 'voice-draft'), false);
+  h.input('click');
+  assert.equal(h.state().target.placeId, 'near:pharmacy');
+});
+
+test('a tap during guidance opens the menu where the route can be stopped', async () => {
+  const h = fixture();
+  h.handleNavigateTool('start_route', { query: 'Malecón' });
+  await flush();
+  h.nav({ type: 'ready' });
+  h.nav({ type: 'status', status: 'OK' });
+  h.input('click');
+  assert.ok(h.calls.some(c => c[0] === 'menu'));
+  assert.equal(h.state().phase, 'guiding');
+});
+
+test('the screen stays on from the route search until the trip ends', async () => {
+  const h = fixture();
+  const holds = () => h.messages.filter(m => m.type === 'keep-screen-on').map(m => m.on);
+  h.handleNavigateTool('start_route', { query: 'Malecón' });
+  await flush();
+  assert.deepEqual(holds(), [true]);
+  h.nav({ type: 'ready' });
+  h.nav({ type: 'status', status: 'OK' });
+  await h.handleNavigateTool('stop_route', {});
+  assert.deepEqual(holds(), [true, false]);
+});

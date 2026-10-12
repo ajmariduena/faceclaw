@@ -3,7 +3,7 @@
 ## Cómo está hoy
 - App propia de Faceclaw (`app/apps/navigate/`): búsqueda y rutas con Mapbox (Search Box, Directions en carro, a pie y bici), mapa estático de Mapbox, GPS del teléfono y recálculo si te sales 50 m de la ruta durante 3 lecturas seguidas.
 - Necesita un token público de Mapbox (Ajustes > API Keys); no está configurado.
-- La interfaz está en inglés, con pies, millas y AM/PM, gestos escritos en pantalla y sin el marco terminal. Hay renders de cómo está y de la propuesta en `tools/headless-render/nav-scenes.cjs`.
+- La interfaz está en inglés, con pies, millas y AM/PM, gestos escritos en pantalla y sin el marco terminal. Los renders de cómo estaba vivían en `nav-scenes.cjs`, que se borró con Mapbox (ver `google.md`).
 
 ## Propuesta de interfaz
 Marco terminal, en español, con metros y hora de 24 h. El giro va con flecha y distancia grande, la instrucción en blanco y el giro siguiente en tenue; el pie muestra distancia, tiempo y «llegas 18:52». No hay instrucciones en pantalla.

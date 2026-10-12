@@ -11,6 +11,7 @@
  */
 import { getFont } from "../graphics/bdffont";
 import { GrayImage, type UiFont } from "../graphics/image";
+import { StockUiFont } from "../graphics/stock-ui-font";
 import { TtfFont } from "../graphics/ttf-font";
 import { listInstalledFonts, type InstalledFont } from "../graphics/installed-fonts";
 import {
@@ -36,6 +37,7 @@ const DEFAULT_TTF_SIZE = 16;
 const PREVIEW_TEXT = "The quick brown fox jumps over 0123456789";
 const INHERIT_UI_FONT_LABEL = "Same as UI font";
 const UI_BITMAP_FACES: FontPickerOptions["bitmapFaces"] = [
+  { face: "even", label: "Even" },
   { face: "terminus", label: "Terminus" },
   { face: "terminusv", label: "TerminusV" },
 ];
@@ -119,6 +121,7 @@ export class FontPickerLayer implements Layer {
   /** The draft's concrete font for the preview (bitmap fallback if unloadable). */
   private previewFont(): UiFont {
     if (this.draft.kind === "inherit") return getDefaultSmallFont();
+    if (this.draft.kind === "bitmap" && this.draft.face === "even") return StockUiFont.get() ?? getDefaultSmallFont();
     if (this.draft.kind === "ttf") {
       const font = TtfFont.load(this.draft.font.path, this.draft.size);
       if (font) return font;
@@ -336,7 +339,7 @@ export function uiFontPickerMenuItem(): MenuItem {
   return fontPickerMenuItem({
     rowLabel: "Font",
     description:
-      "Typeface for UI text on the glasses: a bitmap Terminus variant or any installed TTF face at a chosen weight and size. Install more fonts from the Files app.",
+      "Typeface for UI text on the glasses: Even's own system font, a bitmap Terminus variant, or any installed TTF face at a chosen weight and size. Install more fonts from the Files app.",
     title: "UI font",
     monospaceOnly: false,
     sizeAllowed: uiFontSizeAllowed,

@@ -39,7 +39,7 @@ test('app paints one bordered card with six stable dots centred on the card and 
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(image.pixels[y * 576 + x], 0);
   }
   const drawn = texts();
-  for (const expected of ['Sat 10', 'Nothing today', 'Not paired', 'Bots', 'Setup required', 'Live facts · ES/EN', 'Coming soon', 'More', 'ES ', ' EN'])
+  for (const expected of ['Sat 10', 'Nothing today', 'Not paired', 'Setup required', 'Live facts · ES/EN', 'More', 'ES ', ' EN'])
     assert.ok(drawn.includes(expected), expected);
   for (const spanish of ['Sábado', 'Toca para', 'Sin ', 'Más', 'Traducir', 'Calendario', 'Nada sonando', 'Sin notificaciones'])
     assert.ok(!drawn.some(text => text.includes(spanish)), spanish);
@@ -55,32 +55,23 @@ test('the Translate card says Ready with a Soniox key and the Paseo card shows c
   assert.ok(texts().includes('Mac unreachable'));
   assert.equal(textDraws.find(draw => draw.text === 'Mac unreachable').value, 153);
   textDraws = [];
-  paintHome(0, snapshot({ paseo: { configured: true, status: '', updates: [], needs: 0, working: 0 } }), face);
-  assert.ok(texts().includes('No agents'));
-  textDraws = [];
-  const lastCounts = { needs: 1, failed: 0, review: 0, working: 2, done: 3 };
+  const lastCounts = { needs: 1, failed: 0, review: 0, working: 2, background: 0, done: 3 };
   paintHome(0, snapshot({ paseo: { configured: true, status: 'Mac unreachable', updates: [], needs: 0, working: 0, lastSeenMs: NOW.getTime() - 29 * 60_000, lastCounts } }), face);
-  const offline = textDraws.filter(draw => draw.x === 20);
-  assert.deepEqual(offline.slice(0, 2).map(draw => [draw.text, draw.value]), [['Mac unreachable', 255], ['Last seen 29 min ago', 153]]);
-  // Terminus is wider than the stock font, so the ledger clips.
-  assert.ok(offline[2].text.startsWith('Was: 1 needs you') && offline[2].value === 153, offline[2].text);
+  assert.equal(textDraws.find(draw => draw.text === 'Offline').value, 153, 'the last counts, marked offline');
+  assert.ok(texts().includes('Review') && texts().includes('Done'));
 });
 
-test('the Paseo card states a verdict, the agent behind it and a ledger on the last row', () => {
+test('the Paseo card is four counts: Review, Working, Background and Done', () => {
   textDraws = [];
-  const counts = { needs: 1, failed: 0, review: 0, working: 2, done: 3 };
+  const counts = { needs: 1, failed: 0, review: 1, working: 2, background: 0, done: 3 };
   const paseo = { configured: true, status: '', needs: 1, working: 2, counts, lastSeenMs: null, lastCounts: null, updates: [
     { agentId: 'a', title: 'Fix reconnect BLE', bucket: 'needs', activityMs: NOW.getTime() - 60_000, line: '¿Apruebo correr los tests de BLE?' },
-    { agentId: 'b', title: 'PR #1221 jelou-cli', bucket: 'working', activityMs: NOW.getTime() - 240_000, line: 'Corriendo los tests.' },
   ] };
   paintHome(0, snapshot({ paseo }), face);
-  const card = textDraws.filter(draw => draw.x === 20);
-  assert.deepEqual(card.slice(0, 2).map(draw => [draw.text, draw.value]), [['1 needs you', 255], ['Fix reconnect BLE', 153]]);
-  assert.ok(card.some(draw => draw.value === 255 && draw.text.startsWith('¿Apruebo')));
-  const ledger = card[card.length - 1];
-  assert.deepEqual([ledger.text, ledger.value], ['2 working · 3 done', 153]);
-  assert.ok(ledger.y > card[card.length - 2].y + 27, 'a blank row before the ledger');
-  assert.ok(!texts().includes('PR #1221 jelou-cli'), 'only the lead agent is named');
+  const labels = textDraws.filter(draw => ['Review', 'Working', 'Background', 'Done'].includes(draw.text));
+  assert.deepEqual(labels.map(draw => [draw.text, draw.value]), [['Review', 153], ['Working', 153], ['Background', 85], ['Done', 153]], 'an empty count is faint');
+  assert.ok(labels[0].y === labels[1].y && labels[2].y === labels[3].y && labels[2].y > labels[0].y, 'a 2×2 grid');
+  assert.ok(!texts().includes('Fix reconnect BLE'), 'counts only, no agent names');
   assert.equal(textDraws.find(draw => draw.text === 'Paseo').y, 16, 'header keeps the name');
 });
 
@@ -174,22 +165,26 @@ test('long titles are clipped to the card and never overflow', () => {
   assert.ok(font.measureText(clipped.text) <= 278);
 });
 
-test('the Bots card shows the two most relevant updates (who dim, line white, at most two lines) or a centred status', () => {
-  const bots = { status: 'Ask Glasses anything', updates: [
-    { bot: 'Glasses', who: 'Glasses · now', line: 'Hay uno a $62 el jueves 07:10 en Avianca; el tuyo cuesta $89 y el cambio no cobra multa.' },
-    { bot: 'Research', who: 'Research · working 4 min', line: 'Comparando Google y Mapbox.' },
-  ] };
+test('the Grok Bot card draws the bot over its last reply (at most three centred lines) and its age, or a status', () => {
+  const pitch = Math.max(27, font.lineHeight + 4);
+  const long = 'Hay uno a $62 el jueves 07:10 en Avianca; el tuyo cuesta $89, el cambio no cobra multa y además puedes elegir asiento sin costo extra.';
   textDraws = [];
-  paintHome(1, snapshot({ bots }), face);
-  const card = textDraws.filter(draw => draw.x === 20);
-  assert.equal(textDraws.find(draw => draw.text === 'Bots').y, 16, 'header');
-  assert.deepEqual(card.map(draw => draw.value), [153, 255, 255, 153, 255]);
-  assert.equal(card[0].text, 'Glasses · now');
-  assert.ok(card[2].text.endsWith('…'), 'the long line is cut at two lines');
-  assert.equal(card[3].text, 'Research · working 4 min');
-  assert.ok(card.at(-1).y + font.lineHeight <= 254);
+  const image = paintHome(1, snapshot({ bots: { face: 'idle', line: long, lineDim: false, age: '1 h', status: 'Ask Grok Bot anything' } }), face).withDrawsBaked();
+  assert.ok(!texts().includes('Grok Bot'), 'the mark stands for the name');
+  const lines = textDraws.filter(draw => draw.y >= 124 && draw.y < 222);
+  assert.equal(lines.length, 3);
+  assert.deepEqual(lines.map(draw => draw.y), [124, 124 + pitch, 124 + 2 * pitch]);
+  assert.ok(lines.every(draw => draw.value === 255));
+  assert.ok(lines[2].text.endsWith('…'), 'a fourth line is cut');
+  for (const draw of lines) assert.ok(Math.abs(draw.x + font.measureText(draw.text) / 2 - 159) <= 1, 'centred');
+  assert.deepEqual(textDraws.filter(draw => draw.y === 222).map(draw => [draw.text, draw.value]), [['1 h', 153]]);
+  let mark = 0;
+  for (let y = 14 + 14; y < 14 + 14 + 95; y++) for (let x = 230 + 99; x < 230 + 219; x++) if (image.pixels[y * 576 + x] === 255) mark++;
+  assert.ok(mark > 2000, `the mark is drawn (${mark} white pixels)`);
   textDraws = [];
-  paintHome(1, snapshot({ bots: { status: 'Ask Glasses anything', updates: [] } }), face);
-  assert.ok(texts().includes('Ask Glasses anything'));
-  assert.equal(textDraws.find(draw => draw.text === 'Ask Glasses anything').value, 153);
+  paintHome(1, snapshot({ bots: { face: 'working', line: 'Busca vuelos a Quito', lineDim: true, age: 'working 0:12', status: '' } }), face);
+  assert.deepEqual(textDraws.filter(draw => draw.y >= 124 && draw.y < 222).map(draw => [draw.text, draw.y, draw.value]), [['Busca vuelos a Quito', 124 + pitch, 153]]);
+  textDraws = [];
+  paintHome(1, snapshot({ bots: { face: 'idle', line: '', lineDim: false, age: '', status: 'Ask Grok Bot anything' } }), face);
+  assert.deepEqual(textDraws.filter(draw => draw.x > 0 && draw.y >= 124).map(draw => [draw.text, draw.value]), [['Ask Grok Bot anything', 153]]);
 });

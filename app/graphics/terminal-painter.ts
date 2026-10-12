@@ -36,12 +36,19 @@ export function fitLine(face: Face, text: string, width: number): string {
   const clean = text.replace(/[\r\n\t]/g, " ");
   if (face.measureLine(clean) <= width) return clean;
   const chars = Array.from(clean);
-  while (chars.length && face.measureLine(`${chars.join("").trimEnd()}…`) > width) chars.pop();
-  return `${chars.join("").trimEnd()}…`;
+  const cut = (count: number) => `${chars.slice(0, count).join("").trimEnd()}…`;
+  let low = 0;
+  let high = chars.length - 1;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if (face.measureLine(cut(mid)) <= width) low = mid;
+    else high = mid - 1;
+  }
+  return cut(low);
 }
 
 /** Word wrap; a word wider than the line is cut with an ellipsis rather than overflowing. */
-export function wrapLines(face: Face, text: string, width: number): string[] {
+export function wrapLines(face: Face, text: string, width: number, limit = Infinity): string[] {
   const lines: string[] = [];
   let line = "";
   for (const word of text.replace(/\s+/g, " ").trim().split(" ")) {
@@ -50,6 +57,7 @@ export function wrapLines(face: Face, text: string, width: number): string[] {
     if (face.measureLine(next) <= width) line = next;
     else {
       if (line) lines.push(line);
+      if (lines.length >= limit) return lines;
       line = face.measureLine(word) <= width ? word : fitLine(face, word, width);
     }
   }
@@ -59,10 +67,11 @@ export function wrapLines(face: Face, text: string, width: number): string[] {
 
 /** At most `max` lines; the last one ends in an ellipsis when text was cut. */
 export function wrapCapped(face: Face, text: string, width: number, max: number): string[] {
-  const lines = wrapLines(face, text, width);
+  // One line past `max` already overflows the last kept line, so the rest never shows.
+  const lines = wrapLines(face, text, width, max + 1);
   if (lines.length <= max) return lines;
   const kept = lines.slice(0, max);
-  kept[max - 1] = fitLine(face, `${kept[max - 1]} ${lines.slice(max).join(" ")}`, width);
+  kept[max - 1] = fitLine(face, `${kept[max - 1]} ${lines[max]}`, width);
   return kept;
 }
 

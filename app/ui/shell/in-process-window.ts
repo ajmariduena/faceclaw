@@ -99,8 +99,18 @@ export function createInProcessWindow(options: InProcessWindowOptions): InProces
       console.error(`${options.windowId} render failed: ${error}`);
     });
   };
-  // Handed to app code as a bare callback, so it takes no arguments.
-  const requestRender = () => renderInNewFrame(0);
+  // Handed to app code as a bare callback, so it takes no arguments. Paints once
+  // per burst: several data events in one turn would each repaint the whole
+  // window, and the compositor keeps only the last.
+  let renderQueued = false;
+  const requestRender = () => {
+    if (renderQueued) return;
+    renderQueued = true;
+    setTimeout(() => {
+      renderQueued = false;
+      renderInNewFrame(0);
+    }, 0);
+  };
   let heightMode = options.heightMode ?? "min";
   const stack = new LayerStack(
     options.baseLayer,
