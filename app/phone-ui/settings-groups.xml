@@ -1,0 +1,31 @@
+<StackLayout xmlns="http://schemas.nativescript.org/tns.xsd">
+  <Repeater items="{{ groups }}">
+    <Repeater.itemTemplate>
+      <StackLayout class="{{ groupClass }}" visibility="{{ groupVisibility }}">
+        <Label text="{{ title }}" class="fc-group-title" visibility="{{ titleVisibility }}" />
+        <StackLayout class="fc-card">
+          <Repeater items="{{ rows }}">
+            <Repeater.itemTemplate>
+              <GridLayout columns="*,auto,auto" rows="auto,auto" class="{{ rowClass }}" visibility="{{ rowVisibility }}" tap="{{ onTap }}">
+                <StackLayout col="0" class="fc-row-text" verticalAlignment="center">
+                  <Label text="{{ label }}" class="fc-row-label" textWrap="true" />
+                  <Label text="{{ sublabel }}" class="fc-row-sub" textWrap="true" visibility="{{ sublabelVisibility }}" />
+                </StackLayout>
+                <Label col="1" text="{{ value }}" class="fc-row-value" verticalAlignment="center" visibility="{{ valueVisibility }}" />
+                <Switch col="1" checked="{{ checked }}" checkedChange="{{ onCheckedChange }}" class="fc-switch" verticalAlignment="center" visibility="{{ switchVisibility }}" />
+                <Label col="2" text="›" class="fc-chevron" verticalAlignment="center" visibility="{{ chevronVisibility }}" />
+                <!-- rows="auto": a rows-less GridLayout's implicit star row balloons inside a Repeater. -->
+                <Slider row="1" colSpan="3" minValue="{{ sliderMin }}" maxValue="{{ sliderMax }}" value="{{ sliderValue }}" valueChange="{{ onSliderChange }}" isEnabled="{{ sliderEnabled }}" class="fc-slider" visibility="{{ sliderVisibility }}" />
+                <GridLayout row="1" colSpan="3" rows="auto" columns="*,*,*" class="fc-segments" visibility="{{ segmentsVisibility }}">
+                  <Label col="0" text="{{ segment0 }}" class="{{ segment0Class }}" tap="{{ onSegment0Tap }}" />
+                  <Label col="1" text="{{ segment1 }}" class="{{ segment1Class }}" tap="{{ onSegment1Tap }}" />
+                  <Label col="2" text="{{ segment2 }}" class="{{ segment2Class }}" tap="{{ onSegment2Tap }}" />
+                </GridLayout>
+              </GridLayout>
+            </Repeater.itemTemplate>
+          </Repeater>
+        </StackLayout>
+      </StackLayout>
+    </Repeater.itemTemplate>
+  </Repeater>
+</StackLayout>

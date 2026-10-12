@@ -1,23 +1,12 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo">
-  <ActionBar title="API keys" />
-  <GridLayout rows="auto,*,auto" class="p-16">
-    <Button row="0" text="Test all" tap="{{ testAll }}" isEnabled="{{ testAllEnabled }}" />
-    <!-- Not a ListView: recycled cells fire textChange with another row's text and overwrite that row's key. -->
-    <ScrollView row="1">
-      <Repeater items="{{ rows }}">
-        <Repeater.itemTemplate>
-          <StackLayout class="m-b-16">
-            <Label text="{{ group }}" class="body-text" />
-            <Label text="{{ label }}" class="h3" />
-            <GridLayout columns="*,auto">
-              <TextField col="0" text="{{ value }}" textChange="{{ onEdit }}" secure="{{ secure }}" autocorrect="false" autocapitalizationType="none" hint="{{ placeholder }}" />
-              <Button col="1" text="{{ testLabel }}" tap="{{ onTest }}" isEnabled="{{ enabled }}" visibility="{{ testVisibility }}" />
-            </GridLayout>
-            <Label text="{{ status }}" textWrap="true" />
-          </StackLayout>
-        </Repeater.itemTemplate>
-      </Repeater>
-    </ScrollView>
-    <Button row="2" text="{{ advancedLabel }}" tap="{{ toggleAdvanced }}" />
-  </GridLayout>
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" xmlns:rc="phone-ui" navigatingTo="navigatingTo" class="fc-page">
+  <ActionBar title="API keys" class="fc-action-bar">
+    <NavigationButton android.systemIcon="ic_menu_back" tap="{{ onBackTap }}" />
+    <!-- Action view, not text: Android menu-item text takes the (unapplied) toolbar theme's colour and vanishes on the black bar. -->
+    <ActionItem tap="{{ testAll }}" android.position="actionBar">
+      <Label text="{{ testAllLabel }}" class="fc-bar-action" />
+    </ActionItem>
+  </ActionBar>
+  <ScrollView>
+    <rc:settings-groups class="fc-body" />
+  </ScrollView>
 </Page>

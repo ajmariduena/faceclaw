@@ -131,3 +131,11 @@
   horizontal-align: center;
   vertical-align: center;
 }
+/* The theme's .ns-android Button margin (4 12) and 52 height outrank .tab-button. */
+.ns-android Button.tab-button {
+  margin: 6 2;
+  height: 48;
+}
+.ns-android .landscape-layout Button.tab-button {
+  margin: 6 1;
+}

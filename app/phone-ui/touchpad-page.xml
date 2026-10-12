@@ -1,0 +1,62 @@
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" xmlns:rc="phone-ui" navigatingTo="navigatingTo" loaded="loaded" unloaded="unloaded" class="fc-page">
+    <ActionBar title="Touchpad" class="fc-action-bar">
+        <NavigationButton android.systemIcon="ic_menu_back" tap="{{ onBackTap }}" />
+    </ActionBar>
+
+    <GridLayout>
+        <GridLayout rows="auto,*" visibility="{{ portraitLayoutVisibility }}">
+            <StackLayout row="0" visibility="{{ displayPreviewVisibility }}">
+                <Image src="{{ displayPreview }}" stretch="fill" height="{{ displayPreviewHeight }}"
+                    tap="{{ onMirrorTap }}" doubleTap="{{ onMirrorDoubleTap }}" longPress="{{ onMirrorLongPress }}" swipe="{{ onMirrorSwipe }}" />
+            </StackLayout>
+            <GridLayout
+                row="0"
+                class="display-preview-message"
+                height="{{ displayPreviewHeight }}"
+                visibility="{{ displayPreviewMessageVisibility }}">
+                <Label text="{{ displayPreviewMessage }}" textWrap="true" horizontalAlignment="center" verticalAlignment="center" />
+            </GridLayout>
+            <!-- The controls get the whole star row so the active tab's
+                 content can center in the leftover height. -->
+            <GridLayout row="1" rows="*,auto" class="p-20">
+                <rc:remote-controls row="0" visibility="{{ controlsVisibility }}" />
+                <Button row="1" text="Stop recording" tap="{{ onStopRecordingTap }}" visibility="{{ stopRecordingButtonVisibility }}" />
+            </GridLayout>
+        </GridLayout>
+
+        <GridLayout class="landscape-layout" visibility="{{ landscapeLayoutVisibility }}">
+            <GridLayout rows="*" columns="*,345">
+                <GridLayout col="0" layoutChanged="{{ onLandscapePreviewLayoutChanged }}">
+                    <StackLayout visibility="{{ displayPreviewVisibility }}" horizontalAlignment="left" verticalAlignment="center">
+                        <Image
+                            src="{{ displayPreview }}"
+                            stretch="fill"
+                            width="{{ landscapeDisplayPreviewWidth }}"
+                            height="{{ landscapeDisplayPreviewHeight }}"
+                            tap="{{ onMirrorTap }}" doubleTap="{{ onMirrorDoubleTap }}" longPress="{{ onMirrorLongPress }}" swipe="{{ onMirrorSwipe }}" />
+                    </StackLayout>
+                    <GridLayout
+                        class="display-preview-message"
+                        horizontalAlignment="left"
+                        verticalAlignment="center"
+                        width="{{ landscapeDisplayPreviewWidth }}"
+                        height="{{ landscapeDisplayPreviewHeight }}"
+                        visibility="{{ displayPreviewMessageVisibility }}">
+                        <Label text="{{ displayPreviewMessage }}" textWrap="true" horizontalAlignment="center" verticalAlignment="center" />
+                    </GridLayout>
+                </GridLayout>
+                <GridLayout col="1" rows="*,auto">
+                    <rc:remote-controls row="0" visibility="{{ controlsVisibility }}" />
+                    <Button row="1" text="Stop recording" tap="{{ onStopRecordingTap }}" visibility="{{ stopRecordingButtonVisibility }}" />
+                </GridLayout>
+            </GridLayout>
+        </GridLayout>
+        <rc:text-setting-editor />
+        <!-- Keyboard-input panel (the keyboard button beside the mic button):
+             the phone's end of the keyboard dialog on the glasses
+             (ui/shell/keyboard-input.ts). Same placement and collapsing rules
+             as the setting editor above. Enter inserts a newline; the send
+             buttons pick a destination directly. -->
+        <rc:keyboard-input-panel />
+    </GridLayout>
+</Page>

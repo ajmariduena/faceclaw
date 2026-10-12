@@ -1,5 +1,5 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo">
-    <ActionBar title="Conversations">
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" class="fc-page" navigatingTo="navigatingTo">
+    <ActionBar class="fc-action-bar" title="Conversations">
         <ActionItem text="Ask AI" tap="{{ onAskTap }}" android.position="actionBar" />
         <ActionItem text="Speakers" tap="{{ onSpeakersTap }}" android.position="actionBar" />
     </ActionBar>

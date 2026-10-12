@@ -1,5 +1,5 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" unloaded="unloaded">
-    <ActionBar title="Ask about conversations" />
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" class="fc-page" navigatingTo="navigatingTo" unloaded="unloaded">
+    <ActionBar class="fc-action-bar" title="Ask about conversations" />
 
     <GridLayout rows="auto,auto,auto,*" class="p-8">
         <TextField

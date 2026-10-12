@@ -1,5 +1,5 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" loaded="loaded" unloaded="unloaded" actionBarHidden="{{ actionBarHidden }}">
-    <ActionBar title="Permissions" />
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" class="fc-page" navigatingTo="navigatingTo" loaded="loaded" unloaded="unloaded" actionBarHidden="{{ actionBarHidden }}">
+    <ActionBar class="fc-action-bar" title="Permissions" />
 
     <GridLayout rows="auto,*,auto" class="p-16">
         <StackLayout row="0">

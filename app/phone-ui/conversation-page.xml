@@ -1,5 +1,5 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" unloaded="unloaded">
-    <ActionBar title="{{ pageTitle }}">
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" class="fc-page" navigatingTo="navigatingTo" unloaded="unloaded">
+    <ActionBar class="fc-action-bar" title="{{ pageTitle }}">
         <ActionItem text="Re-diarize" tap="{{ onRediarizeTap }}" android.position="popup" />
         <ActionItem text="Split speaker..." tap="{{ onSplitSpeakerTap }}" android.position="popup" />
         <ActionItem text="Delete conversation" tap="{{ onDeleteTap }}" android.position="popup" />
