@@ -55,6 +55,8 @@ const RECONNECT_MAX_DELAY_MS = 60_000;
 /** How long the socket may stay open without the server_info that follows hello. */
 const READY_TIMEOUT_MS = 20_000;
 const REQUEST_TIMEOUT_MS = 20_000;
+/** The first call after the daemon starts also starts the orchestrator agent. */
+const VOICE_START_TIMEOUT_MS = 60_000;
 /** App-level liveness: the relay can keep a dead session's socket open. */
 const PING_INTERVAL_MS = 25_000;
 const PING_TIMEOUT_MS = 10_000;
@@ -313,6 +315,31 @@ export class PaseoDaemonClient {
     } catch {
       // Nothing to cancel on a dead connection.
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Voice orchestrator, messages mode (text in, text out)
+
+  /** Starts the call, or resumes it when the daemon still has this id. `audio: false` needs the fork's text-only calls. */
+  startVoiceMessages(callId: string, history: string[]): Promise<{ agentId: string | null; lastSeq: number }> {
+    return this.request(
+      { type: "voice.messages.start.request", callId, language: "es", greet: false, audio: false, ...(history.length ? { history } : {}) },
+      "voice.messages.start.response",
+      VOICE_START_TIMEOUT_MS,
+    );
+  }
+
+  sendVoiceUtterance(callId: string, utteranceId: string, text: string): Promise<unknown> {
+    return this.request({ type: "voice.messages.send_utterance.request", callId, utteranceId, text }, "voice.messages.send_utterance.response");
+  }
+
+  /** Items after `afterSeq`; also acknowledges them, and makes this connection the one that gets live updates. */
+  syncVoiceMessages(callId: string, afterSeq: number): Promise<{ active: boolean; items: any[] }> {
+    return this.request({ type: "voice.messages.sync.request", callId, afterSeq }, "voice.messages.sync.response");
+  }
+
+  endVoiceMessages(callId: string): Promise<unknown> {
+    return this.request({ type: "voice.messages.end.request", callId }, "voice.messages.end.response");
   }
 
   // -------------------------------------------------------------------------

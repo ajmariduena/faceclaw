@@ -13,6 +13,10 @@
  *   Tap dictates a reply through the glasses mic and the daemon's
  *   speech-to-text; with a permission pending, ring picks and tap answers.
  *   Tap-then-hold has Stop and Archive; double tap returns to the list.
+ * - orchestrator: a conversation with the daemon's voice orchestrator (the
+ *   first row of the list). Tap dictates and sends at once; replies and the
+ *   orchestrator's notices about agents come back as chat. Double tap returns
+ *   to the list and the call stays open; tap-then-hold ends it.
  * - pair: the `paseo daemon pair` link, typed into the phone app's editor.
  *
  * The connection lives while the window is open and, with no window, while a
@@ -98,6 +102,13 @@ import {
   type PermissionResponse,
   type QuestionFlow,
 } from "./paseo-requests";
+import {
+  OrchestratorConversation,
+  ORCHESTRATOR_KEY,
+  ORCHESTRATOR_TITLE,
+  parseOrchestratorItem,
+  statusText,
+} from "./paseo-orchestrator";
 import { parsePairingInput, pairingLabel, type PaseoPairing } from "./paseo-pairing";
 import { hasPaseoBackgroundWork, loadPairing, PASEO_PAIRING_KEY, savePairing } from "./paseo-store";
 
@@ -119,11 +130,15 @@ const DICTATION_FORMAT = "audio/pcm;rate=16000;bits=16";
 /** Mic packets buffered before the daemon acknowledges the dictation start. */
 const DICTATION_PREROLL_MAX = 60;
 const PERMISSION_OPTIONS = ["Allow once", "Always allow for this session", "Deny"] as const;
+/** The daemon closes a messages call after 20 min without a request; a sync keeps it open. */
+const ORCHESTRATOR_KEEPALIVE_MS = 60_000;
+const ORCHESTRATOR_IDLE_MS = 30 * 60_000;
+const ORCHESTRATOR_ACK_MS = 300;
 
 // ---------------------------------------------------------------------------
 // State
 
-type Screen = { kind: "list" } | { kind: "chat"; agentId: string } | { kind: "pair" };
+type Screen = { kind: "list" } | { kind: "chat"; agentId: string } | { kind: "orchestrator" } | { kind: "pair" };
 
 type AppWindow = {
   windowId: string;
@@ -162,8 +177,22 @@ type Dictation = {
   partial: string;
   preroll: string[];
   micActive: boolean;
-  /** Where the final text goes: a message to the agent, or the "Other…" answer of a question. */
-  target: "message" | "other";
+  /** Where the final text goes: a message to the agent, the "Other…" answer of a question, or the orchestrator. */
+  target: "message" | "other" | "orchestrator";
+};
+
+type OrchestratorState = {
+  callId: string;
+  conversation: OrchestratorConversation;
+  /** The daemon has this call open. */
+  active: boolean;
+  starting: Promise<boolean> | null;
+  unread: number;
+  scrollBack: number;
+  permissionIndex: number;
+  lastSpokeMs: number;
+  keepalive: ReturnType<typeof setInterval> | null;
+  ackTimer: ReturnType<typeof setTimeout> | null;
 };
 
 let window: AppWindow | null = null;
@@ -175,6 +204,7 @@ const agents = new Map<string, AgentSnapshot>();
 const workspaceNames = new Map<string, string>();
 let agentsLoaded = false;
 let chat: ChatState | null = null;
+let orchestrator: OrchestratorState | null = null;
 let dictation: Dictation | null = null;
 const draft = new ChatDraft();
 let draftTarget: Dictation["target"] = "message";
@@ -369,6 +399,7 @@ function syncClient(): void {
       created.on("workspace_update", (message) => onWorkspaceUpdate(message.payload)),
       created.on("agent_stream", (message) => onAgentStream(message.payload)),
       created.on("glance.summary", (message) => onGlanceSummary(message.payload)),
+      created.on("voice.messages.update", (message) => onOrchestratorUpdate(message.payload)),
       created.on("dictation_stream_partial", (message) => {
         if (dictation && message.payload?.dictationId === dictation.id) {
           dictation.partial = String(message.payload.text ?? "");
@@ -396,6 +427,7 @@ function stopClient(): void {
   knownStatus.clear();
   glanceLines.clear();
   summaries.clear();
+  dropOrchestrator();
   schedulePublish();
 }
 
@@ -406,7 +438,10 @@ function reportIdle(): void {
 
 function onClientChanged(current: PaseoDaemonClient): void {
   if (current !== client) return;
-  if (current.connected) void bootstrap(current);
+  if (current.connected) {
+    void bootstrap(current);
+    void syncOrchestrator();
+  }
   else { agentsLoaded = false; workspaceNames.clear(); }
   schedulePublish();
   scheduleRender();
@@ -686,7 +721,7 @@ function setScreen(next: Screen): void {
   screen = next;
   busyText = "";
   screenError = "";
-  if (window) post({ type: "set-title", windowId: window.windowId, title: next.kind === "chat" ? chatTitle() : APP_TITLE });
+  if (window) post({ type: "set-title", windowId: window.windowId, title: screenTitle() });
   updateTicker();
 }
 
@@ -709,6 +744,7 @@ function goBack(frameId: number): void {
       return;
     case "pair":
     case "chat":
+    case "orchestrator":
       setScreen({ kind: "list" });
       break;
   }
@@ -764,6 +800,12 @@ function chatTitle(): string {
   return agent ? agentName(agent) : "Agent";
 }
 
+function screenTitle(): string {
+  if (screen.kind === "chat") return chatTitle();
+  if (screen.kind === "orchestrator") return ORCHESTRATOR_TITLE;
+  return APP_TITLE;
+}
+
 function showNotice(text: string): void {
   notice = { text, untilMs: Date.now() + NOTICE_MS };
   if (noticeTimer) clearTimeout(noticeTimer);
@@ -782,7 +824,7 @@ function windowMenu(win: AppWindow): WindowMenu {
   win.menu ??= new WindowMenu({
     windowId: win.windowId,
     post,
-    title: () => (screen.kind === "chat" ? chatTitle() : APP_TITLE),
+    title: () => screenTitle(),
     items: () => menuItems(),
     size: { width: win.viewportWidth, height: win.viewportHeight },
     paintBase: () => paintContent(win),
@@ -815,6 +857,9 @@ function handleInput(win: AppWindow, event: InputEvent, frameId: number): void {
     case "chat":
       handleChatInput(event, frameId);
       return;
+    case "orchestrator":
+      handleOrchestratorInput(event, frameId);
+      return;
     case "pair":
       if (event.type === "click" && !busyText) {
         void pairFromDraft();
@@ -836,6 +881,11 @@ function handleListInput(event: InputEvent, frameId: number): void {
       return;
     }
     const selected = view.rows[view.selected];
+    if (selected?.kind === "agent" && selected.key === ORCHESTRATOR_KEY) {
+      openOrchestrator();
+      renderNow(frameId);
+      return;
+    }
     if (selected?.kind === "agent") {
       openChat(selected.key);
       renderNow(frameId);
@@ -948,6 +998,9 @@ function handleTextInput(text: string): void {
     case "pair":
       paseoPairingLinkSetting.set(text);
       render();
+      return;
+    case "orchestrator":
+      void sayToOrchestrator(text);
       return;
     case "chat":
       if (chat?.textTarget === "other") {
@@ -1087,12 +1140,12 @@ function answerPermission(agent: AgentSnapshot, request: PermissionRequest, opti
 async function startDictation(target: Dictation["target"]): Promise<void> {
   const current = client;
   const agentId = chat?.agentId;
-  if (!current?.connected || !agentId || !window) {
+  if (!current?.connected || (!agentId && target !== "orchestrator") || !window) {
     showNotice("Not connected to Paseo.");
     return;
   }
   if (!global.isAndroid) {
-    if (chat) chat.textTarget = target;
+    if (chat && target !== "orchestrator") chat.textTarget = target;
     post({ type: "start-voice-input", windowId: window.windowId });
     return;
   }
@@ -1121,7 +1174,7 @@ function handleRawMicState(active: boolean, reason?: string): void {
   // No glasses mic: the shell's voice dialog still reaches the agent as text.
   const target = dictation.target;
   cancelDictation();
-  if (chat) chat.textTarget = target;
+  if (chat && target !== "orchestrator") chat.textTarget = target;
   if (window) post({ type: "start-voice-input", windowId: window.windowId });
   if (reason) console.log(`paseo: mic tap unavailable: ${reason}`);
   render();
@@ -1149,7 +1202,7 @@ async function finishDictation(): Promise<void> {
   const current = dictation;
   const owner = client;
   const agentId = chat?.agentId;
-  if (!current || !owner || !agentId) return;
+  if (!current || !owner || (!agentId && current.target !== "orchestrator")) return;
   if (current.state === "finishing") return;
   if (window) post({ type: "raw-mic", windowId: window.windowId, on: false });
   if (current.state === "starting") {
@@ -1166,6 +1219,10 @@ async function finishDictation(): Promise<void> {
     updateTicker();
     if (!text) {
       showNotice("Nothing heard.");
+      return;
+    }
+    if (current.target === "orchestrator") {
+      if (screen.kind === "orchestrator") void sayToOrchestrator(text);
       return;
     }
     if (chat?.agentId !== agentId) return;
@@ -1204,6 +1261,260 @@ function deliverTextAnswer(text: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Orchestrator: the daemon's voice orchestrator in messages mode
+
+function orchestratorState(): OrchestratorState {
+  orchestrator ??= {
+    callId: `glasses-${Date.now().toString(36)}`,
+    conversation: new OrchestratorConversation(),
+    active: false,
+    starting: null,
+    unread: 0,
+    scrollBack: 0,
+    permissionIndex: 0,
+    lastSpokeMs: Date.now(),
+    keepalive: null,
+    ackTimer: null,
+  };
+  return orchestrator;
+}
+
+function openOrchestrator(): void {
+  const state = orchestratorState();
+  state.unread = 0;
+  state.scrollBack = 0;
+  state.permissionIndex = 0;
+  setScreen({ kind: "orchestrator" });
+  listSelectionKey = ORCHESTRATOR_KEY;
+  void ensureOrchestratorCall().then(() => scheduleRender());
+}
+
+/** Starts the call (or resumes the daemon's), with the lines said so far when it had to start over. */
+function ensureOrchestratorCall(): Promise<boolean> {
+  const state = orchestratorState();
+  const current = client;
+  if (!current?.connected) return Promise.resolve(false);
+  if (state.active) return Promise.resolve(true);
+  state.starting ??= (async () => {
+    try {
+      const history = state.conversation.history();
+      await current.startVoiceMessages(state.callId, history);
+      if (orchestrator !== state || current !== client) return false;
+      if (state.conversation.lastSeq > 0) state.conversation.restart();
+      state.active = true;
+      state.keepalive ??= setInterval(orchestratorKeepalive, ORCHESTRATOR_KEEPALIVE_MS);
+      await syncOrchestrator();
+      return true;
+    } catch (error) {
+      showNotice(`Orchestrator: ${errorMessage(error)}`);
+      return false;
+    } finally {
+      state.starting = null;
+      scheduleRender();
+    }
+  })();
+  return state.starting;
+}
+
+/** Reads what the daemon queued and acknowledges it; without the ack it repeats its notices. */
+async function syncOrchestrator(): Promise<void> {
+  const state = orchestrator;
+  const current = client;
+  if (!state?.active || !current?.connected) return;
+  try {
+    const result = await current.syncVoiceMessages(state.callId, state.conversation.lastSeq);
+    if (orchestrator !== state) return;
+    let changed = false;
+    for (const raw of result.items ?? []) changed = applyOrchestratorItem(state, raw) || changed;
+    if (!result.active) closeOrchestratorLocally(state);
+    if (changed) scheduleRender();
+  } catch (error) {
+    console.warn(`paseo: orchestrator sync failed: ${errorMessage(error)}`);
+  }
+}
+
+function onOrchestratorUpdate(payload: any): void {
+  const state = orchestrator;
+  if (!state || payload?.callId !== state.callId) return;
+  if (applyOrchestratorItem(state, payload.item)) scheduleRender();
+  if (!state.ackTimer) {
+    state.ackTimer = setTimeout(() => {
+      state.ackTimer = null;
+      void syncOrchestrator();
+    }, ORCHESTRATOR_ACK_MS);
+  }
+}
+
+function applyOrchestratorItem(state: OrchestratorState, raw: any): boolean {
+  const item = parseOrchestratorItem(raw);
+  if (!item || !state.conversation.upsert(item)) return false;
+  const viewing = screen.kind === "orchestrator" && Boolean(window?.foreground && screenOn);
+  if (item.kind === "status" && viewing) showNotice(statusText(item.code));
+  if (viewing) state.scrollBack = 0;
+  else if (item.kind === "reply" || item.kind === "notice") state.unread++;
+  updateTicker();
+  return true;
+}
+
+async function sayToOrchestrator(text: string): Promise<void> {
+  const state = orchestratorState();
+  const utteranceId = `u-${Date.now().toString(36)}`;
+  state.conversation.said(utteranceId, text, Date.now());
+  state.lastSpokeMs = Date.now();
+  state.scrollBack = 0;
+  updateTicker();
+  render();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!(await ensureOrchestratorCall()) || !client) break;
+    try {
+      await client.sendVoiceUtterance(state.callId, utteranceId, text);
+      return;
+    } catch (error) {
+      if (attempt === 0 && /call_not_found/.test(errorMessage(error))) {
+        closeOrchestratorLocally(state);
+        continue;
+      }
+      showNotice(`Not sent: ${errorMessage(error)}`);
+      break;
+    }
+  }
+  state.conversation.forget(utteranceId);
+  updateTicker();
+  render();
+}
+
+function orchestratorKeepalive(): void {
+  const state = orchestrator;
+  if (!state) return;
+  if (Date.now() - state.lastSpokeMs > ORCHESTRATOR_IDLE_MS) endOrchestratorCall();
+  else void syncOrchestrator();
+}
+
+function closeOrchestratorLocally(state: OrchestratorState): void {
+  state.active = false;
+  if (state.keepalive) clearInterval(state.keepalive);
+  state.keepalive = null;
+}
+
+/** Ends the daemon's call; what was said stays, and the next utterance starts a new call with it. */
+function endOrchestratorCall(): void {
+  const state = orchestrator;
+  if (!state) return;
+  const wasActive = state.active;
+  closeOrchestratorLocally(state);
+  if (wasActive && client?.connected) void client.endVoiceMessages(state.callId).catch(() => {});
+  render();
+}
+
+function dropOrchestrator(): void {
+  const state = orchestrator;
+  if (!state) return;
+  closeOrchestratorLocally(state);
+  if (state.ackTimer) clearTimeout(state.ackTimer);
+  orchestrator = null;
+}
+
+/** The newest permission an agent is waiting on: the orchestrator chat answers it in the usual box. */
+function orchestratorPermission(): { agent: AgentSnapshot; request: PermissionRequest } | null {
+  let best: { agent: AgentSnapshot; request: PermissionRequest } | null = null;
+  for (const agent of agents.values()) {
+    const request = agent.pendingPermissions?.[0];
+    if (!request || !isListedAgent(agent) || requestKind(request) !== "permission") continue;
+    if (!best || Date.parse(agent.updatedAt) > Date.parse(best.agent.updatedAt)) best = { agent, request };
+  }
+  return best;
+}
+
+function handleOrchestratorInput(event: InputEvent, frameId: number): void {
+  const state = orchestratorState();
+  const pending = dictation ? null : orchestratorPermission();
+  switch (event.type) {
+    case "scroll-up":
+    case "scroll-down": {
+      if (dictation) {
+        frameTimings.finishFrame(frameId, "discarded: paseo dictating");
+        return;
+      }
+      const down = event.type === "scroll-down";
+      if (pending) state.permissionIndex = Math.max(0, Math.min(PERMISSION_OPTIONS.length - 1, state.permissionIndex + (down ? 1 : -1)));
+      else {
+        const max = chatMaxScrollBack(face(), orchestratorView());
+        state.scrollBack = Math.min(max, Math.max(0, state.scrollBack + (down ? -SCROLL_ROWS : SCROLL_ROWS)));
+      }
+      renderNow(frameId);
+      return;
+    }
+    case "click":
+      if (dictation) {
+        frameTimings.finishFrame(frameId, "discarded: paseo finishing dictation");
+        void finishDictation();
+        return;
+      }
+      if (pending) {
+        answerPermission(pending.agent, pending.request, state.permissionIndex);
+        state.permissionIndex = 0;
+        renderNow(frameId);
+        return;
+      }
+      frameTimings.finishFrame(frameId, "discarded: paseo starting dictation");
+      void startDictation("orchestrator");
+      return;
+    default:
+      frameTimings.finishFrame(frameId, "discarded: paseo orchestrator ignored input");
+  }
+}
+
+function orchestratorView(): ChatView {
+  const state = orchestratorState();
+  const lines = state.conversation.lines();
+  if (dictation) lines.push({ role: "user", text: dictation.partial || "…", live: true });
+  const pending = dictation ? null : orchestratorPermission();
+  return {
+    lines,
+    scrollBack: state.scrollBack,
+    full: true,
+    footer: orchestratorFooter(state),
+    permission: pending
+      ? { question: `${agentName(pending.agent)}: ${permissionQuestion(pending.agent, pending.request)}`, options: [...PERMISSION_OPTIONS], selected: state.permissionIndex }
+      : null,
+    message: client?.connected ? (state.starting ? "Starting…" : "") : client?.status || "Connecting…",
+  };
+}
+
+function orchestratorFooter(state: OrchestratorState): { left: string; right: string } {
+  const nowMs = Date.now();
+  if (notice) return { left: `· ${notice.text}`, right: "" };
+  if (dictation) return { left: dictation.state === "finishing" ? "· Finishing" : "· Listening", right: formatClock(nowMs - dictation.startedMs) };
+  if (!client?.connected) return { left: `· ${client?.status || "Offline"}`, right: "" };
+  const since = state.conversation.thinkingSince(nowMs);
+  if (since !== null) return { left: "· Thinking", right: formatClock(nowMs - since) };
+  return { left: `· ${ORCHESTRATOR_TITLE}`, right: state.active ? "Ready" : "" };
+}
+
+function orchestratorMenuItems(): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (orchestrator?.active) {
+    items.push({
+      label: "End conversation",
+      description: "Close the call on the computer. What was said stays here.",
+      onSelect: (ctx) => {
+        ctx.stack.pop();
+        endOrchestratorCall();
+      },
+    });
+  }
+  items.push({
+    label: "Talk with phone voice",
+    description: "Use the phone's speech recognition instead of the glasses mic.",
+    onSelect: (ctx) => {
+      ctx.stack.pop();
+      if (window) post({ type: "start-voice-input", windowId: window.windowId });
+    },
+  });
+  return items;
+}
+
+// ---------------------------------------------------------------------------
 // App menu
 
 function menuItems(): MenuItem[] {
@@ -1212,6 +1523,8 @@ function menuItems(): MenuItem[] {
       return listMenuItems();
     case "chat":
       return chatMenuItems();
+    case "orchestrator":
+      return orchestratorMenuItems();
     default:
       return [];
   }
@@ -1360,6 +1673,10 @@ function listView(): ListView {
   }
   const rows: ListRow[] = [];
   const sections = sectionAgents(agents.values());
+  if (client?.connected && agentsLoaded) {
+    const unread = orchestrator?.unread ?? 0;
+    rows.push({ kind: "agent", title: unread ? `${ORCHESTRATOR_TITLE} · ${unread} new` : ORCHESTRATOR_TITLE, key: ORCHESTRATOR_KEY });
+  }
   for (const section of sections) {
     rows.push({ kind: "section", label: section.label, count: section.agents.length });
     for (const agent of section.agents) rows.push({ kind: "agent", title: sessionWorkspaceName(agent, workspaceNames), key: agent.id });
@@ -1497,6 +1814,9 @@ function paintContent(win: AppWindow): GrayImage {
       } else paintChoice(image, f, choice.view);
       break;
     }
+    case "orchestrator":
+      paintChat(image, f, orchestratorView());
+      break;
     case "pair":
       paintPair(image, f, {
         title: loadPairing() ? "Pair again" : "Pair Paseo",
@@ -1516,7 +1836,11 @@ function paintContent(win: AppWindow): GrayImage {
 /** One-second repaints while a footer counts (working time, listening clock). */
 function updateTicker(): void {
   const agent = chatAgent();
-  const wanted = Boolean(window?.foreground && screenOn && screen.kind === "chat" && (dictation || agent?.status === "running"));
+  const counting =
+    screen.kind === "chat"
+      ? Boolean(dictation || agent?.status === "running")
+      : screen.kind === "orchestrator" && Boolean(dictation || orchestrator?.conversation.thinkingSince(Date.now()) != null);
+  const wanted = Boolean(window?.foreground && screenOn && counting);
   if (wanted && !tickTimer) tickTimer = setInterval(() => render(), 1_000);
   else if (!wanted && tickTimer) {
     clearInterval(tickTimer);
