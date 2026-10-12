@@ -24,6 +24,7 @@
                         <Image src="{{ displayPreview }}" stretch="fill" visibility="{{ displayPreviewVisibility }}"
                             tap="{{ onMirrorTap }}" doubleTap="{{ onMirrorDoubleTap }}" longPress="{{ onMirrorLongPress }}" swipe="{{ onMirrorSwipe }}" />
                         <Label text="{{ displayPreviewMessage }}" textWrap="true" class="fc-mirror-message" horizontalAlignment="center" verticalAlignment="center" visibility="{{ displayPreviewMessageVisibility }}" />
+                        <GridLayout class="fc-mirror-frame" isUserInteractionEnabled="false" />
                     </GridLayout>
                     <StackLayout class="fc-card fc-card-spaced">
                         <GridLayout columns="*,auto,auto" rows="auto" class="fc-row fc-row-first" tap="{{ onDisplaySectionTap }}">

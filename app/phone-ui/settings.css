@@ -23,7 +23,7 @@
   padding: 0 16 24 16;
 }
 .fc-hero {
-  padding: 2 0 16 0;
+  padding: 8 0 0 0;
   horizontal-align: center;
 }
 .fc-hero-image {
@@ -45,7 +45,13 @@
   text-align: center;
 }
 .fc-mirror {
+  margin-top: 16;
   background-color: #000000;
+}
+.fc-mirror-frame {
+  border-width: 1;
+  border-color: #2a2a2a;
+  border-radius: 20;
 }
 .fc-mirror-message {
   color: #9a9a9a;
@@ -57,14 +63,14 @@
   font-size: 13;
   font-weight: 500;
   color: #9a9a9a;
-  padding: 18 16 8 16;
+  padding: 20 18 8 18;
 }
 .fc-card {
   background-color: #151515;
   border-radius: 20;
 }
 .fc-card-spaced {
-  margin-top: 12;
+  margin-top: 16;
 }
 .fc-row {
   padding: 12 16 12 18;
@@ -75,7 +81,7 @@
   border-top-width: 0;
 }
 .fc-row-text {
-  padding: 0;
+  padding: 5 0;
 }
 .fc-row-label {
   font-size: 16;
@@ -97,9 +103,10 @@
   margin-left: 8;
   padding-bottom: 2;
 }
-/* Android's switch reserves a 48-DIP touch box; let it overlap the row padding. */
+/* Android's switch reserves a 48-DIP touch box; 32 keeps switch rows as tall as the others. */
 .fc-switch {
-  margin: -10 0 -10 12;
+  height: 32;
+  margin-left: 12;
 }
 /* The theme's .ns-dark.ns-android Switch[checked=true] rules outrank a bare class. */
 .ns-android Switch.fc-switch,
@@ -206,4 +213,7 @@ Slider.fc-slider,
   color: #9a9a9a;
   text-align: center;
   padding: 14;
+}
+.fc-row > .fc-row-label {
+  padding: 5 0;
 }
