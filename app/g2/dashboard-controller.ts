@@ -24,6 +24,7 @@ import { hasExtractedEvenHubFonts } from "./firmware-builder";
 import { isHaltedSessionPhase, resumeAutoReconnect, suppressAutoReconnect } from "./reconnect-policy";
 import { WearRemote, type WearRemoteInputKind } from "./wear-remote";
 import { sendToBots, startBotsListening } from "../apps/bots/bots-app";
+import { instantReady, sendToInstant, startInstantListening } from "../apps/instant/instant-app";
 import { grokBotHub } from "../assistant/grokbot/grokbot";
 
 /** Who a synthetic (non-firmware) input stands for. */
@@ -432,6 +433,9 @@ class DashboardController {
       botsReady: () => grokBotHub.configured,
       startBotsListening: () => startBotsListening(),
       sendToBots: (text) => this.sendToBots(text),
+      instantReady: () => instantReady(),
+      startInstantListening: () => startInstantListening(),
+      sendToInstant: (text) => this.sendToInstant(text),
       disconnect: () => this.disconnect(),
       onScreenStateChanged: (on) => {
         // Any wake of the regular UI replaces a showing Glanceboard.
@@ -501,6 +505,13 @@ class DashboardController {
       appendLog: (line) => this.appendLog(line),
       sendToBots: (text) => this.sendToBots(text),
     });
+  }
+
+  /** Instant in front (waking the screen), then the text asked there. */
+  private sendToInstant(text: string): void {
+    if (!shell.isScreenOn()) shell.wake("window");
+    void this.launchApp("instant").catch((error) => console.warn(`Instant launch failed: ${error}`))
+      .finally(() => sendToInstant(text));
   }
 
   /** Grok Bot in front (waking the screen), then the text sent from its chat. */

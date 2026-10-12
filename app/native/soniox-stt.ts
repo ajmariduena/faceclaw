@@ -45,8 +45,10 @@ export type SonioxSttOptions = CloudSttOptions & {
   onTokens?: (tokens: SonioxToken[]) => void;
   /** Annotate spoken tokens with `loudness`. */
   measureLoudness?: boolean;
-  /** https://soniox.com/docs/stt/rt/endpoint-detection; negative sensitivity waits through hesitations. */
-  endpoint?: { sensitivity: number; maxDelayMs: number };
+  /** https://soniox.com/docs/stt/rt/endpoint-detection; negative sensitivity waits through hesitations, latencyLevel 0-3 ends sooner. */
+  endpoint?: { sensitivity: number; maxDelayMs: number; latencyLevel?: number };
+  /** Off for a single speaker: endpointing forces early finals, which diarization pays for. */
+  diarization?: boolean;
 };
 
 export class SonioxSttClient implements CloudSttClient {
@@ -82,7 +84,7 @@ export class SonioxSttClient implements CloudSttClient {
             audio_format: "pcm_s16le",
             sample_rate: CLOUD_STT_SAMPLE_RATE,
             num_channels: 1,
-            enable_speaker_diarization: true,
+            enable_speaker_diarization: this.options.diarization ?? true,
             ...(translation ? { translation } : {}),
             ...(languageHints ? {
               language_hints: languageHints,
@@ -92,6 +94,7 @@ export class SonioxSttClient implements CloudSttClient {
             ...(this.options.endpoint ? {
               endpoint_sensitivity: this.options.endpoint.sensitivity,
               max_endpoint_delay_ms: this.options.endpoint.maxDelayMs,
+              ...(this.options.endpoint.latencyLevel ? { endpoint_latency_adjustment_level: this.options.endpoint.latencyLevel } : {}),
             } : {}),
           }),
         );

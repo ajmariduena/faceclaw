@@ -81,6 +81,10 @@ export class ReconnectingSttClient implements CloudSttClient {
     if (this.ready && !this.finishing && this.continuous() && this.pause.accept(pcm)) this.client?.commitSegment?.();
   }
 
+  commitSegment(): void {
+    if (!this.stopped && !this.finishing && this.ready) this.client?.commitSegment?.();
+  }
+
   finish(): void {
     if (this.stopped || this.finishing) return;
     this.finishing = true;

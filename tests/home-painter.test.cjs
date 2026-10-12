@@ -24,18 +24,18 @@ const texts = () => textDraws.map(draw => draw.text);
 const NOW = new Date(2026, 9, 10, 9, 41);
 const snapshot = extra => ({ now: NOW, calendar: calendarCardState(true, [], NOW.getTime()), paseo: null, ...extra });
 
-test('app paints one bordered card with six stable dots centred on the card and the clock column, in English', () => {
+test('app paints one bordered card with seven stable dots centred on the card and the clock column, in English', () => {
   textDraws = [];
   const data = snapshot();
-  for (let card = 0; card < 6; card++) {
+  for (let card = 0; card < 7; card++) {
     const image = paintHome(card, data, face);
     assert.equal(image.width, 576);
     assert.equal(image.height, 288);
     assert.equal(image.pixels[14 * 576 + 250], 255);
-    assert.equal(HOME_DOTS_TOP, 115);
-    for (let i = 0; i < 6; i++) assert.equal(image.pixels[(115 + i * 11) * 576 + 218], i === card ? 255 : 85);
-    assert.equal(image.pixels[(115 - 11) * 576 + 218], 0);
-    assert.equal(image.pixels[(115 + 6 * 11) * 576 + 218], 0);
+    assert.equal(HOME_DOTS_TOP, 110);
+    for (let i = 0; i < 7; i++) assert.equal(image.pixels[(110 + i * 11) * 576 + 218], i === card ? 255 : 85);
+    assert.equal(image.pixels[(110 - 11) * 576 + 218], 0);
+    assert.equal(image.pixels[(110 + 7 * 11) * 576 + 218], 0);
     for (let y = 0; y < 288; y++) for (let x = 548; x < 576; x++) assert.equal(image.pixels[y * 576 + x], 0);
   }
   const drawn = texts();
@@ -47,7 +47,7 @@ test('app paints one bordered card with six stable dots centred on the card and 
 
 test('the Translate card says Ready with a Soniox key and the Paseo card shows connection states', () => {
   textDraws = [];
-  paintHome(3, snapshot({ translateReady: true }), face);
+  paintHome(4, snapshot({ translateReady: true }), face);
   assert.ok(texts().includes('Ready'));
   assert.ok(!texts().includes('Translate'), 'no name line under the big icon');
   textDraws = [];
@@ -82,7 +82,7 @@ test('the Calendar card lists today\'s next events, with a day line for another 
   const lunch = event('Almuerzo con Lucía', at(10, 13), at(10, 14), { location: 'Café Jardín' });
   const review = event('Review', at(10, 15), at(10, 16));
   textDraws = [];
-  paintHome(2, snapshot({ calendar: calendarCardState(true, [daily, lunch, review], NOW.getTime()) }), face);
+  paintHome(3, snapshot({ calendar: calendarCardState(true, [daily, lunch, review], NOW.getTime()) }), face);
   let drawn = texts();
   assert.ok(drawn.includes('Daily con el equipo'));
   assert.ok(drawn.includes('10:30 - 11:00'));
@@ -90,7 +90,7 @@ test('the Calendar card lists today\'s next events, with a day line for another 
   assert.ok(drawn.includes('13:00 - 14:00'));
   assert.ok(!drawn.includes('Review'), 'two events per card');
   textDraws = [];
-  paintHome(2, snapshot({ calendar: calendarCardState(true, [lunch, review], NOW.getTime()) }), face);
+  paintHome(3, snapshot({ calendar: calendarCardState(true, [lunch, review], NOW.getTime()) }), face);
   drawn = texts();
   assert.ok(drawn.includes('Café Jardín'), 'the first event keeps its location line');
   assert.ok(drawn.includes('Review'));
@@ -98,21 +98,21 @@ test('the Calendar card lists today\'s next events, with a day line for another 
   const dentist = event('Dentist', at(11, 9), at(11, 10));
   const whole = event('Feriado', at(12, 0), at(13, 0), { allDay: true });
   textDraws = [];
-  paintHome(2, snapshot({ calendar: calendarCardState(true, [dentist], NOW.getTime()) }), face);
+  paintHome(3, snapshot({ calendar: calendarCardState(true, [dentist], NOW.getTime()) }), face);
   drawn = texts();
   assert.ok(drawn.includes('Tomorrow'));
   assert.ok(drawn.includes('Dentist'));
   assert.ok(drawn.includes('09:00 - 10:00'));
   textDraws = [];
-  paintHome(2, snapshot({ calendar: calendarCardState(true, [whole], NOW.getTime()) }), face);
+  paintHome(3, snapshot({ calendar: calendarCardState(true, [whole], NOW.getTime()) }), face);
   drawn = texts();
   assert.ok(drawn.includes('Mon, Oct 12'));
   assert.ok(drawn.includes('All day'));
   textDraws = [];
-  paintHome(2, snapshot({ calendar: calendarCardState(true, [], NOW.getTime()) }), face);
+  paintHome(3, snapshot({ calendar: calendarCardState(true, [], NOW.getTime()) }), face);
   assert.ok(texts().includes('Nothing today'));
   textDraws = [];
-  paintHome(2, snapshot({ calendar: calendarCardState(false, [daily], NOW.getTime()) }), face);
+  paintHome(3, snapshot({ calendar: calendarCardState(false, [daily], NOW.getTime()) }), face);
   assert.ok(texts().includes('No calendar access'));
 });
 
@@ -159,7 +159,7 @@ test('long titles are clipped to the card and never overflow', () => {
     { title: 'Daily', startMs: NOW.getTime() + 600_000, endMs: NOW.getTime() + 1_200_000 },
     { title: long, startMs: start, endMs: start + 3_600_000 },
   ], NOW.getTime());
-  paintHome(2, snapshot({ calendar }), face);
+  paintHome(3, snapshot({ calendar }), face);
   const clipped = textDraws.find(draw => draw.text.startsWith('Reunión'));
   assert.ok(clipped.text.endsWith('…'));
   assert.ok(font.measureText(clipped.text) <= 278);

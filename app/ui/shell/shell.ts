@@ -204,6 +204,12 @@ export type ShellConfig = {
   startBotsListening?: () => boolean;
   /** Send a finished dictation or typed text to Grok Bot. */
   sendToBots?: (text: string) => void;
+  /** Instant has its keys: the wakeword opens it, and the dialogs offer Send to Instant. */
+  instantReady?: () => boolean;
+  /** Open Instant's mic once it is in front. */
+  startInstantListening?: () => boolean;
+  /** Ask Instant a finished dictation or typed text. */
+  sendToInstant?: (text: string) => void;
   /** Close the glasses connection (system menu > Disconnect). */
   disconnect?: () => Promise<void> | void;
 };
@@ -916,8 +922,9 @@ class Shell {
       this.lastInputAtMs = Date.now();
       const wokeScreen = !this.screenOn && this.wake("sidebar");
       if (action === "voice-input" && !this.activeVoiceLayer && !this.activeKeyboardLayer) {
-        if (this.home && this.config.launchApp) await this.openBotsListening();
-        else this.openVoiceDialog({ handsFree: true, defaultTarget: "bots" });
+        const instant = !!this.config.instantReady?.();
+        if (this.home && this.config.launchApp) await (instant ? this.openInstantListening() : this.openBotsListening());
+        else this.openVoiceDialog({ handsFree: true, defaultTarget: instant ? "instant" : "bots" });
       }
       return { shell: wokeScreen || action === "voice-input", window: false };
     }
@@ -1311,7 +1318,7 @@ class Shell {
   private openVoiceDialog(options: {
     finishOnClick?: boolean;
     handsFree?: boolean;
-    defaultTarget: "bots" | "app";
+    defaultTarget: "instant" | "bots" | "app";
   }): void {
     if (this.config.voiceInputEnabled === false || this.voiceDialogPending) return;
     this.voiceDialogPending = true;
@@ -1335,7 +1342,7 @@ class Shell {
   private openVoiceDialogNow(options: {
     finishOnClick?: boolean;
     handsFree?: boolean;
-    defaultTarget: "bots" | "app";
+    defaultTarget: "instant" | "bots" | "app";
   }): void {
     const targets = this.buildVoiceSendTargets();
     let defaultIndex = targets.findIndex((target) => target.id === options.defaultTarget);
@@ -1372,6 +1379,10 @@ class Shell {
    */
   private buildVoiceSendTargets(): VoiceSendTarget[] {
     const targets: VoiceSendTarget[] = [];
+    const sendToInstant = this.config.sendToInstant;
+    if (sendToInstant && this.config.instantReady?.()) {
+      targets.push({ id: "instant", label: "Send to Instant", onSend: sendToInstant });
+    }
     const sendToBots = this.config.sendToBots;
     if (sendToBots && this.config.botsReady?.()) {
       targets.push({ id: "bots", label: "Send to Grok Bot", onSend: sendToBots });
@@ -1657,7 +1668,18 @@ class Shell {
     this.config.requestShellRender();
   }
 
-  /** The wakeword's lean action: Grok Bot in front, listening (it asks for a Cursor key when there is none). */
+  /** The wakeword's action once Instant has its keys: Instant in front with its mic open. */
+  private async openInstantListening(): Promise<void> {
+    try {
+      await this.config.launchApp!("instant");
+    } catch (error) {
+      console.warn(`wakeword: Instant launch failed: ${error}`);
+      return;
+    }
+    if (this.foregroundWindow()?.appId === "instant" && this.stack.isAtBase()) this.config.startInstantListening?.();
+  }
+
+  /** The wakeword's lean action without Instant: Grok Bot in front, listening (it asks for a Cursor key when there is none). */
   private async openBotsListening(): Promise<void> {
     try {
       await this.config.launchApp!("bots");
