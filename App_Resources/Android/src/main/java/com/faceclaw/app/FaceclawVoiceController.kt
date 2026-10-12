@@ -178,10 +178,9 @@ class FaceclawVoiceController(context: Context) {
     }
 
     /**
-     * Verify this session's speaker against the enrolled wearer voice-print
-     * and report the result via onSpeakerVerified just before the final
-     * transcript. Must be set before {@link #start}; pass a null model path
-     * to disable.
+     * "My voice only": speech that does not match the enrolled wearer
+     * voice-print reaches the recognizer as silence. Must be set before
+     * {@link #start}; pass a null model path to disable.
      */
     fun setSpeakerVerification(speakerModelPath: String?, wearerEmbedding: FloatArray?, threshold: Float) {
         session.setSpeakerVerification(speakerModelPath, wearerEmbedding, threshold)

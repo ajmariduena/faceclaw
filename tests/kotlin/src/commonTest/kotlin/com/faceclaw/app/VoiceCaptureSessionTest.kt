@@ -19,7 +19,6 @@ class VoiceCaptureSessionTest {
         val pcmChunks = mutableListOf<ByteArray>()
         val frameMeta = mutableListOf<Pair<Int, Int>>()
         var speechEnds = 0
-        var verified: Pair<Boolean, Float>? = null
         val stopped = mutableListOf<Int>()
         val stoppedLatch = Latch(1, testPlatform())
         override fun onStatus(status: String?) { statuses.add(status) }
@@ -28,7 +27,6 @@ class VoiceCaptureSessionTest {
         override fun onPcm(pcm16le: ByteArray?) { pcmChunks.add(pcm16le!!) }
         override fun onFrameMeta(angleDegrees: Int, ssr: Int) { frameMeta.add(angleDegrees to ssr) }
         override fun onSpeechEnd() { speechEnds++ }
-        override fun onSpeakerVerified(isWearer: Boolean, similarity: Float) { verified = isWearer to similarity }
     }
 
     /** Scripted phone mic: each entry is a chunk amplitude; after the script the read fails (-1). */
@@ -231,28 +229,28 @@ class VoiceCaptureSessionTest {
         session.start("cloud", 2)
         assertTrue(events.stoppedLatch.await(10000))
         assertEquals(1, events.speechEnds)
-        assertNull(events.verified)
     }
 
     @Test
-    fun speakerVerificationFailsOpenAndComparesEmbeddings() {
-        fun run(embedding: FloatArray?, chunks: Int): Pair<Boolean, Float>? {
+    fun myVoiceOnlySilencesOtherSpeakersAndFailsOpen() {
+        fun run(embedding: FloatArray?): List<ByteArray> {
             val platform = ShiftedPlatform(testPlatform())
-            val host = FakeHost(platform, mic = ScriptedMic(List(chunks) { 1000 }), embedding = embedding)
+            val host = FakeHost(platform, mic = ScriptedMic(List(10) { 0 } + List(30) { 3000 }), embedding = embedding)
             val events = Events()
-            val session = session(host, platform, "voice-test-verify")
+            val session = session(host, platform, "voice-test-gate")
             session.setListener(events)
             session.setUsePhoneMic(true)
-            session.setSpeakerVerification("model", floatArrayOf(1f, 0f), 0.8f)
+            session.setSpeakerVerification("model", floatArrayOf(1f, 0f), 0.55f)
             session.start("cloud", 4)
             assertTrue(events.stoppedLatch.await(10000))
-            return events.verified
+            return events.pcmChunks
         }
-        assertEquals<Pair<Boolean, Float>?>(true to 0f, run(floatArrayOf(1f, 0f), 10)) // under 1 s: too short, fails open
-        assertEquals<Pair<Boolean, Float>?>(true to 0f, run(null, 30))                 // no embedding: fails open
-        assertEquals<Pair<Boolean, Float>?>(true to 0f, run(floatArrayOf(1f), 30))     // dimension mismatch: fails open
-        assertEquals<Pair<Boolean, Float>?>(true to 1f, run(floatArrayOf(1f, 0f), 30))
-        assertEquals<Pair<Boolean, Float>?>(false to 0f, run(floatArrayOf(0f, 1f), 30))
+        fun loud(chunks: List<ByteArray>) = chunks.count { bytes -> bytes.any { it != 0.toByte() } }
+        assertEquals(30, loud(run(floatArrayOf(1f, 0f))))
+        assertEquals(0, loud(run(floatArrayOf(0f, 1f))))
+        assertEquals(30, loud(run(null)))
+        assertEquals(30, loud(run(floatArrayOf(1f))))
+        assertEquals(40, run(floatArrayOf(0f, 1f)).size)
     }
 
     @Test

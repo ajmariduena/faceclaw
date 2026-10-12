@@ -43,8 +43,8 @@ interface VoiceCaptureHost {
 /**
  * Voice-input capture pipeline shared by both platforms: LC3 packet queue with drop/late
  * accounting, firmware-DoA beam gate, per-chunk processing (suppression, recording, speaker
- * verification buffer, endpointing, PCM emit), the segmented on-device transcript machine with
- * REPLACE-semantics partials, and speaker verification at session end. The session owns its
+ * "my voice only" gate, endpointing, PCM emit) and the segmented on-device transcript machine with
+ * REPLACE-semantics partials. The session owns its
  * worker thread (started through the shared [startThread]); listener callbacks go through the
  * host's [CallbackDispatcher] so the adapter decides the delivery thread.
  */
@@ -90,12 +90,7 @@ class VoiceCaptureSession(
         // this pipeline's normalization target) -- UNTESTED on real hardware, tune
         // against real glasses captures rather than trusting this number.
         const val WHISPER_SILENCE_PEAK_THRESHOLD = 0.01f
-        // Speaker verification against the enrolled wearer voice-print ("my voice
-        // only" command gating). Configured before start(); the utterance PCM is
-        // buffered (capped) and verified once at session end.
-        const val VERIFY_MAX_SAMPLES = SAMPLE_RATE * 10
-        const val VERIFY_MIN_SAMPLES = SAMPLE_RATE
-        const val DEFAULT_VERIFY_THRESHOLD = 0.8f
+        const val DEFAULT_VERIFY_THRESHOLD = 0.55f
         /** Samples per G2 packet; the decode buffer the worker reuses. */
         const val PACKET_SAMPLES = Lc3PacketFramer.SAMPLES_PER_PACKET
 
@@ -169,8 +164,7 @@ class VoiceCaptureSession(
     private var verifyWearerEmbedding: FloatArray? = null
     @Volatile
     private var verifyThreshold = DEFAULT_VERIFY_THRESHOLD
-    private var verifyBuffer: ShortArray? = null
-    private var verifyCount = 0
+    private var wearerGate: WearerGate? = null
     // Global mic processing (Microphones app config): spectral noise
     // suppression and firmware-DoA beam gating, applied to every capture
     // session that opts in. The raw tap opts out.
@@ -364,9 +358,7 @@ class VoiceCaptureSession(
             endpointDetector.reset()
             suppressor?.reset()
             recordingPcm = if (saveRecordings) ByteSink(SAMPLE_RATE * 2 * 4) else null
-            val verifying = verifySpeakerModelPath != null && verifyWearerEmbedding != null
-            verifyBuffer = if (verifying) ShortArray(VERIFY_MAX_SAMPLES) else null
-            verifyCount = 0
+            wearerGate = createWearerGate()
             if (activePhoneMic) {
                 val record = host.openPhoneMic()
                 if (record == null) {
@@ -390,10 +382,7 @@ class VoiceCaptureSession(
                 emitStatus(if (currentMode == Mode.CLOUD) "Listening (cloud)..." else "Listening...")
                 processG2Audio()
             }
-            // Verification result must precede the final transcript so the
-            // TS bridge can suppress a non-wearer command before it is acted
-            // on (the callbacks are posted in order to the dispatcher).
-            runSpeakerVerification()
+            wearerGate?.flush { out, n -> forwardPcm(out, n) }
             // Button released / stop requested: emit one final full-utterance
             // transcript so the UI can freeze it.
             if (currentMode == Mode.ONBOARD) {
@@ -491,24 +480,46 @@ class VoiceCaptureSession(
         if (recordingPcm != null) {
             appendRecording(pcm, count)
         }
-        val verifyBuffer = this.verifyBuffer
-        if (verifyBuffer != null && verifyCount < VERIFY_MAX_SAMPLES) {
-            val copied = min(count, VERIFY_MAX_SAMPLES - verifyCount)
-            pcm.copyInto(verifyBuffer, verifyCount, 0, copied)
-            verifyCount += copied
-        }
         if (endpointing && endpointDetector.accept(pcm, count)) {
             emitSpeechEnd()
         }
-        // PCM and frame metadata flow in every mode so levels, recording,
-        // and the Microphones radar keep working alongside onboard ASR.
-        emitPcm(pcm, count)
+        val gate = wearerGate
+        if (gate == null) {
+            forwardPcm(pcm, count)
+        } else {
+            gate.accept(pcm, count, ssr) { out, n -> forwardPcm(out, n) }
+        }
         if (hasFrameMeta) {
             emitFrameMeta(angleDegrees, ssr)
         }
+    }
+
+    // PCM flows in every mode so levels and recording keep working alongside onboard ASR.
+    private fun forwardPcm(pcm: ShortArray, count: Int) {
+        emitPcm(pcm, count)
         if (mode != Mode.CLOUD) {
             processRecognizer(AudioSegmentation.pcm16ToFloat(pcm, 0, count))
         }
+    }
+
+    private fun createWearerGate(): WearerGate? {
+        val wearer = verifyWearerEmbedding ?: return null
+        val modelPath = verifySpeakerModelPath ?: return null
+        val embedder = try {
+            host.speakerEmbedder(modelPath)
+        } catch (t: Throwable) {
+            logWarn("speaker model unavailable; my-voice-only gate off (${t.message})")
+            return null
+        }
+        return WearerGate(verifyThreshold.toDouble(), { pcm, count ->
+            try {
+                val embedding = embedder.embed(AudioSegmentation.pcm16ToLittleEndian(pcm, 0, count), SAMPLE_RATE)
+                if (embedding == null || embedding.size != wearer.size) null else VoicePrint.dot(embedding, wearer)
+            } catch (t: Throwable) {
+                logWarn("speaker embedding failed (${t.message})")
+                null
+            }
+        }, logInfo)
     }
 
     /**
@@ -663,50 +674,6 @@ class VoiceCaptureSession(
         }
         val le = AudioSegmentation.pcm16ToLittleEndian(pcm, 0, count)
         host.dispatcher.post { currentListener.onPcm(le) }
-    }
-
-    /**
-     * Embed the session's buffered utterance and compare it to the enrolled
-     * wearer voice-print. Fails open: a session too short to verify, or a
-     * model that will not load, counts as the wearer rather than silencing
-     * every command.
-     */
-    private fun runSpeakerVerification() {
-        val buffer = verifyBuffer
-        val wearer = verifyWearerEmbedding
-        val modelPath = verifySpeakerModelPath
-        verifyBuffer = null
-        if (buffer == null || wearer == null || modelPath == null) {
-            return
-        }
-        if (verifyCount < VERIFY_MIN_SAMPLES) {
-            emitSpeakerVerified(true, 0f)
-            return
-        }
-        try {
-            val embedder = host.speakerEmbedder(modelPath)
-            val le = AudioSegmentation.pcm16ToLittleEndian(buffer, 0, verifyCount)
-            val embedding = embedder.embed(le, SAMPLE_RATE)
-            if (embedding == null || embedding.size != wearer.size) {
-                emitSpeakerVerified(true, 0f)
-                return
-            }
-            val dot = VoicePrint.dot(embedding, wearer)
-            val isWearer = dot >= verifyThreshold
-            logInfo(
-                "speaker verification similarity=" + formatFixed(dot, 3) +
-                    " threshold=" + verifyThreshold + " isWearer=" + isWearer,
-            )
-            emitSpeakerVerified(isWearer, dot.toFloat())
-        } catch (t: Throwable) {
-            logWarn("speaker verification failed (${t.message})")
-            emitSpeakerVerified(true, 0f)
-        }
-    }
-
-    private fun emitSpeakerVerified(isWearer: Boolean, similarity: Float) {
-        val currentListener = listener ?: return
-        host.dispatcher.post { currentListener.onSpeakerVerified(isWearer, similarity) }
     }
 
     private fun emitFrameMeta(angleDegrees: Int, ssr: Int) {
