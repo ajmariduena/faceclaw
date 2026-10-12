@@ -46,9 +46,6 @@
 }
 .fc-mirror {
   background-color: #000000;
-  border-width: 1;
-  border-color: #2a2a2a;
-  border-radius: 20;
 }
 .fc-mirror-message {
   color: #9a9a9a;
@@ -100,8 +97,9 @@
   margin-left: 8;
   padding-bottom: 2;
 }
+/* Android's switch reserves a 48-DIP touch box; let it overlap the row padding. */
 .fc-switch {
-  margin-left: 12;
+  margin: -10 0 -10 12;
 }
 /* The theme's .ns-dark.ns-android Switch[checked=true] rules outrank a bare class. */
 .ns-android Switch.fc-switch,
@@ -167,6 +165,9 @@ Slider.fc-slider,
 .fc-page .tab-button {
   background-color: #1d1d1d;
   color: #f2f2f2;
+  horizontal-align: stretch;
+  padding: 8 4;
+  border-radius: 12;
 }
 .fc-page .tab-button-selected {
   background-color: #f2f2f2;
