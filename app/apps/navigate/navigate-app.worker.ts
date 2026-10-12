@@ -76,7 +76,8 @@ import {
 import { GoogleNavigation, type NavEvent, type NavStep, type TravelMode } from "../../native/google-navigation";
 import { calibrateHeading, normalizeHeading } from "../compass/calibration";
 import { angleDelta, compassQuality, HeadingModel, type HeadingOutput } from "./heading-model";
-import { paintGuidance, formatDistance, type GuidanceFonts, type GuidanceView, type StreetMap } from "./nav-render";
+import { formatClockTime } from "../../ui/clock-format";
+import { paintGuidance, formatDistance, formatRemaining, type GuidanceFonts, type GuidanceView, type StreetMap } from "./nav-render";
 
 declare const global: any;
 
@@ -812,6 +813,9 @@ function guidanceView(): GuidanceView {
     meters,
     road: step.road || step.simpleRoad || step.instruction,
     near: meters <= NEAR_METERS,
+    arrival: lastNav.destSeconds >= 0
+      ? `Llegas ${formatClockTime(new Date(Date.now() + lastNav.destSeconds * 1000))} · ${formatRemaining(lastNav.destSeconds)}`
+      : null,
   };
 }
 

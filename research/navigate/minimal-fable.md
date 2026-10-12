@@ -36,6 +36,7 @@ Todas sin marco, sin pie, sin hora ni fecha, sin carriles, sin «luego», sin ba
 - Todo vive en el tercio inferior, fuera de la línea de visión; el centro sigue siendo calle real.
 - Flecha vectorial suavizada y números TTF en lugar del pixel-art, con la fuente del firmware para la calle: se ve del mismo sistema que el resto de Faceclaw.
 - El tiempo y la distancia restantes no van en el lente: ya los muestra la tarjeta del inicio durante el viaje. Si hacen falta, un toque puede mostrarlos dos segundos arriba a la derecha, como el mapa completo de Even.
+- Cambio del 11 oct 2026: él pidió la hora de llegada en el lente y eligió, entre tres mocks, una línea tenue encima de la distancia («Llegas 18:52 · 23 min»); la distancia restante sigue fuera.
 
 ## A2 · Esquinas con calles (ajuste pedido tras elegir A)
 

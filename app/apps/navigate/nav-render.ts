@@ -43,7 +43,7 @@ export type NumberFont = {
 };
 
 export type GuidanceView =
-  | { kind: "guiding"; maneuver: string; roundabout: number; meters: number; road: string; near: boolean }
+  | { kind: "guiding"; maneuver: string; roundabout: number; meters: number; road: string; near: boolean; arrival: string | null }
   | { kind: "rerouting" }
   | { kind: "waiting"; label: string }
   | { kind: "arrived"; name: string; side: "left" | "right" | null }
@@ -71,6 +71,7 @@ export function paintGuidance(image: GrayImage, fonts: GuidanceFonts, view: Guid
   switch (view.kind) {
     case "guiding": {
       const glyphValue = view.near ? BRIGHT : DIM;
+      if (view.arrival) fonts.face.drawText(image, CLUSTER_X, GLYPH_Y - 52, fitLine(fonts.face, view.arrival, 576 - 16 - CLUSTER_X), DIM);
       drawManeuver(image, view.maneuver, CLUSTER_X, GLYPH_Y, GLYPH_SIZE, glyphValue);
       const [number, unit] = formatDistance(view.meters);
       numberUnit(image, fonts, TEXT_X, GLYPH_Y - 10, number, unit, view.near ? BRIGHT : MID, view.near ? MID : DIM);
@@ -129,6 +130,12 @@ function numberUnit(image: GrayImage, fonts: GuidanceFonts, x: number, y: number
   const gap = Math.round(fonts.number.sizePx * 0.1);
   fonts.number.drawText(image, x, y, number, value);
   fonts.unit.drawText(image, x + width + gap, Math.round(y + fonts.number.ascent - fonts.unit.ascent), unit, unitValue);
+}
+
+/** "23 min", "1 h 5 min". */
+export function formatRemaining(seconds: number): string {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
 }
 
 /** "150 m", "2,4 km", "12 km", split into numerals and unit. */

@@ -75,13 +75,13 @@ async function main() {
   const fonts = { face, number: TtfFont.load(adapter.fontPath, 40), unit: TtfFont.load(adapter.fontPath, 22), tiny: TtfFont.load(adapter.fontPath, 12) };
   const map = (r, extra = {}) => ({ zoom: 17, center: C, bearingDeg: 0, tile, route: { behind: r.behind, ahead: r.ahead }, destination: r.destination, faint: false, showChevron: true, northUp: false, ...extra });
   const scenes = [
-    ['near-right', { kind: 'guiding', maneuver: 'TURN_RIGHT', roundabout: -1, meters: 80, road: 'Av. Joaquín Orrantia', near: true }, map(route(80, 400))],
-    ['far-straight', { kind: 'guiding', maneuver: 'STRAIGHT', roundabout: -1, meters: 1400, road: 'Av. Francisco de Orellana', near: false }, map(route(1400, 0))],
-    ['near-left-long', { kind: 'guiding', maneuver: 'TURN_SLIGHT_LEFT', roundabout: -1, meters: 240, road: 'Calle Doctor Alfredo Baquerizo Moreno y Junín', near: true }, map(route(240, -300))],
-    ['roundabout', { kind: 'guiding', maneuver: 'ROUNDABOUT_RIGHT_COUNTERCLOCKWISE', roundabout: 3, meters: 150, road: 'Av. del Bombero', near: true }, map(route(150, 300))],
+    ['near-right', { kind: 'guiding', maneuver: 'TURN_RIGHT', roundabout: -1, meters: 80, road: 'Av. Joaquín Orrantia', near: true, arrival: 'Llegas 18:52 · 23 min' }, map(route(80, 400))],
+    ['far-straight', { kind: 'guiding', maneuver: 'STRAIGHT', roundabout: -1, meters: 1400, road: 'Av. Francisco de Orellana', near: false, arrival: 'Llegas 19:40 · 1 h 12 min' }, map(route(1400, 0))],
+    ['near-left-long', { kind: 'guiding', maneuver: 'TURN_SLIGHT_LEFT', roundabout: -1, meters: 240, road: 'Calle Doctor Alfredo Baquerizo Moreno y Junín', near: true, arrival: 'Llegas 6:52 PM · 23 min' }, map(route(240, -300))],
+    ['roundabout', { kind: 'guiding', maneuver: 'ROUNDABOUT_RIGHT_COUNTERCLOCKWISE', roundabout: 3, meters: 150, road: 'Av. del Bombero', near: true, arrival: 'Llegas 18:52 · 23 min' }, map(route(150, 300))],
     ['rerouting', { kind: 'rerouting' }, map(route(80, 400), { route: null, faint: true })],
     ['arrived', { kind: 'arrived', name: 'Mall del Sol', side: 'right' }, map(route(40, 0))],
-    ['compass-poor', { kind: 'guiding', maneuver: 'TURN_LEFT', roundabout: -1, meters: 60, road: 'Calle Panamá', near: true }, map(route(60, -300), { bearingDeg: 0, showChevron: false, northUp: true }),
+    ['compass-poor', { kind: 'guiding', maneuver: 'TURN_LEFT', roundabout: -1, meters: 60, road: 'Calle Panamá', near: true, arrival: null }, map(route(60, -300), { bearingDeg: 0, showChevron: false, northUp: true }),
       'Brújula imprecisa. Al detenerte, mueve suavemente la cabeza en varias direcciones.'],
     ['waiting', { kind: 'waiting', label: 'Buscando ruta' }, map(route(80, 400), { route: null })],
   ];
