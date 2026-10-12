@@ -99,7 +99,7 @@ function displaySection(): SettingGroup[] {
       row({
         label: "Size",
         segments: {
-          labels: s.DISPLAY_MODE_VALUES.map((value) => s.displayModeLabel(value)),
+          labels: s.DISPLAY_MODE_VALUES.map((value) => s.displayModeLabel(value).split(" · ")[0] ?? value),
           selected: () => s.DISPLAY_MODE_VALUES.indexOf(s.displayModeSetting.get()),
           onSelect: (index) => {
             const value = s.DISPLAY_MODE_VALUES[index];

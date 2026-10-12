@@ -70,7 +70,7 @@
   margin-top: 12;
 }
 .fc-row {
-  padding: 15 16 15 18;
+  padding: 12 16 12 18;
   border-top-width: 1;
   border-color: #262626;
 }
@@ -115,7 +115,7 @@
   background-color: #f2f2f2;
 }
 .fc-slider {
-  margin: 0 0 8 0;
+  margin: 4 0 0 0;
 }
 Slider.fc-slider,
 .ns-dark Slider.fc-slider {
@@ -128,7 +128,7 @@ Slider.fc-slider,
   background-color: #2e2e2e;
 }
 .fc-segments {
-  margin: 0 0 16 0;
+  margin: 10 0 4 0;
   border-width: 1;
   border-color: #3a3a3a;
   border-radius: 20;
