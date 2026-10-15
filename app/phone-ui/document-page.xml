@@ -4,6 +4,6 @@
     </ActionBar>
 
     <ScrollView>
-        <Label text="{{ text }}" textWrap="true" class="document-text p-16" />
+        <Label text="{{ text }}" textWrap="true" class="document-text fc-document" />
     </ScrollView>
 </Page>

@@ -1,8 +1,8 @@
 <Page xmlns="http://schemas.nativescript.org/tns.xsd" class="fc-page" navigatingTo="navigatingTo">
     <ActionBar class="fc-action-bar" title="Speakers" />
 
-    <ScrollView class="p-8">
-        <StackLayout>
+    <ScrollView>
+        <StackLayout class="fc-body">
             <Label text="{{ emptyMessage }}" class="conversation-empty" textWrap="true" visibility="{{ emptyVisibility }}" />
             <Repeater items="{{ speakerRows }}">
                 <Repeater.itemsLayout>

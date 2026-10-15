@@ -4,13 +4,13 @@
 @import './phone-ui/settings.css';
 
 Page {
-  background-color: #ffffff;
-  color: #222222;
+  background-color: #000000;
+  color: #f2f2f2;
 }
 
 ActionBar {
-  background-color: #424242;
-  color: #ffffff;
+  background-color: #000000;
+  color: #f2f2f2;
 }
 
 ActionItem {
@@ -52,14 +52,12 @@ ActionItem {
 }
 
 TextField {
-  background-color: #ffffff;
-  color: #222222;
+  background-color: #222222;
+  color: #f2f2f2;
 }
 
-/* Without this, the theme's .ns-dark rules recolour the text white while the
- * white background above sticks, rendering white-on-white fields.
- * Order matters: .system-name-modal TextField must stay after this rule so the
- * deliberately light modal wins the equal-specificity tie in dark mode. */
+/* NativeScript's dark theme adds an extra selector, so set both surfaces and
+ * text together to keep fields legible in either system appearance. */
 .ns-dark TextField {
   background-color: #2e2e2e;
   color: #f0f0f0;
@@ -67,8 +65,8 @@ TextField {
 
 .system-name-modal TextField,
 .system-name-modal TextView {
-  background-color: #ffffff;
-  color: #222222;
+  background-color: #222222;
+  color: #f2f2f2;
 }
 
 Button.-primary {
@@ -81,23 +79,17 @@ Button.-primary {
   font-size: 18;
 }
 
-/* The logo art is black-on-transparent; tint it light in dark mode so it
- * doesn't vanish into the dark page background. */
-.ns-dark .onboarding-logo {
-  tint-color: #e6e6e6;
-}
-
 /* License / privacy-policy links in the onboarding disclaimer footer. The
  * padding widens the tap target beyond the small text. */
 .footer-link {
-  color: #3b6fd6;
+  color: #f2f2f2;
   font-size: 15;
   text-decoration: underline;
   padding: 4 8;
 }
 
 .ns-dark .footer-link {
-  color: #8ab0ff;
+  color: #f2f2f2;
 }
 
 .footer-link-separator {
@@ -139,19 +131,17 @@ Button.-primary {
 .system-name-modal {
   margin: 16;
   padding: 16;
-  background-color: #f6f6f6;
-  color: #222222;
-  border-color: #222222;
+  background-color: #151515;
+  color: #f2f2f2;
+  border-color: #262626;
   border-width: 1;
-  border-radius: 8;
+  border-radius: 20;
 }
 
-/* The modal stays light in dark mode (setting editor and keyboard-input
- * panel); the .ns-dark pairing outguns the theme's dark-mode recolour of
- * Label/.h2 so the title doesn't go white-on-light-gray. */
+/* Settings and keyboard-input editors use the same inset dark surface. */
 .system-name-modal Label,
 .ns-dark .system-name-modal Label {
-  color: #222222;
+  color: #f2f2f2;
 }
 
 /* Modal behind the action bar's warning triangle: the problem-status warnings
@@ -161,23 +151,21 @@ Button.-primary {
  * not apply its own padding to its content. */
 .warnings-modal {
   margin: 16;
-  background-color: #f6f6f6;
-  color: #222222;
-  border-color: #222222;
+  background-color: #151515;
+  color: #f2f2f2;
+  border-color: #262626;
   border-width: 1;
-  border-radius: 8;
+  border-radius: 20;
 }
 
 .warnings-modal-content {
   padding: 16;
 }
 
-/* The modal stays light in dark mode; the .ns-dark pairing outguns the
- * theme's dark-mode recolour of Label/.h2 so the title doesn't go
- * white-on-light-gray. */
+/* Warning details use the same dark surface in both system appearances. */
 .warnings-modal Label,
 .ns-dark .warnings-modal Label {
-  color: #222222;
+  color: #f2f2f2;
 }
 
 .warnings-modal-item {

@@ -1,13 +1,13 @@
 <Page xmlns="http://schemas.nativescript.org/tns.xsd" class="fc-page" navigatingTo="navigatingTo" loaded="loaded" unloaded="unloaded" actionBarHidden="{{ actionBarHidden }}">
     <ActionBar class="fc-action-bar" title="Permissions" />
 
-    <GridLayout rows="auto,*,auto" class="p-16">
-        <StackLayout row="0">
-            <Label text="Permissions" class="h1 text-center" textWrap="true" visibility="{{ headlineVisibility }}" />
-            <Label text="{{ instructions }}" class="m-t-8 pairing-instructions" textWrap="true" />
+    <GridLayout rows="auto,*,auto" class="fc-flow">
+        <StackLayout row="0" class="fc-flow-content">
+            <Label text="Permissions" class="fc-flow-title" textWrap="true" visibility="{{ headlineVisibility }}" />
+            <Label text="{{ instructions }}" class="fc-flow-note" textWrap="true" />
         </StackLayout>
 
-        <ScrollView row="1" class="m-t-12">
+        <ScrollView row="1">
             <StackLayout>
                 <Repeater items="{{ cards }}">
                     <Repeater.itemsLayout>
@@ -29,8 +29,8 @@
             </StackLayout>
         </ScrollView>
 
-        <GridLayout row="2" columns="*,*" class="m-t-12">
-            <Button col="0" text="Back" tap="{{ onSecondaryTap }}" visibility="{{ secondaryVisibility }}" />
+        <GridLayout row="2" columns="*,*" class="fc-flow-actions">
+            <Button col="0" text="Back" tap="{{ onSecondaryTap }}" visibility="{{ secondaryVisibility }}" class="fc-secondary-button" />
             <Button col="1" text="{{ primaryLabel }}" tap="{{ onPrimaryTap }}" class="{{ primaryClass }}" />
         </GridLayout>
     </GridLayout>

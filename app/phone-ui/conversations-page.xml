@@ -1,16 +1,18 @@
 <Page xmlns="http://schemas.nativescript.org/tns.xsd" class="fc-page" navigatingTo="navigatingTo">
     <ActionBar class="fc-action-bar" title="Conversations">
-        <ActionItem text="Ask AI" tap="{{ onAskTap }}" android.position="actionBar" />
-        <ActionItem text="Speakers" tap="{{ onSpeakersTap }}" android.position="actionBar" />
+        <ActionItem tap="{{ onAskTap }}" android.position="actionBar">
+            <Label text="Ask AI" class="fc-bar-action" />
+        </ActionItem>
+        <ActionItem tap="{{ onSpeakersTap }}" android.position="actionBar">
+            <Label text="Speakers" class="fc-bar-action" />
+        </ActionItem>
     </ActionBar>
 
-    <GridLayout rows="auto,auto,*" class="p-8">
-        <SearchBar
-            row="0"
-            hint="Search (e.g. lunch past 2 days, angry)"
-            text="{{ searchText }}"
-            submit="{{ onSearchSubmit }}"
-            clear="{{ onSearchClear }}" />
+    <GridLayout rows="auto,auto,*" class="fc-body">
+        <GridLayout row="0" columns="*,auto" class="fc-conversation-search">
+            <TextField col="0" hint="Search conversations" text="{{ searchText }}" returnKeyType="search" returnPress="{{ onSearchSubmit }}" class="fc-conversation-search-input" />
+            <Label col="1" text="×" tap="{{ onSearchClear }}" accessibilityLabel="Clear search" class="fc-conversation-search-clear" verticalAlignment="center" />
+        </GridLayout>
 
         <ScrollView row="1" orientation="horizontal" class="m-t-8" visibility="{{ filterChipsVisibility }}">
             <StackLayout orientation="horizontal">
@@ -19,13 +21,13 @@
                         <StackLayout orientation="horizontal" />
                     </Repeater.itemsLayout>
                     <Repeater.itemTemplate>
-                        <Label text="{{ name }}" class="{{ chipClass }}" backgroundColor="{{ chipBackground }}" tap="{{ onChipTap }}" />
+                        <Label text="{{ name }}" class="{{ chipClass }}" tap="{{ onChipTap }}" />
                     </Repeater.itemTemplate>
                 </Repeater>
             </StackLayout>
         </ScrollView>
 
-        <ScrollView row="2" class="m-t-8">
+        <ScrollView row="2" class="m-t-8 fc-conversation-results" loaded="{{ onResultsLoaded }}">
             <StackLayout>
                 <Label text="{{ emptyMessage }}" class="conversation-empty" textWrap="true" visibility="{{ emptyVisibility }}" />
                 <Repeater items="{{ sessionRows }}">
@@ -44,7 +46,7 @@
                                     <WrapLayout />
                                 </Repeater.itemsLayout>
                                 <Repeater.itemTemplate>
-                                    <Label text="{{ name }}" class="speaker-chip" backgroundColor="{{ chipBackground }}" />
+                                    <Label text="{{ name }}" class="speaker-chip" />
                                 </Repeater.itemTemplate>
                             </Repeater>
                         </StackLayout>

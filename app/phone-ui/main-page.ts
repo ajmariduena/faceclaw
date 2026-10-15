@@ -2,9 +2,9 @@ import { Application, Color, EventData, isAndroid, Observable, Page, TextField, 
 import { MainViewModel } from './main-view-model'
 import { dashboardController } from '../g2/dashboard-controller'
 
-const SETTINGS_TEXT_COLOR = new Color('#222222')
-const SETTINGS_BACKGROUND_COLOR = new Color('#ffffff')
-const SETTINGS_PLACEHOLDER_COLOR = new Color('#666666')
+const SETTINGS_TEXT_COLOR = new Color('#f2f2f2')
+const SETTINGS_BACKGROUND_COLOR = new Color('#222222')
+const SETTINGS_PLACEHOLDER_COLOR = new Color('#9a9a9a')
 
 export function navigatingTo(args: EventData) {
   const page = <Page>args.object
@@ -60,8 +60,8 @@ function applySettingsTextFieldContrast(textField: TextField | TextView, selectA
     return
   }
 
-  nativeTextField.setTextColor(android.graphics.Color.rgb(34, 34, 34))
-  nativeTextField.setHintTextColor(android.graphics.Color.rgb(102, 102, 102))
+  nativeTextField.setTextColor(android.graphics.Color.rgb(242, 242, 242))
+  nativeTextField.setHintTextColor(android.graphics.Color.rgb(154, 154, 154))
   // Editing an existing value usually means replacing it: select all on focus
   // so typing starts fresh but the current value stays visible.
   nativeTextField.setSelectAllOnFocus(selectAllOnFocus)

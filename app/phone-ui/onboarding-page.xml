@@ -1,27 +1,27 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" actionBarHidden="true">
-    <GridLayout rows="*,auto,auto" class="p-20">
-        <StackLayout row="0" verticalAlignment="middle" visibility="{{ splashVisibility }}">
-            <Label text="{{ headline }}" class="h1 text-center" textWrap="true" />
-            <Label text="{{ tagline }}" class="body-text text-center m-t-8" textWrap="true" />
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" actionBarHidden="true" class="fc-page">
+    <GridLayout rows="*,auto,auto" class="fc-flow">
+        <StackLayout row="0" verticalAlignment="middle" visibility="{{ splashVisibility }}" class="fc-flow-hero">
+            <Label text="{{ headline }}" class="fc-flow-title" textWrap="true" />
+            <Label text="{{ tagline }}" class="fc-flow-subtitle" textWrap="true" />
             <Image src="~/images/faceclaw-logo.png" stretch="aspectFit" height="{{ logoHeight }}" horizontalAlignment="center" class="onboarding-logo m-t-24" />
         </StackLayout>
 
         <ScrollView row="0" visibility="{{ contentVisibility }}">
-            <StackLayout>
-                <Label text="{{ headline }}" class="h1 text-center m-t-24" textWrap="true" />
-                <Label text="{{ body }}" class="body-text m-t-24" textWrap="true" />
+            <StackLayout class="fc-flow-content">
+                <Label text="{{ headline }}" class="fc-flow-title" textWrap="true" />
+                <Label text="{{ body }}" class="fc-flow-card-text" textWrap="true" />
             </StackLayout>
         </ScrollView>
 
-        <StackLayout row="1" orientation="horizontal" horizontalAlignment="center" class="m-t-16" visibility="{{ footerVisibility }}">
+        <StackLayout row="1" orientation="horizontal" horizontalAlignment="center" class="fc-flow-footer" visibility="{{ footerVisibility }}">
             <Label text="License (GPLv3)" class="footer-link" tap="{{ onLicenseTap }}" />
             <Label text="·" class="footer-link-separator" />
             <Label text="Privacy Policy" class="footer-link" tap="{{ onPrivacyTap }}" />
         </StackLayout>
 
-        <GridLayout row="2" columns="*,*" class="m-t-20">
-            <Button col="0" text="{{ secondaryLabel }}" tap="{{ onSecondaryTap }}" visibility="{{ secondaryVisibility }}" />
-            <Button col="1" text="{{ primaryLabel }}" tap="{{ onPrimaryTap }}" class="-primary" />
+        <GridLayout row="2" columns="*,*" class="fc-flow-actions">
+            <Button col="0" text="{{ secondaryLabel }}" tap="{{ onSecondaryTap }}" visibility="{{ secondaryVisibility }}" class="fc-secondary-button" />
+            <Button col="1" text="{{ primaryLabel }}" tap="{{ onPrimaryTap }}" class="fc-primary-button" />
         </GridLayout>
     </GridLayout>
 </Page>
