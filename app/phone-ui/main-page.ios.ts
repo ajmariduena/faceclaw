@@ -14,7 +14,7 @@ import { deviceAddressError } from '../g2/ios-peripheral-identity'
 export function createMainPage(): Page {
   const page = new Page()
   page.actionBarHidden = true
-  page.className = 'main-page'
+  page.className = 'main-page fc-page'
   page.iosOverflowSafeAreaEnabled = false
   const root = new GridLayout()
   root.rows = 'auto,*'

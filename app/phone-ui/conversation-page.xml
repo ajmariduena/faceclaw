@@ -5,13 +5,13 @@
         <ActionItem text="Delete conversation" tap="{{ onDeleteTap }}" android.position="popup" />
     </ActionBar>
 
-    <GridLayout rows="auto,auto,auto,*" class="p-8">
-        <StackLayout row="0">
+    <GridLayout rows="auto,auto,auto,*" class="fc-body">
+        <StackLayout row="0" class="fc-conversation-header">
             <Label text="{{ headerDate }}" class="conversation-meta" />
             <Label text="{{ headerMeta }}" class="conversation-meta" textWrap="true" />
         </StackLayout>
 
-        <Image row="1" src="{{ graphSource }}" height="120" stretch="fill" class="m-t-8" visibility="{{ graphVisibility }}" />
+        <Image row="1" src="{{ graphSource }}" height="120" stretch="fill" class="fc-conversation-graph" visibility="{{ graphVisibility }}" />
 
         <Label row="2" text="{{ status }}" class="conversation-status m-t-4" textWrap="true" visibility="{{ statusVisibility }}" />
 
@@ -38,7 +38,7 @@
                             <Label text="{{ translation }}" class="transcript-translation" textWrap="true" visibility="{{ translationVisibility }}" />
                             <StackLayout orientation="horizontal" class="m-t-4">
                                 <Label text="{{ timeLabel }}" class="transcript-time" />
-                                <Label text="{{ emotionLabel }}" class="transcript-emotion m-l-6" backgroundColor="{{ emotionColor }}" visibility="{{ emotionVisibility }}" />
+                                <Label text="{{ emotionLabel }}" class="transcript-emotion m-l-6" visibility="{{ emotionVisibility }}" />
                             </StackLayout>
                         </StackLayout>
                     </Repeater.itemTemplate>

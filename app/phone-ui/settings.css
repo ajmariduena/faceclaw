@@ -27,6 +27,10 @@
 .fc-body {
   padding: 0 16 24 16;
 }
+.fc-conversation-results,
+.ns-dark .fc-conversation-results {
+  background-color: #000000;
+}
 .fc-hero {
   padding: 8 0 0 0;
   horizontal-align: center;
@@ -213,4 +217,317 @@ Slider.fc-slider,
   border-width: 0;
   border-radius: 20;
   padding: 14 18;
+}
+
+/* The same black-and-white surface language continues through pairing,
+ * onboarding, firmware and manual configuration. */
+.fc-flow {
+  padding: 0 16 16 16;
+}
+.fc-flow-content {
+  padding: 16 0 12 0;
+}
+.fc-flow-hero {
+  padding: 24 8;
+}
+.fc-page .onboarding-logo,
+.ns-dark .fc-page .onboarding-logo {
+  tint-color: #e6e6e6;
+}
+.fc-flow-title {
+  color: #f2f2f2;
+  font-size: 23;
+  font-weight: 600;
+  text-align: center;
+  width: 100%;
+  margin: 8 0 16 0;
+}
+.fc-flow-hero .fc-flow-title {
+  font-size: 26;
+}
+.fc-flow-subtitle {
+  color: #9a9a9a;
+  font-size: 16;
+  text-align: center;
+  margin-top: 8;
+}
+.fc-flow-note,
+.fc-flow-status {
+  color: #9a9a9a;
+  font-size: 14;
+}
+.fc-flow-card-text {
+  background-color: #151515;
+  color: #f2f2f2;
+  border-radius: 20;
+  font-size: 16;
+  padding: 18;
+  margin-top: 12;
+}
+.fc-flow-log {
+  background-color: #151515;
+  color: #9a9a9a;
+  border-radius: 16;
+  font-size: 12;
+  padding: 14;
+  margin-top: 12;
+}
+.fc-flow-progress {
+  color: #f2f2f2;
+  margin: 16 0;
+}
+.fc-page ActivityIndicator,
+.ns-dark .fc-page ActivityIndicator {
+  color: #f2f2f2;
+}
+.fc-flow-footer {
+  margin: 10 0;
+}
+.fc-flow-actions {
+  margin-top: 12;
+  padding-top: 8;
+}
+.fc-page Button.fc-primary-button,
+.ns-dark .fc-page Button.fc-primary-button {
+  background-color: #f2f2f2;
+  color: #000000;
+  font-size: 15;
+  font-weight: 600;
+  border-radius: 22;
+  height: 48;
+  margin: 4;
+  android-elevation: 0;
+}
+.fc-page Button.-primary,
+.ns-dark .fc-page Button.-primary {
+  background-color: #f2f2f2;
+  color: #000000;
+  border-radius: 22;
+  android-elevation: 0;
+}
+.fc-page Button.ns-dialog-item,
+.ns-dark .fc-page Button.ns-dialog-item {
+  background-color: #151515;
+  color: #f2f2f2;
+}
+.fc-page .warnings-modal Button,
+.ns-dark .fc-page .warnings-modal Button {
+  background-color: #262626;
+  color: #f2f2f2;
+  border-radius: 22;
+  android-elevation: 0;
+}
+.fc-page .warnings-modal Button.-primary,
+.ns-dark .fc-page .warnings-modal Button.-primary {
+  background-color: #f2f2f2;
+  color: #000000;
+}
+.fc-page Button.fc-secondary-button,
+.ns-dark .fc-page Button.fc-secondary-button {
+  background-color: #151515;
+  color: #f2f2f2;
+  font-size: 15;
+  border-radius: 22;
+  height: 48;
+  margin: 4;
+  android-elevation: 0;
+}
+.fc-page Button.fc-primary-button[isEnabled=false],
+.ns-dark .fc-page Button.fc-primary-button[isEnabled=false] {
+  background-color: #3a3a3a;
+  color: #9a9a9a;
+}
+.fc-scan-status {
+  background-color: #151515;
+  border-radius: 16;
+  padding: 12 14;
+  margin-bottom: 10;
+}
+.fc-scan-list {
+  margin: 0;
+}
+.fc-scan-links {
+  margin-top: 2;
+}
+.fc-address-card {
+  margin-top: 14;
+}
+.fc-address-row {
+  padding: 14 18;
+  border-bottom-width: 1;
+  border-color: #262626;
+}
+.fc-address-row-last {
+  border-bottom-width: 0;
+}
+.fc-page TextField.fc-address-input,
+.ns-dark .fc-page TextField.fc-address-input {
+  background-color: #222222;
+  color: #f2f2f2;
+  border-width: 1;
+  border-color: #262626;
+  border-radius: 9;
+  font-size: 15;
+  margin-top: 8;
+  padding: 9 11;
+}
+.fc-config-tools {
+  margin-top: 12;
+}
+
+.fc-page .pairing-row,
+.ns-dark .fc-page .pairing-row,
+.fc-page .pairing-row-incomplete,
+.ns-dark .fc-page .pairing-row-incomplete {
+  background-color: #151515;
+  border-color: #262626;
+  border-width: 1;
+  border-radius: 20;
+  padding: 14 16;
+  margin-bottom: 10;
+}
+.fc-page .pairing-row-selected,
+.ns-dark .fc-page .pairing-row-selected {
+  background-color: #1d1d1d;
+  border-color: #f2f2f2;
+}
+.fc-page .pairing-title,
+.ns-dark .fc-page .pairing-title,
+.fc-page .pairing-variant,
+.ns-dark .fc-page .pairing-variant {
+  color: #f2f2f2;
+}
+.fc-page .pairing-badge,
+.ns-dark .fc-page .pairing-badge,
+.fc-page .speaker-wearer-badge,
+.ns-dark .fc-page .speaker-wearer-badge {
+  background-color: #2e2e2e;
+  color: #f2f2f2;
+}
+.fc-page .pairing-proximity,
+.ns-dark .fc-page .pairing-proximity,
+.fc-page .pairing-serial,
+.ns-dark .fc-page .pairing-serial,
+.fc-page .pairing-empty,
+.ns-dark .fc-page .pairing-empty,
+.fc-page .pairing-swatch-label,
+.ns-dark .fc-page .pairing-swatch-label {
+  color: #9a9a9a;
+}
+.fc-page .pairing-proximity-immediate,
+.ns-dark .fc-page .pairing-proximity-immediate,
+.fc-page .pairing-arms,
+.ns-dark .fc-page .pairing-arms,
+.fc-page .pairing-chevron,
+.ns-dark .fc-page .pairing-chevron {
+  color: #f2f2f2;
+}
+.fc-page .pairing-warning,
+.ns-dark .fc-page .pairing-warning {
+  color: #e8a69a;
+}
+.fc-page .pairing-selection,
+.ns-dark .fc-page .pairing-selection {
+  background-color: #151515;
+  border-radius: 20;
+  padding: 10 16;
+  margin-top: 12;
+}
+.fc-page Button.pairing-link,
+.ns-dark .fc-page Button.pairing-link {
+  background-color: transparent;
+  color: #f2f2f2;
+  font-size: 13;
+  android-elevation: 0;
+}
+.fc-page .permissions-description,
+.ns-dark .fc-page .permissions-description,
+.fc-page .conversation-meta,
+.ns-dark .fc-page .conversation-meta,
+.fc-page .conversation-empty,
+.ns-dark .fc-page .conversation-empty {
+  color: #9a9a9a;
+}
+.fc-page .permissions-check,
+.ns-dark .fc-page .permissions-check,
+.fc-page .conversation-title,
+.ns-dark .fc-page .conversation-title,
+.fc-page .ask-answer,
+.ns-dark .fc-page .ask-answer {
+  color: #f2f2f2;
+}
+.fc-page .conversation-status,
+.ns-dark .fc-page .conversation-status,
+.fc-page .transcript-play,
+.ns-dark .fc-page .transcript-play {
+  color: #9a9a9a;
+}
+.fc-page .transcript-row-playing,
+.ns-dark .fc-page .transcript-row-playing {
+  background-color: #262626;
+}
+.fc-page .speaker-tag,
+.ns-dark .fc-page .speaker-tag,
+.fc-page .speaker-chip,
+.ns-dark .fc-page .speaker-chip,
+.fc-page .transcript-emotion,
+.ns-dark .fc-page .transcript-emotion {
+  color: #f2f2f2;
+  background-color: #2e2e2e;
+}
+.fc-page .speaker-chip-selected,
+.ns-dark .fc-page .speaker-chip-selected {
+  border-color: #f2f2f2;
+}
+.fc-page .transcript-time,
+.ns-dark .fc-page .transcript-time,
+.fc-page .transcript-translation,
+.ns-dark .fc-page .transcript-translation {
+  color: #9a9a9a;
+}
+.fc-conversation-search {
+  background-color: #151515;
+  border-radius: 16;
+  padding: 4 12;
+  margin: 12 0 16 0;
+}
+.fc-page TextField.fc-conversation-search-input,
+.ns-dark .fc-page TextField.fc-conversation-search-input {
+  background-color: #151515;
+  color: #f2f2f2;
+  border-width: 1;
+  border-color: #151515;
+  font-size: 15;
+  padding: 8 2;
+}
+.fc-conversation-search-clear {
+  color: #9a9a9a;
+  font-size: 23;
+  width: 32;
+  text-align: center;
+}
+.fc-conversation-header,
+.fc-conversation-graph {
+  background-color: #151515;
+  border-radius: 16;
+  padding: 14 18;
+  margin-top: 12;
+}
+.fc-ask-results {
+  margin-top: 12;
+}
+.fc-page .ask-answer,
+.ns-dark .fc-page .ask-answer {
+  background-color: #151515;
+  color: #f2f2f2;
+  border-radius: 20;
+  font-size: 16;
+  padding: 18;
+}
+.fc-document {
+  background-color: #151515;
+  color: #f2f2f2;
+  border-radius: 20;
+  margin: 16;
+  padding: 18;
 }

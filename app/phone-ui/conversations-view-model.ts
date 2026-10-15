@@ -1,4 +1,4 @@
-import { EventData, Frame, Observable, SearchBar } from "@nativescript/core";
+import { EventData, Frame, Observable, ScrollView, TextField } from "@nativescript/core";
 
 import { sentimentBucket } from "../apps/microphones/sentiment";
 import { speakerRegistry } from "../apps/microphones/speakers";
@@ -87,9 +87,19 @@ export class ConversationsViewModel extends Observable {
   }
 
   onSearchSubmit(args: EventData): void {
-    const bar = args.object as SearchBar;
-    this._searchText = bar.text ?? "";
+    const field = args.object as TextField;
+    this._searchText = field.text ?? "";
+    field.dismissSoftInput();
+    field.android?.clearFocus();
     this.refreshSessions();
+  }
+
+  onResultsLoaded(args: EventData): void {
+    if (global.isAndroid) {
+      const results = (args.object as ScrollView).android;
+      results.setFocusable(false);
+      results.setFocusableInTouchMode(false);
+    }
   }
 
   onSearchClear(): void {

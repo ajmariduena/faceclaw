@@ -191,8 +191,8 @@ export class PermissionsViewModel extends Observable {
    */
   get primaryClass(): string {
     return this.onboarding && !this.requiredPermissionsGranted()
-      ? "-primary permissions-primary-dimmed"
-      : "-primary";
+      ? "fc-primary-button permissions-primary-dimmed"
+      : "fc-primary-button";
   }
 
   get secondaryVisibility(): "visible" | "collapse" {

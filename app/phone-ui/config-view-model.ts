@@ -155,10 +155,15 @@ export class ConfigViewModel extends Observable {
     return this._discoveryLog;
   }
 
+  get discoveryLogVisibility(): "visible" | "collapse" {
+    return this._discoveryLog ? "visible" : "collapse";
+  }
+
   set discoveryLog(value: string) {
     if (this._discoveryLog !== value) {
       this._discoveryLog = value;
       this.notifyPropertyChange("discoveryLog", value);
+      this.notifyPropertyChange("discoveryLogVisibility", this.discoveryLogVisibility);
     }
   }
 

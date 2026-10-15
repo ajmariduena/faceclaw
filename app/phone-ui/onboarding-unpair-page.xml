@@ -1,21 +1,21 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" actionBarHidden="true">
-    <GridLayout rows="*,auto" class="p-20">
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" actionBarHidden="true" class="fc-page">
+    <GridLayout rows="*,auto" class="fc-flow">
         <ScrollView row="0">
-            <StackLayout>
-                <Label text="Disconnect Other Apps" class="h1 text-center m-t-24" textWrap="true" />
+            <StackLayout class="fc-flow-content">
+                <Label text="Disconnect Other Apps" class="fc-flow-title" textWrap="true" />
                 <Label
                     text="Your glasses can only be connected to one app or phone at a time. If they're connected to another app (such as Even Realities or MentraOS) or another phone, disconnect them there before continuing. If nothing else is connected, you can continue."
-                    class="body-text m-t-24" textWrap="true" />
+                    class="fc-flow-card-text" textWrap="true" />
                 <Label
                     text="{{ evenAppInstructions }}"
-                    class="body-text m-t-16" textWrap="true" />
-                <Button text="Open Even App Settings" tap="{{ onOpenEvenAppSettingsTap }}" visibility="{{ settingsButtonVisibility }}" width="{{ settingsButtonWidth }}" horizontalAlignment="center" class="-primary m-t-24" />
+                    class="fc-flow-note" textWrap="true" />
+                <Button text="Open Even App Settings" tap="{{ onOpenEvenAppSettingsTap }}" visibility="{{ settingsButtonVisibility }}" width="{{ settingsButtonWidth }}" horizontalAlignment="center" class="fc-secondary-button" />
             </StackLayout>
         </ScrollView>
 
-        <GridLayout row="1" columns="*,*" class="m-t-20">
-            <Button col="0" text="Back" tap="{{ onBackTap }}" />
-            <Button col="1" text="Continue" tap="{{ onContinueTap }}" class="-primary" />
+        <GridLayout row="1" columns="*,*" class="fc-flow-actions">
+            <Button col="0" text="Back" tap="{{ onBackTap }}" class="fc-secondary-button" />
+            <Button col="1" text="Continue" tap="{{ onContinueTap }}" class="fc-primary-button" />
         </GridLayout>
     </GridLayout>
 </Page>

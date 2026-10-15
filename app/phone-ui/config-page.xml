@@ -1,48 +1,48 @@
-<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo">
-    <ActionBar title="Configure Devices" />
+<Page xmlns="http://schemas.nativescript.org/tns.xsd" navigatingTo="navigatingTo" class="fc-page">
+    <ActionBar title="Configure Devices" class="fc-action-bar" />
 
-    <GridLayout rows="auto,auto,auto,auto,auto,auto,auto,auto,*" class="p-20">
-        <Label row="0" text="Configure the MAC addresses for the G2 headset arms and optional R1 ring. This page does not test a connection." class="body-text" textWrap="true" />
+    <GridLayout rows="*,auto" class="fc-flow">
+        <ScrollView row="0">
+            <StackLayout class="fc-flow-content">
+                <Label text="Save G2 arm and optional R1 addresses. This does not test a connection." class="fc-flow-note" textWrap="true" />
+                <GridLayout columns="96,*" class="pairing-row" visibility="{{ identityVisibility }}">
+                    <Image col="0" src="{{ identityImagePath }}" stretch="aspectFit" width="90" height="34" />
+                    <StackLayout col="1" class="m-l-8">
+                        <Label text="{{ identityTitle }}" class="pairing-title" />
+                        <Label text="{{ identityVariant }}" class="pairing-variant" visibility="{{ identityVariantVisibility }}" />
+                        <Label text="{{ identitySerial }}" class="pairing-serial" />
+                        <Label text="{{ identityDetail }}" class="pairing-arms" textWrap="true" />
+                    </StackLayout>
+                </GridLayout>
 
-        <GridLayout row="1" columns="96,*" class="pairing-row m-t-12" visibility="{{ identityVisibility }}">
-            <Image col="0" src="{{ identityImagePath }}" stretch="aspectFit" width="90" height="34" />
-            <StackLayout col="1" class="m-l-8">
-                <Label text="{{ identityTitle }}" class="pairing-title" />
-                <Label text="{{ identityVariant }}" class="pairing-variant" visibility="{{ identityVariantVisibility }}" />
-                <Label text="{{ identitySerial }}" class="pairing-serial" />
-                <Label text="{{ identityDetail }}" class="pairing-arms" textWrap="true" />
+                <StackLayout class="fc-card fc-address-card">
+                    <StackLayout class="fc-address-row">
+                        <Label text="Right arm MAC" class="fc-row-label" />
+                        <TextField accessibilityLabel="Right arm MAC" text="{{ rightAddress }}" textChange="{{ onRightAddressTextChange }}" autocorrect="false" autocapitalizationType="none" class="fc-address-input" />
+                    </StackLayout>
+                    <StackLayout class="fc-address-row">
+                        <Label text="Left arm MAC" class="fc-row-label" />
+                        <TextField accessibilityLabel="Left arm MAC" text="{{ leftAddress }}" textChange="{{ onLeftAddressTextChange }}" autocorrect="false" autocapitalizationType="none" class="fc-address-input" />
+                    </StackLayout>
+                    <StackLayout class="fc-address-row fc-address-row-last">
+                        <Label text="R1 ring MAC (optional)" class="fc-row-label" />
+                        <TextField accessibilityLabel="R1 ring MAC" text="{{ ringAddress }}" textChange="{{ onRingAddressTextChange }}" autocorrect="false" autocapitalizationType="none" class="fc-address-input" />
+                    </StackLayout>
+                </StackLayout>
+
+                <GridLayout columns="*,*" class="fc-config-tools">
+                    <Button col="0" text="Load paired devices" visibility="{{ pairedDevicesVisibility }}" tap="{{ onLoadPairedTap }}" class="fc-secondary-button" isEnabled="{{ canDiscover }}" />
+                    <Button col="1" text="Scan for glasses" tap="{{ onScanTap }}" class="fc-secondary-button" isEnabled="{{ canDiscover }}" />
+                </GridLayout>
+
+                <Label text="{{ status }}" class="fc-flow-status" textWrap="true" />
+                <Label text="{{ discoveryLog }}" textWrap="true" class="fc-flow-log" visibility="{{ discoveryLogVisibility }}" />
             </StackLayout>
-        </GridLayout>
-
-        <StackLayout row="2" class="m-t-16">
-            <Label text="Right arm MAC" />
-            <TextField accessibilityLabel="Right arm MAC" text="{{ rightAddress }}" textChange="{{ onRightAddressTextChange }}" autocorrect="false" autocapitalizationType="none" />
-        </StackLayout>
-
-        <StackLayout row="3" class="m-t-12">
-            <Label text="Left arm MAC" />
-            <TextField accessibilityLabel="Left arm MAC" text="{{ leftAddress }}" textChange="{{ onLeftAddressTextChange }}" autocorrect="false" autocapitalizationType="none" />
-        </StackLayout>
-
-        <StackLayout row="4" class="m-t-12">
-            <Label text="R1 ring MAC (optional)" />
-            <TextField accessibilityLabel="R1 ring MAC" text="{{ ringAddress }}" textChange="{{ onRingAddressTextChange }}" autocorrect="false" autocapitalizationType="none" />
-        </StackLayout>
-
-        <GridLayout row="5" columns="*,*" class="m-t-16">
-            <Button col="0" text="Load paired devices" visibility="{{ pairedDevicesVisibility }}" tap="{{ onLoadPairedTap }}" class="-primary" isEnabled="{{ canDiscover }}" />
-            <Button col="1" text="Scan for glasses" tap="{{ onScanTap }}" class="-primary" isEnabled="{{ canDiscover }}" />
-        </GridLayout>
-
-        <Label row="6" text="{{ status }}" class="body-text m-t-16" textWrap="true" />
-
-        <GridLayout row="7" columns="*,*" class="m-t-16">
-            <Button col="0" text="Back" tap="{{ onBackTap }}" />
-            <Button col="1" text="{{ saveLabel }}" tap="{{ onSaveTap }}" class="-primary" />
-        </GridLayout>
-
-        <ScrollView row="8" class="m-t-16">
-            <Label text="{{ discoveryLog }}" textWrap="true" verticalAlignment="top" />
         </ScrollView>
+
+        <GridLayout row="1" columns="*,*" class="fc-flow-actions">
+            <Button col="0" text="Back" tap="{{ onBackTap }}" class="fc-secondary-button" />
+            <Button col="1" text="{{ saveLabel }}" tap="{{ onSaveTap }}" class="fc-primary-button" />
+        </GridLayout>
     </GridLayout>
 </Page>
