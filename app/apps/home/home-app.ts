@@ -1,8 +1,5 @@
 import { readUpcomingEvents, getCalendarReadState, onCalendarChanged } from "../../native/calendar";
 import { hasCalendarPermission } from "../../native/calendar-permissions";
-import { getCurrentLocation } from "../../native/location";
-import { hasLocationPermission } from "../../native/location-permissions";
-import { getStringSetting, setStringSetting } from "../../native/settings-store";
 import { onAnySettingChanged, sonioxApiKeySetting } from "../../ui/dashboard-settings";
 import { converseKeys, missingConverseKey } from "../converse/converse-keys";
 import type { InputEvent } from "../../ui/gestures";
@@ -13,27 +10,13 @@ import { onWorkerStateChanged, readWorkerState } from "../../ui/shell/worker-sta
 import { PASEO_GLANCE_STATE_KEY, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import { grokBotHub } from "../../assistant/grokbot/grokbot";
 import { botsGlance } from "../bots/bots-model";
+import { instantChat, instantReady } from "../instant/instant-app";
+import { instantGlance } from "../instant/instant-glance";
 import type { AppContext } from "../app-definition";
-import { fetchTextWithUserAgent } from "../../util/http";
 import { HomeModel, HOME_WINDOW_ID, HOME_SURFACE_ID, HOME_SLEEP_GUARD_MS, calendarCardState } from "./home-model";
 import { paintHome } from "./home-painter";
-import { HomeWeather } from "./home-weather";
+import { createHomeWeather } from "./home-weather-source";
 import { stockFace } from "../../ui/stock-face";
-
-function createHomeWeather(): HomeWeather {
-  return new HomeWeather({
-    permitted: hasLocationPermission,
-    locate: getCurrentLocation,
-    fetchJson: async url => {
-      const response = await fetchTextWithUserAgent(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json();
-    },
-    read: getStringSetting,
-    write: setStringSetting,
-    now: Date.now,
-  });
-}
 
 export function createHomeWindow(ctx: AppContext) {
   const model = new HomeModel();
@@ -67,6 +50,7 @@ export function createHomeWindow(ctx: AppContext) {
         calendar: calendarCardState(permitted, permitted ? readUpcomingEvents() : [], now.getTime(), getCalendarReadState()),
         paseo: (readWorkerState(PASEO_GLANCE_STATE_KEY) as PaseoGlanceSnapshot | undefined) ?? null,
         bots: botsGlance(grokBotHub, now.getTime()),
+        instant: instantGlance(instantReady(), instantChat.lastTurn, now.getTime()),
         translateReady: sonioxApiKeySetting.get().trim().length > 0,
         converseReady: missingConverseKey(sonioxApiKeySetting.get().trim(), converseKeys()) === null,
         battery: { ring: levels.ring, glasses: levels.headset },

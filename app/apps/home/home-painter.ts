@@ -7,6 +7,7 @@ import type { HomeWeatherReading } from "./home-weather";
 import { glanceCounts, glanceEmptyStatus, type PaseoGlanceSnapshot } from "../paseo/paseo-glance";
 import type { BotsGlance } from "../bots/bots-model";
 import { BOT_MARK_WIDTH, botMark } from "../bots/bot-mark";
+import type { InstantGlance } from "../instant/instant-glance";
 
 export type HomeFace = {
   readonly lineHeight: number;
@@ -19,6 +20,8 @@ export type HomeSnapshot = {
   /** What the Paseo worker last published; null before it publishes (or when the app never ran). */
   paseo?: PaseoGlanceSnapshot | null;
   bots?: BotsGlance | null;
+  /** Instant's last answer and its age, or why it cannot start. */
+  instant?: InstantGlance | null;
   /** A Soniox key is stored, so Translate can start. */
   translateReady?: boolean;
   /** Every key Converse needs is stored (missingConverseKey), so it can start. */
@@ -29,7 +32,7 @@ export type HomeSnapshot = {
   weather?: HomeWeatherReading | null;
 };
 
-export const HOME_DOTS_TOP = 115;
+export const HOME_DOTS_TOP = Math.round(144 - ((HOME_CARDS.length - 1) * 11 + 3) / 2);
 const DIM = 153;
 const FAINT = 85;
 const CARD_TEXT_WIDTH = 278;
@@ -135,6 +138,18 @@ export function paintHome(selected: number, data: HomeSnapshot, face: HomeFace):
       lines.forEach((line, i) => centered(top + i * pitch, line, bots.lineDim ? DIM : 255));
       centered(222, bots.age, DIM);
     } else centered(150, bots?.status ?? emptyCardStatus(card.id), DIM);
+  } else if (card.id === "instant") {
+    // A bolt over the last answer, like Grok Bot's card.
+    const instant = data.instant;
+    icon(panel, "zap", Math.round((318 - 48) / 2), 24, 48);
+    if (instant?.line) {
+      const pitch = Math.max(27, face.lineHeight + 4);
+      const lines = wrapped(face, instant.line, BOT_LINE_WIDTH, 4);
+      if (lines.length > 3) { lines.length = 3; lines[2] = fitted(face, `${lines[2]}…`, BOT_LINE_WIDTH); }
+      const top = 124 + Math.round((3 - lines.length) * pitch / 2);
+      lines.forEach((line, i) => centered(top + i * pitch, line, 255));
+      centered(222, instant.age, DIM);
+    } else centered(150, instant?.status ?? emptyCardStatus(card.id), DIM);
   } else if (card.id === "translate") {
     glance(() => {
       const left = "ES ", right = " EN";

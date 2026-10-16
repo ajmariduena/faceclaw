@@ -6,11 +6,11 @@
  * The conversation so far rides along, so "¿y cuántos habitantes tiene?"
  * still knows which city, and a fact already shown is not shown again.
  */
+import { webSearch as search, type Post, type SearchResult } from "../../assistant/web-search";
 
+export type { Post };
 export type Fact = { topic: string; source: string; text: string };
 export type FactKeys = { typesafe: string; cerebras: string; openRouter: string; perplexity: string; brave: string };
-export type Post = (url: string, headers: Record<string, string>, body: string | null, timeoutMs: number) => Promise<{ status: number; json: unknown }>;
-type SearchResult = { title: string; url: string; snippet: string; date?: string };
 /** What was said before this sentence, oldest first, and the facts already on screen. */
 export type FactContext = {
   earlier: readonly string[];
@@ -32,8 +32,6 @@ const SHOWN_FOR_DECIDE = 3;
 /** Share of a new fact's words already in a shown fact above which it counts as the same fact. */
 const SAME_FACT_OVERLAP = 0.7;
 const MAX_RESULTS = 8;
-/** Brave starts when Perplexity has not answered by then; the first non-empty list wins. */
-const SEARCH_HEDGE_MS = 1000;
 
 export async function lookupFact(sentence: string, language: string, keys: FactKeys, post: Post, context: FactContext = { earlier: [], shown: [] }): Promise<Fact | null> {
   if (wordCount(sentence) < MIN_WORDS) return null;
@@ -114,47 +112,6 @@ async function decide(sentence: string, earlier: readonly string[], shown: reado
   );
   if (status !== 200) throw new Error(`decide ${status}`);
   return Number((json as { answers?: { lookup?: { noul?: number } } }).answers?.lookup?.noul ?? 0);
-}
-
-/** Perplexity Fast Search; Brave when it fails, is slow or is not set up. */
-async function search(sentence: string, region: string | undefined, keys: FactKeys, post: Post): Promise<SearchResult[]> {
-  const brave = () => (keys.brave ? braveSearch(sentence, keys.brave, post).catch(() => [] as SearchResult[]) : Promise.resolve([] as SearchResult[]));
-  if (!keys.perplexity) return brave();
-  const primary = perplexitySearch(sentence, region, keys.perplexity, post).catch(() => [] as SearchResult[]);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const slow = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), SEARCH_HEDGE_MS); });
-  const first = await Promise.race([primary, slow]);
-  clearTimeout(timer);
-  if (first?.length) return first;
-  if (first) return brave();
-  return firstNonEmpty([primary, brave()]);
-}
-
-async function perplexitySearch(sentence: string, region: string | undefined, key: string, post: Post): Promise<SearchResult[]> {
-  const { status, json } = await post("https://api.perplexity.ai/search", { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    JSON.stringify({ query: sentence, search_type: "fast", max_results: 5, ...(region ? { country: region } : {}) }), 2500);
-  const results = (json as { results?: { title?: string; url?: string; snippet?: string; date?: string | null }[] }).results ?? [];
-  return status === 200 ? results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: (r.snippet ?? "").slice(0, 500), date: r.date ?? undefined })) : [];
-}
-
-async function braveSearch(sentence: string, key: string, post: Post): Promise<SearchResult[]> {
-  const { status, json } = await post(`https://api.search.brave.com/res/v1/web/search?count=5&q=${encodeURIComponent(sentence)}`,
-    { "X-Subscription-Token": key, Accept: "application/json" }, null, 2000);
-  if (status !== 200) return [];
-  const results = (json as { web?: { results?: { title?: string; url?: string; description?: string; page_age?: string | null }[] } }).web?.results ?? [];
-  return results.map((r) => ({ title: r.title ?? "", url: r.url ?? "", snippet: r.description ?? "", date: r.page_age?.slice(0, 10) }));
-}
-
-function firstNonEmpty(lists: Promise<SearchResult[]>[]): Promise<SearchResult[]> {
-  return new Promise((resolve) => {
-    let pending = lists.length;
-    for (const list of lists) {
-      void list.then((results) => {
-        if (results.length) resolve(results);
-        else if (--pending === 0) resolve([]);
-      });
-    }
-  });
 }
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

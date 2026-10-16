@@ -8,6 +8,7 @@ export const HOME_SURFACE_ID = "window:home";
 export const HOME_CARDS = [
   { id: "paseo", name: "Paseo", icon: "square-terminal", appId: "paseo" },
   { id: "bots", name: "Grok Bot", icon: "sparkles", appId: "bots" },
+  { id: "instant", name: "Instant", icon: "zap", appId: "instant" },
   { id: "calendar", name: "Calendar", icon: "calendar-days", appId: "calendar" },
   { id: "translate", name: "Translate", icon: "languages", appId: "translate" },
   { id: "converse", name: "Converse", icon: "messages-square", appId: "converse" },
@@ -81,6 +82,7 @@ export function emptyCardStatus(card: HomeCardId): string {
     case "calendar": return "Nothing today";
     case "paseo": return "No updates";
     case "bots": return "Setup required";
+    case "instant": return "Setup required";
     case "translate": return "Ready";
     case "converse": return "Setup required";
     case "more": return "";

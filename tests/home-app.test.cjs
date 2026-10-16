@@ -33,6 +33,7 @@ function harness(stockAvailable = false) {
       getBatteryLevels: () => battery, onBatteryLevelsChanged: subscribe } },
     '../../ui/shell/worker-state': { readWorkerState: () => paseoState, onWorkerStateChanged: subscribe },
     '../../assistant/grokbot/grokbot': { grokBotHub: { configured: false, error: '', defaultBot: 'Glasses', list: () => [], onChanged: subscribe } },
+    '../instant/instant-app': { instantChat: { lastTurn: null }, instantReady: () => false },
     './home-painter': { paintHome: (index, data, font) => { painted = { index, data, font }; return painted; } },
   });
   const { createHomeWindow } = load('app/apps/home/home-app.ts');
@@ -68,8 +69,11 @@ test('home adapter uses real snapshots, English chrome, and avoids unauthorized 
   assert.equal(harness(true).paint().font.lineHeight, 27);
 });
 
-test('home window scroll/swipe/tap and direct card touch launch the six apps; return and wake differ', async () => {
+test('home window scroll/swipe/tap and direct card touch launch the seven apps; return and wake differ', async () => {
   const h = harness();
+  await h.input('click');
+  h.home.onShow(false);
+  await h.input('scroll-down');
   await h.input('click');
   h.home.onShow(false);
   await h.input('scroll-down');
@@ -85,28 +89,26 @@ test('home window scroll/swipe/tap and direct card touch launch the six apps; re
   h.home.onShow(false);
   await h.input('scroll-down');
   await h.options.baseLayer.hitTest(300, 100);
-  assert.deepEqual(h.launched, ['paseo', 'bots', 'calendar', 'translate', 'converse', 'launcher']);
+  assert.deepEqual(h.launched, ['paseo', 'bots', 'instant', 'calendar', 'translate', 'converse', 'launcher']);
   h.home.onShow(false);
-  assert.equal(h.paint().index, 5);
+  assert.equal(h.paint().index, 6);
   h.home.onShow(true);
   assert.equal(h.paint().index, 0);
   await h.input('swipe-up');
-  assert.equal(h.paint().index, 5);
+  assert.equal(h.paint().index, 6);
   await h.input('scroll-up');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
   await h.options.baseLayer.hitTest(10, 10);
-  assert.equal(h.launched.length, 6);
+  assert.equal(h.launched.length, 7);
 });
 
 test('a card whose app is missing from the build leaves the home in place without crashing', async () => {
   const h = harness();
-  await h.input('scroll-down');
-  await h.input('scroll-down');
-  await h.input('scroll-down');
+  for (let i = 0; i < 4; i++) await h.input('scroll-down');
   await h.input('click');
   assert.deepEqual(h.launched, ['translate']);
   await h.input('scroll-down');
-  assert.equal(h.paint().index, 4);
+  assert.equal(h.paint().index, 5);
 });
 
 test('double tap on home turns the screen off, except within 700 ms of arriving home', async () => {
@@ -151,20 +153,20 @@ test('home stops its polling and subscriptions while hidden or asleep and reconn
 
 test('Watch horizontal swipes paginate circularly without changing Ring or vertical mappings', async () => {
   const h = harness();
-  for (let index = 1; index <= 6; index++) {
+  for (let index = 1; index <= 7; index++) {
     await h.input('swipe-left');
-    assert.equal(h.paint().index, index % 6);
+    assert.equal(h.paint().index, index % 7);
   }
   await h.input('swipe-right');
-  assert.equal(h.paint().index, 5);
+  assert.equal(h.paint().index, 6);
   await h.input('scroll-down');
   assert.equal(h.paint().index, 0);
   await h.input('scroll-up');
-  assert.equal(h.paint().index, 5);
+  assert.equal(h.paint().index, 6);
   await h.input('swipe-down');
   assert.equal(h.paint().index, 0);
   await h.input('swipe-up');
-  assert.equal(h.paint().index, 5);
+  assert.equal(h.paint().index, 6);
   await h.input('swipe-left');
   await h.input('click');
   assert.equal(h.launched.at(-1), 'paseo');
