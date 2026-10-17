@@ -181,7 +181,7 @@ class IosGlassesSession internal constructor(
 
     fun removeMicStatusListener(listener: FaceclawMicStatusListener?) = core.removeMicStatusListener(listener)
 
-    fun sendFaceclawMicControl(record: NSData?, label: String, rightTemple: Boolean, leftTemple: Boolean) =
+    fun sendFaceclawMicControl(record: NSData?, label: String, rightTemple: Boolean, leftTemple: Boolean): Boolean =
         core.sendFaceclawMicControl(record?.byteArray(), label, rightTemple, leftTemple)
 
     fun startG2AudioForwarding(listener: FaceclawAudioPacketListener?): Boolean =

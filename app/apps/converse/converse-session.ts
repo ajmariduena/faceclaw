@@ -33,6 +33,7 @@ const KEPT_FACTS = 10;
  * lookup. A slower lookup never replaces the fact of a later sentence.
  */
 export class ConverseSession {
+  private readonly micOwner = Symbol("converse");
   state: ConverseState = { kind: "paused" };
   fact: Fact | null = null;
   /** The fact the newest one replaced, still shown dimmer under it. */
@@ -67,12 +68,12 @@ export class ConverseSession {
     const communicator = activeCommunicator();
     if (!communicator) return this.setState({ kind: "no-glasses" });
     this.offPcm = voiceControlBridge.onRawPcm((pcm) => this.client?.acceptPcm(pcm));
-    if (!voiceControlBridge.startRawCapture({ communicator })) {
+    if (!voiceControlBridge.startRawCapture({ communicator, owner: this.micOwner })) {
       this.releaseMic();
       return this.setState({ kind: "mic-busy" });
     }
     this.offVoiceActivity = voiceActivity.subscribe((active) => {
-      if (!active && this.listening) voiceControlBridge.startRawCapture({ communicator: activeCommunicator() });
+      if (!active && this.listening) voiceControlBridge.startRawCapture({ communicator: activeCommunicator(), owner: this.micOwner });
     });
     let client: CloudSttClient | null = null;
     const options: SonioxSttOptions = {
@@ -167,7 +168,7 @@ export class ConverseSession {
   private releaseMic(): void {
     if (this.offPcm) {
       this.offPcm();
-      voiceControlBridge.stopRawCapture();
+      voiceControlBridge.stopRawCapture(this.micOwner);
     }
     this.offPcm = null;
     this.offVoiceActivity?.();

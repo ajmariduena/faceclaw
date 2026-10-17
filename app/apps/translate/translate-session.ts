@@ -31,6 +31,7 @@ const wearerVoice = new WearerVoice();
  * so nothing is billed or captured while paused.
  */
 export class TranslateSession {
+  private readonly micOwner = Symbol("translate");
   readonly transcript = new TranslationTranscript(wearerVoice);
   state: TranslateState = { kind: "paused" };
   private client: CloudSttClient | null = null;
@@ -54,12 +55,12 @@ export class TranslateSession {
     this.draining = null;
     this.transcript.newSession();
     this.offPcm = voiceControlBridge.onRawPcm((pcm) => this.client?.acceptPcm(pcm));
-    if (!voiceControlBridge.startRawCapture({ communicator })) {
+    if (!voiceControlBridge.startRawCapture({ communicator, owner: this.micOwner })) {
       this.releaseMic();
       return this.setState({ kind: "mic-busy" });
     }
     this.offVoiceActivity = voiceActivity.subscribe((active) => {
-      if (!active && this.recording) voiceControlBridge.startRawCapture({ communicator: activeCommunicator() });
+      if (!active && this.recording) voiceControlBridge.startRawCapture({ communicator: activeCommunicator(), owner: this.micOwner });
     });
     let client: CloudSttClient | null = null;
     const options: SonioxSttOptions = {
@@ -125,7 +126,7 @@ export class TranslateSession {
   private releaseMic(): void {
     if (this.offPcm) {
       this.offPcm();
-      voiceControlBridge.stopRawCapture();
+      voiceControlBridge.stopRawCapture(this.micOwner);
     }
     this.offPcm = null;
     this.offVoiceActivity?.();

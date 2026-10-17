@@ -9,8 +9,8 @@ const transcribeApp: AppDefinition = {
     ctx.launchInProcessApp(TRANSCRIBE_WINDOW_ID, TRANSCRIBE_SURFACE_ID, (options) =>
       createTranscribeAppWindow({
         ...options,
-        startContinuousVoiceCapture: () => void options.actions.startContinuousVoiceCapture(),
-        stopContinuousVoiceCapture: () => void options.actions.stopContinuousVoiceCapture(),
+        startContinuousVoiceCapture: () => void options.actions.startContinuousVoiceCapture("transcribe"),
+        stopContinuousVoiceCapture: () => void options.actions.stopContinuousVoiceCapture("transcribe"),
       }),
     ),
 };

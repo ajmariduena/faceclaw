@@ -244,7 +244,7 @@ class FaceclawBleCommunicator(context: Context, rightAddress: String?, leftAddre
 
     fun removeMicStatusListener(listener: FaceclawMicStatusListener?) = core.removeMicStatusListener(listener)
 
-    fun sendFaceclawMicControl(record: ByteArray?, label: String, rightTemple: Boolean, leftTemple: Boolean) =
+    fun sendFaceclawMicControl(record: ByteArray?, label: String, rightTemple: Boolean, leftTemple: Boolean): Boolean =
         core.sendFaceclawMicControl(record, label, rightTemple, leftTemple)
 
     fun startG2AudioForwarding(listener: FaceclawAudioPacketListener?): Boolean = core.startG2AudioForwarding(listener)
